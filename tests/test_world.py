@@ -5,7 +5,7 @@ import dataclasses
 
 import pytest
 
-from loopingrules.world import Proposal, Reply, Said, World
+from loopingrules.world import Proposal, Reply, Said, World, arbitrate
 
 
 @dataclasses.dataclass(frozen=True)
@@ -292,6 +292,58 @@ def test_proposal_tags_a_candidate_against_any_occasion(w):
     # component now real, no longer tagged as a rival reading.
     w.detach(candidate, Proposal)
     assert not w.has(candidate, Proposal)
+
+
+# --- arbitrate: the chokepoint, not just "first wins" -------------------
+
+def test_arbitrate_does_not_resolve_an_occasion_on_its_first_sighting(w):
+    # A SECOND, independently-installed responder may not have run yet
+    # this tick -- resolving here would be exactly the race this
+    # function exists to close.
+    occasion = w.spawn(Named("decide me"))
+    w.spawn(Proposal(occasion.id), Size(1))
+    unanswered = arbitrate(w, Named)
+    assert unanswered == []
+    assert w.alive(occasion)                 # not resolved -- still standing
+    assert len(w.each(Proposal)) == 1         # the candidate is untouched too
+
+
+def test_arbitrate_resolves_the_first_registered_candidate_on_the_next_call(w):
+    occasion = w.spawn(Named("decide me"))
+    first = w.spawn(Proposal(occasion.id), Size(1))
+    second = w.spawn(Proposal(occasion.id), Size(2))
+    arbitrate(w, Named)                       # first sighting: only tags ripe
+    unanswered = arbitrate(w, Named)           # second: resolves
+    assert unanswered == []
+    assert not w.alive(occasion)
+    assert not w.alive(second)                # the loser is gone outright
+    assert w.alive(first)
+    assert not w.has(first, Proposal)         # the winner's tag is detached
+    assert w.get(first, Size).bytes == 1
+
+
+def test_arbitrate_reports_an_unanswered_occasion_only_once_ripe(w):
+    occasion = w.spawn(Named("decide me"))    # no Proposal against it at all
+    assert arbitrate(w, Named) == []          # first sighting: not yet
+    assert w.alive(occasion)
+    named = w.get(occasion, Named)             # read before it is destroyed
+    unanswered = arbitrate(w, Named)           # second: nobody ever proposed
+    assert unanswered == [(occasion, named)]
+    assert not w.alive(occasion)
+
+
+def test_arbitrate_leaves_a_different_occasion_type_alone(w):
+    # Two occasions, two types -- as if two unrelated domains each had
+    # their own kind of thing to decide about. `arbitrate(w, Named)`
+    # is not this SIZE occasion's arbiter, even after it has run twice.
+    named_occasion = w.spawn(Named("mine"))
+    w.spawn(Proposal(named_occasion.id), Size(1))
+    size_occasion = w.spawn(Size(9))
+    w.spawn(Proposal(size_occasion.id), Named("payload"))
+    arbitrate(w, Named)
+    arbitrate(w, Named)
+    assert not w.alive(named_occasion)        # resolved
+    assert w.alive(size_occasion)             # never looked at
 
 
 def test_vocabulary_is_only_ever_added_to(w):

@@ -207,13 +207,73 @@ class Proposal:
     worked out in): shared here because two domains cannot recognize
     or skip each other's unresolved candidates without agreeing what
     the tag means, the same reason `Said`/`Reply` are here and not in
-    a domain's own module. The ARBITER that resolves a `Proposal` --
-    which one wins, on what grounds -- is deliberately not: that is
-    behavior, decided by whatever a domain's own conflict actually
-    calls for, not a reader this package ships (see
-    `DECISION_PATTERNS.md`)."""
+    a domain's own module.
+
+    WHICH proposal should win, beyond "first," and what to do about an
+    occasion nobody answered, are still not this package's business --
+    that is behavior, decided by whatever a domain's own conflict
+    actually calls for (see `DECISION_PATTERNS.md`). What IS shared,
+    below (`arbitrate`), is narrower and structural: the one mechanism
+    that tells any caller WHEN "nobody has proposed yet" is safe to
+    read as "nobody ever will" -- a question a single domain's own
+    ordered rule list answers for free (see `harneskills.examples.fs`'s
+    `arbitrate_parse`, which needs none of this) but that has no answer
+    at all once a SECOND, independently-installed domain can propose
+    against the same occasion (see `harneskills.help`)."""
 
     occasion: int
+
+
+@dataclasses.dataclass(frozen=True)
+class _Ripe:
+    """Private to `arbitrate`, below -- marks an occasion as having
+    survived one full tick since it was first noticed. No responder
+    ever reads or writes this; it is `arbitrate`'s own bookkeeping,
+    not part of the `Proposal` vocabulary a domain writes against."""
+
+
+def arbitrate(w, occasion_type) -> "list":
+    """Resolve every `occasion_type` entity that has a `Proposal`
+    naming it: the first one registered wins, every other candidate is
+    destroyed, the winner's `Proposal` is detached (real now), and the
+    occasion itself is destroyed. Returns the `(entity, component)`
+    pairs for occasions that got NO candidate -- a caller may say
+    something about one, or say nothing; both are legitimate, and
+    neither is this function's call to make.
+
+    An occasion is never resolved on the tick it is (re)noticed --
+    it is tagged `_Ripe` first and only checked for candidates the
+    NEXT time this runs. `Loop.tick` calls every registered rule once
+    a tick regardless of priority, so by an occasion's second sighting
+    every rule that watches `occasion_type` -- at any priority, from
+    any domain, installed in any order, known to this function or
+    not -- has already had its one turn. That is the whole of what
+    this buys over resolving on first sight: a single domain's own
+    ordered rule list already guarantees "everyone proposed" for free
+    (`harneskills.examples.fs.arbitrate_parse` needs none of this and
+    does not call it), and gains nothing from the extra tick. This
+    exists for the case that guarantee cannot reach: occasion and
+    arbiter in one domain's `install()`, a responder registered by a
+    SECOND domain's `install()` that neither one has any ordering
+    relationship with at all (`harneskills.help.arbitrate_help`, the
+    first caller).
+    """
+    unanswered = []
+    for occasion, component, _ripe in w.each(occasion_type, _Ripe):
+        candidates = [entity for entity, proposal in w.each(Proposal)
+                     if proposal.occasion == occasion.id]
+        if not candidates:
+            unanswered.append((occasion, component))
+            w.destroy(occasion)
+            continue
+        winner, *losers = candidates
+        for loser in losers:
+            w.destroy(loser)
+        w.detach(winner, Proposal)
+        w.destroy(occasion)
+    for occasion, _component in w.each(occasion_type, without=_Ripe):
+        w.attach(occasion, _Ripe())
+    return unanswered
 
 
 def _lower(value: Any, where: str) -> Any:

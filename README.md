@@ -93,6 +93,43 @@ lives on disk.
 
 ## History
 
+**`arbitrate`, a shared chokepoint, 2026-08-29 (night).** A function,
+not a component -- `arbitrate(w, occasion_type)` resolves every
+ripe occasion of that type against its `Proposal`s, first-registered
+wins, and reports the ones nobody answered. It exists beside `Proposal`
+for the same reason `Proposal` is here at all: `harneskills.help` needed
+two INDEPENDENTLY-INSTALLED domains (`harneskills.examples.fs`,
+`pystrider`) to both propose against one occasion, and "has everyone
+proposed yet" has no free answer once that is true -- a single domain's
+own ordered rule list answers it for nothing (see
+`harneskills.examples.fs.arbitrate_parse`, which calls none of this),
+but two domains that do not know about each other's registration order
+cannot.
+
+The mechanism: an occasion is never resolved on the tick it is
+(re)noticed. `arbitrate` tags it `_Ripe` (private, this function's own
+bookkeeping) and only checks candidates on a SECOND sighting -- every
+registered rule runs exactly once a tick regardless of priority, so by
+then every proposer that was ever going to see it, at any priority,
+from any domain, already has. That is a STRUCTURAL guarantee, not a
+convention two domain authors have to independently get right (a
+priority number picked to run "late enough" is exactly such a
+convention, and silently wrong the day someone picks a lower one).
+
+⚠ `arbitrate_parse` was NOT switched to call this -- it does not need
+the chokepoint (its own proposers are single-domain, registration-
+ordered, hand-verified in the harneskills PR that added this), and
+switching it would cost every typed `fs` command an extra tick to
+resolve for a safety property it does not need. `DECISION_PATTERNS.md`'s
+"grow it only at the rule that actually collides" argument applies to
+`arbitrate_parse` staying as it is, exactly as much as it applied to
+building `arbitrate` at all once a second, real collision showed up.
+
+4 new tests in `tests/test_world.py`: no resolution on first sighting,
+first-registered-wins on the second, an unanswered occasion reported
+only once ripe (read before destroyed, not after), and two different
+occasion types never interfering with each other. 96 -> 100 passing.
+
 **Proposal, a shared tag, 2026-08-29 (evening).** `Proposal` (one field,
 `occasion: int`) joins `Said`/`Reply` as the third component this
 package ships. It moved here from `harneskills.examples.model`, where
