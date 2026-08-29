@@ -55,11 +55,20 @@ for e, r in loop.world.each(Reply):
 
 **No domain, no channel, no transport.** `world.py`, `loop.py`,
 `engine.py` and `save.py` ship no rules, no components
-beyond `Said` and `Reply` (the shapes `Engine.drain` and `Engine._do`
-route by), and no knowledge of files, sockets, or terminals. `Engine`
-wants anything with `.name`, `.deliver(message)`, and optionally
-`.start(engine)` / `.close()` — no base class, no import required to be
-one.
+beyond `Said`, `Reply`, and `Proposal` (the shapes `Engine.drain`,
+`Engine._do`, and propose/arbitrate route by), and no knowledge of
+files, sockets, or terminals. `Engine` wants anything with `.name`,
+`.deliver(message)`, and optionally `.start(engine)` / `.close()` — no
+base class, no import required to be one.
+
+`Proposal` is here for the same reason `Said`/`Reply` are: a domain
+cannot skip another domain's unresolved candidate, or recognize its
+own, without agreeing on what the tag means — that agreement has to
+live somewhere neither domain owns. What is deliberately NOT here is
+the arbiter — which candidate wins, and on what grounds. That stays
+exactly where `harneskills.examples.fs`'s `arbitrate_parse` already
+puts it: in the domain whose actual conflict decides what "wins"
+means. See History, "Proposal, a shared tag."
 
 **And no vocabulary above entities and components either, any more.**
 This package used to also ship `facts.py`/`arbitration.py` — a
@@ -83,6 +92,39 @@ does not know `harneskills` exists, and does not know where its checkout
 lives on disk.
 
 ## History
+
+**Proposal, a shared tag, 2026-08-29 (evening).** `Proposal` (one field,
+`occasion: int`) joins `Said`/`Reply` as the third component this
+package ships. It moved here from `harneskills.examples.model`, where
+`docs/intake processing.md`'s propose/arbitrate/act shape was first
+worked out (`fs.py`'s `propose_*` rules and `arbitrate_parse`) — the
+TAG is core now, the same test `Said`/`Reply` already pass: no domain
+can act on, or correctly skip, a candidate it did not propose without
+agreeing what "not yet real" means, and that agreement cannot live
+inside the one domain that happened to need it first. `pystrider`,
+already named in that doc as the next domain expected to use this
+shape, is why the question came up at all.
+
+What did NOT move: the arbiter. "First proposal wins," or whatever a
+domain grows past it, stays exactly where `arbitrate_parse` already
+put it — this is not the generic reader `arbitration.py` tried to be
+and was deleted for being (below). The distinction is: nothing can
+interoperate without sharing what a `Proposal` MEANS, but two domains
+never need to share how one gets RESOLVED, because they never resolve
+each other's.
+
+`fs.py`'s own occasion type, `ParseRequest` — "one typed line, waiting
+for a reading" — stayed in `harneskills`, on purpose: it is fs's
+domain-specific payload for *its* occasions, not a shape any other
+domain's occasion need share.
+
+Applied here first, not in `harneskills` -- `harneskills` still
+depends on its own embedded, pre-extraction copy of this package
+(`./engine`, importable as `ugm`) rather than on this repo, so this
+change had to land in `harneskills`'s own checkout too, by hand, to
+take effect there; the two copies are not wired together yet. One
+new pin, `test_proposal_tags_a_candidate_against_any_occasion`,
+95 -> 96 passing.
 
 **loopingrules, 2026-08-29 (afternoon).** Carved out of `harneskills`'s
 `./engine` into this, its own repo, and renamed from `ugm` to
