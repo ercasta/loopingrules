@@ -70,6 +70,17 @@ exactly where `harneskills.examples.fs`'s `arbitrate_parse` already
 puts it: in the domain whose actual conflict decides what "wins"
 means. See History, "Proposal, a shared tag."
 
+**`help.py` is the one exception to "ships no rules," and it says so
+itself.** `world.py`/`loop.py`/`engine.py`/`save.py` still ship none,
+and that has not changed; `help.py` is installed opt-in, by any domain
+that wants `help`/`help TOPIC` answered, and by nothing automatically.
+It lives here rather than in a domain because it moved OUT of one:
+`pystrider` needed to answer `help python` alongside `harneskills.examples.fs`
+answering `help files`, and depending on `harneskills` — a specific
+harness, not the substrate every domain already depends on — was the
+wrong direction for a domain meant to be host-agnostic. See `help.py`'s
+own docstring and History, "help moves in."
+
 **And no vocabulary above entities and components either, any more.**
 This package used to also ship `facts.py`/`arbitration.py` — a
 `fact`/`state`/`deny` way of writing relations as components, and a
@@ -92,6 +103,36 @@ does not know `harneskills` exists, and does not know where its checkout
 lives on disk.
 
 ## History
+
+**`help` moves in, 2026-08-29 (later that night).** `HelpTopic`/
+`HelpAnswer`/`hear_help`/`propose_default`/`arbitrate_help`/
+`reply_help_answer` lived in `harneskills.help` for about a day, then
+moved here whole -- same names, same behavior, same tests, just a
+different package. The reason: `pystrider.domain.propose_help_python`
+had to import them from `harneskills.help`, and that made `pystrider`
+depend on a SPECIFIC harness rather than on the substrate under it,
+which a domain meant to be host-agnostic should never have to do.
+`loopingrules` is the one thing `harneskills.examples.fs` and
+`pystrider` both already depend on unconditionally; `harneskills`
+never was, for `pystrider`.
+
+This IS the one exception to "ships no rules" above, not a quiet
+redefinition of it: `help.py`'s four rules are the first behavior this
+package has ever installed. Nothing calls `help.install` automatically
+and nothing above it imports the module -- a domain that never
+mentions `help` never pays for it. No `common/` grouping either: this
+is the ONLY module of its kind here, and inventing a namespace for a
+second one that does not exist yet is exactly the speculative
+generality `DECISION_PATTERNS.md` already argues against.
+
+3 tests moved from `harneskills`'s own suite to `tests/test_help.py`
+here (the ones that never touched `fs`); the ones that DO --
+`fs` answering `help files` alongside this module -- stayed in
+`harneskills`, which is the only repo that can import both without
+help from `PYTHONPATH`. `pystrider`'s own `tests/test_domain_help.py`
+now needs only `PYTHONPATH=../loopingrules`, not `../harneskills` too --
+confirmed by actually running its suite with `harneskills` absent from
+the path entirely. 100 -> 103 passing here.
 
 **`arbitrate`, a shared chokepoint, 2026-08-29 (night).** A function,
 not a component -- `arbitrate(w, occasion_type)` resolves every
