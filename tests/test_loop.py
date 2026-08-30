@@ -279,6 +279,116 @@ def test_a_rule_watching_SEVERAL_kinds_still_fires_ONCE_per_tick(loop):
     assert len(calls) == 1, "one entry in self.rules, called once, full stop"
 
 
+# --- unique names: the engine now checks a convention that used to be a
+# habit ---------------------------------------------------------------
+
+
+def test_a_second_rule_with_the_same_explicit_name_is_refused(loop):
+    loop.rule(lambda w: None, name="dup")
+    with pytest.raises(ValueError):
+        loop.rule(lambda w: None, name="dup")
+    assert len(loop.rules) == 1
+
+
+def test_a_second_rule_with_the_same_inferred_name_is_refused(loop):
+    def flag_big(w):
+        pass
+
+    loop.rule(flag_big)
+    with pytest.raises(ValueError):
+        loop.rule(flag_big)
+    assert len(loop.rules) == 1
+
+
+def test_an_inferred_name_colliding_with_an_explicit_one_is_refused(loop):
+    loop.rule(lambda w: None, name="test_loop.flag_big")
+
+    with pytest.raises(ValueError):
+        @loop.rule
+        def flag_big(w):
+            pass
+
+    assert len(loop.rules) == 1
+
+
+# --- tracing: off by default, and rule-attributed when on --------------
+
+
+def test_tracing_is_off_by_default(loop):
+    @loop.rule
+    def make(w):
+        w.spawn(Step(1))
+
+    loop.tick()
+    assert loop.trace == []
+    assert loop.world.changes == []
+
+
+def test_tracing_attributes_writes_to_the_rule_that_made_them(loop):
+    loop.tracing = True
+
+    @loop.rule(name="make")
+    def make(w):
+        e = w.spawn(Step(1))
+        w.attach(e, Seen())
+
+    @loop.rule(name="idle")
+    def idle(w):
+        pass   # reads nothing, writes nothing -- no trace entry at all
+
+    loop.tick()
+    assert [entry.rule for entry in loop.trace] == ["make"]
+    entry = loop.trace[0]
+    assert entry.tick == 1
+    actions = [c.action for c in entry.changes]
+    assert actions == ["spawn", "attach", "attach"], "spawn(Step(1)) is a spawn plus its own attach"
+    assert entry.changes[-1].kind == "Seen"
+
+
+def test_tracing_tags_each_entry_with_its_own_tick(loop):
+    loop.tracing = True
+
+    @loop.rule
+    def chain(w):
+        for e, step in w.each(Step):
+            w.destroy(e)
+            if step.n < 2:
+                w.spawn(Step(step.n + 1))
+
+    loop.world.spawn(Step(0))
+    loop.run()
+    assert [entry.tick for entry in loop.trace] == [1, 2, 3]
+
+
+def test_a_raising_rule_still_traces_what_it_wrote_first(loop):
+    loop.tracing = True
+
+    @loop.rule(name="half")
+    def half(w):
+        w.spawn(Step(1))
+        raise ValueError("no")
+
+    loop.tick()
+    assert [entry.rule for entry in loop.trace] == ["half"]
+    assert loop.trace[0].changes[0].action == "spawn"
+    assert [name for name, _ in loop.errors] == ["half"]
+
+
+def test_turning_tracing_off_stops_new_entries_but_keeps_old_ones(loop):
+    loop.tracing = True
+
+    @loop.rule
+    def make(w):
+        w.spawn(Step(1))
+
+    loop.tick()
+    assert len(loop.trace) == 1
+    loop.tracing = False
+    loop.world.spawn(Step(2))          # a direct write, not through a rule
+    loop.tick()
+    assert len(loop.trace) == 1, "no new entry once tracing is off"
+
+
 def test_after_tick_runs_between_ticks_not_at_the_end(loop):
     seen = []
 

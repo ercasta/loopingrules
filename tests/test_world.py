@@ -5,7 +5,7 @@ import dataclasses
 
 import pytest
 
-from loopingrules.world import Proposal, Reply, Said, World, arbitrate
+from loopingrules.world import Change, Proposal, Reply, Said, World, arbitrate
 
 
 @dataclasses.dataclass(frozen=True)
@@ -350,3 +350,68 @@ def test_vocabulary_is_only_ever_added_to(w):
     w.learn("show", "file")
     w.learn("big")
     assert w.vocabulary == {"show", "file", "big"}
+
+
+# --- tracing: off by default, a flat log of writes when on -------------
+
+def test_no_changes_are_logged_while_tracing_is_off(w):
+    entity = w.spawn(Size(10))
+    w.attach(entity, Stale())
+    w.detach(entity, Stale)
+    w.destroy(entity)
+    assert w.changes == []
+
+
+def test_every_write_is_logged_once_tracing_is_on(w):
+    w.tracing = True
+    entity = w.spawn(Size(10))               # spawn, then attach
+    w.attach(entity, Named("a"))
+    w.replace(entity, Size(20))
+    w.remove(entity, Named("a"))
+    w.detach(entity, Size)
+    w.changed(entity)
+    w.destroy(entity)
+    assert [c.action for c in w.changes] == [
+        "spawn", "attach", "attach", "replace", "remove", "detach",
+        "changed", "destroy",
+    ]
+
+
+def test_attach_logs_the_component_and_its_kind(w):
+    w.tracing = True
+    entity = w.spawn()
+    w.attach(entity, Size(10))
+    change = w.changes[-1]
+    assert change == Change("attach", entity.id, "Size", Size(10))
+
+
+def test_an_attach_that_changes_nothing_is_not_logged(w):
+    entity = w.spawn(Size(17))
+    w.tracing = True
+    w.attach(entity, Size(17))               # already there -- a no-op
+    assert w.changes == []
+
+
+def test_detach_logs_one_change_per_value_it_took_off(w):
+    w.tracing = True
+    entity = w.spawn(Size(10))
+    w.attach(entity, Size(20))               # two Size values now
+    w.detach(entity, Size)
+    assert [c.component for c in w.changes if c.action == "detach"] == [
+        Size(10), Size(20),
+    ]
+
+
+def test_changed_with_no_entity_logs_a_sentinel(w):
+    w.tracing = True
+    w.changed()
+    assert w.changes[-1] == Change("changed", -1)
+
+
+def test_turning_tracing_off_stops_new_entries_but_keeps_old_ones(w):
+    w.tracing = True
+    w.spawn()
+    assert len(w.changes) == 1
+    w.tracing = False
+    w.spawn()
+    assert len(w.changes) == 1, "no new entry once tracing is off"

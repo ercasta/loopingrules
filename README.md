@@ -104,6 +104,43 @@ lives on disk.
 
 ## History
 
+**A rule's name is unique now, and can be traced, 2026-08-30.** Two
+changes, landed together because the second needed the first: `Loop.rule`
+raises `ValueError` if the name it is about to register — given or
+inferred (`module.function`) — is already taken on that loop, rather than
+silently letting a second rule answer to a name the first one already
+had; and `World` gained an opt-in write log (`World.tracing`,
+`World.changes`, one `Change` per `spawn`/`destroy`/`attach`/`detach`/
+`replace`/`remove`/`changed`) that `Loop.tick` drains around each rule's
+own turn into `Loop.trace` — a `TraceEntry(tick, rule, changes)` per rule
+per tick that wrote anything, tagged with the name that write is now
+guaranteed to be unique.
+
+Neither is new behavior a domain has to adopt: every rule this
+repository's own `help.py`, and every rule `harneskills`/`pystrider`
+register, already passes (or infers) a name that turns out to already be
+unique in practice — checked by grepping both sibling repos' own call
+sites before this landed, not asserted and hoped. The uniqueness check
+turns a convention that was previously only a habit (`"effects.%s" %
+name`, one per closure a factory hands back, done by hand to dodge a
+collision the engine never caught) into something the engine itself
+refuses to violate. Tracing is off by default in both `World` and
+`Loop` — a `Change` per write is an allocation nobody should pay for
+unasked — and, deliberately, goes no further than `Loop.trace` in this
+pass: no `Engine` wiring, no `/trace` command, no structured sink to
+write it to yet. That is the next step, on purpose left undone here
+rather than guessed at before there is a caller that actually wants to
+read the log somewhere specific.
+
+15 new tests (8 in `test_loop.py`, 7 in `test_world.py`): a duplicate
+explicit name refused, a duplicate inferred name refused, an inferred
+name colliding with an explicit one refused, tracing off by default (on
+`World` and on `Loop`), every write kind logged once tracing is on, a
+no-op attach logging nothing, `detach` logging one entry per value it
+actually removed (not one per kind), a raising rule still tracing
+whatever it wrote before it raised, and tracing toggled off mid-session
+stopping new entries without discarding old ones. 103 -> 118 passing.
+
 **`help` moves in, 2026-08-29 (later that night).** `HelpTopic`/
 `HelpAnswer`/`hear_help`/`propose_default`/`arbitrate_help`/
 `reply_help_answer` lived in `harneskills.help` for about a day, then

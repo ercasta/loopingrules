@@ -105,6 +105,16 @@ reference nothing here can serialize or compare by value.
 
 `world.entity(id)` is the other direction -- turn a raw id read out of a
 component field back into a handle, to `.get()`/`.attach()`/... on it.
+
+## A world can log its own writes, if asked
+
+`World.tracing`, off by default, and `World.changes`, a list of `Change`
+below: every `spawn`/`destroy`/`attach`/`detach`/`replace`/`remove`/
+`changed` appends one, while it is on. This module still does not know
+what a rule is, or which one is running -- `changes` is a flat log of
+WHAT happened, not WHO caused it; `loopingrules.loop.Loop` is what turns
+this into a trajectory, by draining it around each rule's own turn and
+tagging what it drained with that rule's name and the tick it ran on.
 """
 
 from __future__ import annotations
@@ -333,6 +343,35 @@ def _normalize(component: Any) -> Any:
     return fresh
 
 
+@dataclasses.dataclass(frozen=True)
+class Change:
+    """One write this world made -- `action` is `spawn`/`destroy`/`attach`/
+    `detach`/`replace`/`remove`/`changed`, `entity` the plain id, `kind`
+    the component type's `__name__` (`""` for `spawn`/`destroy`/`changed`,
+    which are not about one type), and `component` the value involved, when
+    there is one: the component `attach`/`replace`/`remove` stored or took
+    off, or the value `detach` removed (one `Change` per value, since an
+    entity may carry several of the type `detach` names). `None` for
+    `spawn`/`destroy`/`changed`. `entity` is `-1` for a `changed()` call
+    that named none -- `0` is never a real id (entities count up from `1`),
+    but `-1` says so without a reader having to know that.
+
+    Appended to `World.changes` only while `World.tracing` is on -- see
+    there for why this is off by default, and `Loop.trace` for the
+    rule/tick attribution this class deliberately does not carry: this is
+    `World`'s own record of what it did, not `Loop`'s vocabulary for who
+    was running when it happened. A component this repo does not already
+    own may not be JSON-shaped data (see `_lower`, above) -- `Change`
+    holds it anyway, as a live value, because it is never `attach()`-ed
+    and so never has to be.
+    """
+
+    action: str
+    entity: int
+    kind: str = ""
+    component: Any = None
+
+
 class World:
     """Entities, the components on them, and the queries rules ask."""
 
@@ -349,6 +388,16 @@ class World:
         # reads it to tell a rule that did something from one that did
         # not, which is the whole of how it knows the world has settled.
         self.revision = 0
+        # Off by default -- a `Change` appended per write costs an
+        # allocation neither `revision` nor a rule that never asks for a
+        # trace should have to pay. `Loop.tracing` is what a caller
+        # actually flips; this is the flag it flips, and `changes` is
+        # where the record lands, meant to be DRAINED by whatever
+        # attributes it to a rule (`Loop.tick`, see `loopingrules.loop`)
+        # rather than read in place -- a still-running rule's writes sit
+        # here until its turn ends.
+        self.tracing = False
+        self.changes: List[Change] = []
         # Words a domain expects a person to type. Only the prompt reads
         # this (to autocorrect); nothing here affects what a rule finds.
         self.vocabulary: set = set()
@@ -379,6 +428,8 @@ class World:
         entity = Entity(self, self._next)
         self._entities[entity.id] = entity
         self.revision += 1
+        if self.tracing:
+            self.changes.append(Change("spawn", entity.id))
         if components:
             self.attach(entity, *components)
         return entity
@@ -408,6 +459,8 @@ class World:
         for bucket in self._by_type.values():
             bucket.pop(entity_id, None)
         self.revision += 1
+        if self.tracing:
+            self.changes.append(Change("destroy", entity_id))
         return True
 
     def attach(self, entity, *components) -> Entity:
@@ -433,6 +486,8 @@ class World:
                 continue
             values.append(component)
             self.revision += 1
+            if self.tracing:
+                self.changes.append(Change("attach", entity_id, cls.__name__, component))
         return self._entities[entity_id]
 
     def replace(self, entity, *components) -> Entity:
@@ -458,6 +513,8 @@ class World:
                 continue
             bucket[entity_id] = [normalized]
             self.revision += 1
+            if self.tracing:
+                self.changes.append(Change("replace", entity_id, cls.__name__, normalized))
         return self._entities[entity_id]
 
     def detach(self, entity, *kinds) -> bool:
@@ -472,6 +529,9 @@ class World:
             if popped is not None:
                 self.revision += 1
                 gone = True
+                if self.tracing:
+                    for value in popped:
+                        self.changes.append(Change("detach", entity_id, kind.__name__, value))
         return gone
 
     def remove(self, entity, component) -> bool:
@@ -488,12 +548,17 @@ class World:
         if not values:
             del bucket[entity_id]
         self.revision += 1
+        if self.tracing:
+            self.changes.append(Change("remove", entity_id, cls.__name__, component))
         return True
 
     def changed(self, entity=None) -> None:
         """Something changed that no attach said -- an index a domain keeps
         by hand, mutated in place. See the ⚠ at the top of this module."""
         self.revision += 1
+        if self.tracing:
+            self.changes.append(Change("changed", self._id(entity)
+                                       if entity is not None else -1))
 
     def learn(self, *words) -> None:
         """Add words to what the prompt will pull a typo towards."""

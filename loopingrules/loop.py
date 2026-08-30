@@ -130,6 +130,31 @@ mutates something and then throws -- but the world still settles, and the
 person at the prompt gets both their prompt and the traceback's message,
 which is better than a REPL that dies on a typo in a domain nobody is
 editing right now.
+
+## A rule's own name is how a trajectory is told apart
+
+Every rule registered on a loop answers to a name, unique on THAT loop --
+given (`name=`) or inferred (`module.function`), `rule()` raises rather
+than let a second registration answer to a name already taken. This was
+always the convention every rule this harness's own domains register
+already followed by hand (`"effects.%s" % name`, one per closure a
+factory hands back); now the engine holds it, for a reason bigger than a
+tidy `/rules` listing: `tracing`, below, keys a session's whole
+trajectory by this name, and two rules sharing one would make "which
+rule did this" a question with no answer.
+
+## Tracing: which rule, which tick, what it touched
+
+`Loop(trace=True)`, or `loop.tracing = True` at any point after -- off by
+default, because a `TraceEntry` per firing rule is bookkeeping nobody
+should pay for unasked. While it is on, `tick()` drains whatever a rule
+wrote (`loopingrules.world.Change`, one per `spawn`/`destroy`/`attach`/
+`detach`/`replace`/`remove`/`changed`) into `self.trace` the instant that
+rule's own turn ends, tagged with its name and the tick it ran on --
+`world.py` logs WHAT happened with no notion of a rule at all; this is
+where WHO gets attached. `self.trace` only ever grows; a caller that
+wants to look at less of it clears or slices what it read, the same as
+`self.errors` already expects.
 """
 
 from __future__ import annotations
@@ -137,6 +162,13 @@ from __future__ import annotations
 import collections
 
 Settled = collections.namedtuple("Settled", "ticks hot")
+
+# One tick, one rule, everything that rule's own turn changed --
+# `changes` is a tuple of `loopingrules.world.Change`, drained off
+# `world.changes` the instant the rule returns, so it is captured
+# against the right rule even though `World` itself has no idea which
+# one was running. See `Loop.tick` and `Loop.tracing`.
+TraceEntry = collections.namedtuple("TraceEntry", "tick rule changes")
 
 
 def _name_of(fn) -> str:
@@ -153,7 +185,7 @@ def _name_of(fn) -> str:
 class Loop:
     """Rules, in order, over one world."""
 
-    def __init__(self, world=None, budget: int = 200) -> None:
+    def __init__(self, world=None, budget: int = 200, trace: bool = False) -> None:
         from .world import World
         self.world = World() if world is None else world
         self.budget = budget
@@ -161,6 +193,29 @@ class Loop:
         # (rule name, exception) for everything that blew up in the last
         # `run`. The caller drains it; the loop only ever appends.
         self.errors: "list[tuple[str, BaseException]]" = []
+        # `TraceEntry`s, one per rule per tick that changed something,
+        # while `tracing` is on -- see `tick()` and the `tracing`
+        # property, below. Off by default, for the same reason
+        # `World.tracing` is: nobody should pay for a trace they never
+        # asked for.
+        self.trace: "list[TraceEntry]" = []
+        self.tick_count = 0
+        self.tracing = trace
+
+    # -- tracing --------------------------------------------------------
+
+    @property
+    def tracing(self) -> bool:
+        """Whether a rule's own writes are being recorded against it in
+        `self.trace`. A thin proxy onto `World.tracing` -- `World` is
+        where the writes actually happen and so where the flag has to be
+        checked, but `Loop` is where a caller who thinks in rules, not
+        components, expects to find the switch."""
+        return self.world.tracing
+
+    @tracing.setter
+    def tracing(self, value: bool) -> None:
+        self.world.tracing = bool(value)
 
     # -- registering --------------------------------------------------
 
@@ -185,6 +240,20 @@ class Loop:
         `priority` orders the tick -- higher runs first, ties (the
         default, `0`, included) keep registration order -- see the module
         note on why this is a total order rather than a per-type one.
+
+        The name -- `name` if given, `module.function` (see `_name_of`)
+        otherwise -- must be unique on THIS loop: registering a second
+        rule under a name already taken raises `ValueError` rather than
+        silently shadowing the first entry in `self.rules`. This is not
+        new ceremony most call sites will ever feel -- every rule this
+        harness's own domains register already spells a qualified name
+        for exactly this reason (`"effects.%s" % name`, one per closure a
+        factory returns, would otherwise all answer to the SAME inferred
+        `effects.make`) -- it is the engine finally checking a
+        convention that used to only be a habit. It matters more now
+        than it used to: a rule's identity is also the key `tracing`
+        traces BY (see `tick()`), and two rules answering to one name
+        would make that trajectory ambiguous, not just `/rules`' listing.
         """
         if fn is None:
             return lambda f: self.rule(f, name=name, watches=watches,
@@ -193,7 +262,12 @@ class Loop:
             fn._loopingrules_watches = ((watches,) if isinstance(watches, type)
                                else tuple(watches))
         fn._loopingrules_priority = priority
-        self.rules.append((name or _name_of(fn), fn))
+        rule_name = name or _name_of(fn)
+        if any(existing == rule_name for existing, _ in self.rules):
+            raise ValueError(
+                "a rule named %r is already registered on this loop -- "
+                "give this one its own name=" % rule_name)
+        self.rules.append((rule_name, fn))
         return fn
 
     def install(self, fn, *args, **kwargs):
@@ -230,7 +304,24 @@ class Loop:
     def tick(self) -> "list[str]":
         """One pass over every rule, in tick order: call it, done. Returns
         the names of the ones that changed something, in the order they
-        ran."""
+        ran.
+
+        While `tracing` is on, each rule's own writes -- everything it
+        put on `world.changes` during its one turn -- are drained into
+        `self.trace` as a `TraceEntry(tick, rule, changes)` the moment
+        the rule returns (or raises -- see below), before the next rule
+        can add its own. That drain is what lets `World` log writes with
+        no idea which rule made them: `Loop` is the only thing that
+        knows both.
+
+        A rule that raises still has whatever it wrote BEFORE raising
+        drained and traced against it, same as any other rule -- the
+        module docstring's "whatever the rule already wrote before it
+        raised stands" is exactly as true of the trace as it is of the
+        world itself; only `errors`/`fired` bookkeeping, below, treats a
+        raise differently.
+        """
+        self.tick_count += 1
         fired = []
         for i in self._tick_order():
             name, fn = self.rules[i]
@@ -238,10 +329,17 @@ class Loop:
             if watches is not None and not self.world.populated(*watches):
                 continue    # dormant -- not even called, see the module note
             before = self.world.revision
+            raised = None
             try:
                 fn(self.world)
             except Exception as e:  # noqa: BLE001 -- see the module docstring
-                self._record(name, e)
+                raised = e
+            if self.world.tracing and self.world.changes:
+                self.trace.append(TraceEntry(self.tick_count, name,
+                                             tuple(self.world.changes)))
+                self.world.changes.clear()
+            if raised is not None:
+                self._record(name, raised)
                 continue
             if self.world.revision != before:
                 fired.append(name)
