@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 
 from loopingrules import save
-from loopingrules.world import World
+from loopingrules.world import World, transient
 
 
 @dataclasses.dataclass(frozen=True)
@@ -41,6 +41,12 @@ class Stale:
 @dataclasses.dataclass(frozen=True)
 class Odd:
     value: Any
+
+
+@transient
+@dataclasses.dataclass(frozen=True)
+class Scratch:
+    value: int
 
 
 def peopled():
@@ -229,6 +235,46 @@ def test_one_line_per_record_is_what_makes_it_JSONL():
     # two Entry, one Stale -- nothing nested inside another.
     assert records[0] == {"version": save.VERSION, "next": w._next}
     assert len(records) == 1 + 5
+
+
+# --- @transient: real data, but never written down ---------------------
+
+def test_dump_skips_every_transient_instance():
+    w, folder, _ = peopled()
+    w.attach(folder, Scratch(1))
+    w.attach(folder, Scratch(2))
+    records = save.dump(w)
+    assert not any(r.get("type", "").endswith(":Scratch") for r in records)
+    assert any(r.get("type", "").endswith(":Folder") for r in records)
+
+
+def test_a_component_left_after_filtering_still_writes_normally():
+    w, folder, _ = peopled()
+    w.attach(folder, Scratch(1))          # transient, alongside durable ones
+    back = roundtrip(w)
+    assert back.get(folder, Folder) == Folder("/tmp/notes")
+    assert back.get_all(folder, Scratch) == []
+
+
+def test_an_entity_whose_only_components_were_transient_does_not_survive():
+    w = World()
+    scratch_only = w.spawn(Scratch(1))
+    w.spawn(Odd("kept"))                   # something durable to compare against
+    back = roundtrip(w)
+    assert scratch_only.id not in [e.id for e in back.entities()]
+
+
+def test_a_genuinely_bare_entity_still_round_trips_as_bare():
+    # The case `test_an_entity_whose_only_components_were_transient...`
+    # above must NOT be confused with: an entity that never carried
+    # anything is real information ("this exists, nothing said about it
+    # yet"), not disposable scratch, so it keeps its `{"entity": id}`
+    # record even though `world.components()` returns `[]` for both.
+    w = World()
+    bare = w.spawn()
+    back = roundtrip(w)
+    assert bare.id in [e.id for e in back.entities()]
+    assert back.components(back.entity(bare.id)) == []
 
 
 def test_a_type_that_names_a_NON_CLASS_is_a_problem_not_a_crash():

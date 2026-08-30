@@ -54,6 +54,17 @@ over the restored one so that the clock and the working directory are this
 process's, while every folder and entry it had already learned stays
 exactly where it was.
 
+Also not saved: any component whose class was marked `@transient` (see
+`loopingrules.world`) -- skipped instance by instance, the same as a rule.
+An entity whose ONLY components were transient is skipped too, entirely,
+rather than written back as bare -- a bare `{"entity": id}` record means
+"this entity is real but carries nothing YET", which is not what "every
+component it had was disposable" means. An entity that already had zero
+components before dump ever ran still gets its bare record, same as
+always; the two cases look identical from `world.components(entity)`
+returning `[]` either way, and this module tells them apart before that
+point, not after.
+
 ## Version 2, deliberately not silent about it
 
 Version 1 was one JSON document holding a nested tree; this is one JSON
@@ -68,6 +79,8 @@ from __future__ import annotations
 
 import json
 import os
+
+from .world import is_transient
 
 VERSION = 2
 
@@ -118,7 +131,12 @@ def dump(world) -> "list[dict]":
         if not components:
             records.append({"entity": entity.id})
             continue
-        for component in components:
+        durable = [c for c in components if not is_transient(type(c))]
+        if not durable:
+            # Everything it carried was marked disposable -- not the same
+            # as never having carried anything, so no bare record either.
+            continue
+        for component in durable:
             kind = type(component)
             fields = {}
             for f in component.__dataclass_fields__:

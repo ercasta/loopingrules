@@ -106,6 +106,25 @@ reference nothing here can serialize or compare by value.
 `world.entity(id)` is the other direction -- turn a raw id read out of a
 component field back into a handle, to `.get()`/`.attach()`/... on it.
 
+## A component may be marked TRANSIENT, and skip disk entirely
+
+`@transient` (below) stamps a component class as disposable: `attach`/
+`get`/`each`/... never treat it differently, but `loopingrules.save.dump()`
+skips every instance of it, and `World.purge_transient()` drops them all on
+demand. This is the answer to a question `Entity`, above, raises but does
+not settle: a component may hold another entity's plain id, but an id is
+only ever good within ONE world's lifetime -- a restored world keeps every
+id it had, but a domain that forgets and rereads something (a changed
+file, say) mints brand-new ids for it, same as thinking about a rewritten
+version of something never intake()'d at all mints ids nothing durable
+should have pointed at in the first place. A component durable enough to
+survive either of those refers to another thing by a STABLE KEY the domain
+defines instead (a path, a qualified name, a span -- whatever "the same
+thing, again" means there), resolved to a live id only where the actual
+work happens. `@transient` is where that resolved id, and anything spawned
+on top of it while doing that work, is allowed to live -- see `transient`'s
+own docstring for the fuller argument.
+
 ## A world can log its own writes, if asked
 
 `World.tracing`, off by default, and `World.changes`, a list of `Change`
@@ -183,6 +202,50 @@ class Entity:
     @property
     def alive(self) -> bool:
         return self.world.alive(self)
+
+
+def transient(cls):
+    """Mark a component class TRANSIENT: real data, attachable and
+    queryable exactly like any other component -- `attach`/`get`/`each`/...
+    don't know or care -- but disposable, and known to be so. Two things
+    read the marker: `loopingrules.save.dump()` skips every instance of a
+    transient kind, and `World.purge_transient()` (below) drops them all on
+    demand. Neither a component's fields nor its runtime behaviour changes;
+    only its lifetime promise does.
+
+    This is the floor a durable, stable-keyed fact eventually has to touch
+    to get anything done: a live entity id resolved from that key, and
+    whatever gets spawned on top of it while doing real work (a
+    graph-matching rule's intermediate finding, a generator's scratch
+    entity). None of that means the same thing across a restart, or across
+    whatever a domain's own "forget and reread" is -- `pystrider`'s
+    code-derived entities are the motivating case: the ids from one
+    `intake()` are not the ids from the next, so nothing durable may hold
+    one, and this is where that line is actually drawn, in code a domain
+    writes once rather than a discipline every call site has to remember.
+
+    A decorator, not a base class -- consistent with a component having no
+    base class to inherit at all (see the module docstring). It stamps one
+    class attribute and returns the class unchanged otherwise::
+
+        @transient
+        @dataclasses.dataclass(frozen=True)
+        class Iteration:
+            item: int
+            sequence: int
+            does: int
+    """
+    cls._transient = True
+    return cls
+
+
+def is_transient(kind) -> bool:
+    """Whether `kind` (a component class) was marked `@transient`, above.
+    `False` for anything that was not -- including a plain class that
+    happens to define its own unrelated `_transient` attribute, the same
+    risk any convention-based marker takes; no component in this codebase
+    does that today."""
+    return bool(getattr(kind, "_transient", False))
 
 
 @dataclasses.dataclass(frozen=True)
@@ -613,6 +676,34 @@ class World:
         if self.tracing:
             self.changes.append(Change("remove", entity_id, cls.__name__, component))
         return True
+
+    def purge_transient(self) -> int:
+        """Detach every component of every `@transient`-marked kind,
+        everywhere in the world. Returns how many component INSTANCES were
+        dropped -- `0` if nothing marked transient was ever attached.
+
+        The cheap half of "forget": nothing here asks which entities,
+        because a transient kind's whole bucket goes at once, not a
+        per-entity walk. What this does NOT do is any domain's own idea of
+        "forget everything about this file/session/whatever" -- that is a
+        stable-key-driven sweep a domain writes itself (only it knows which
+        DURABLE facts a forget should take down too); this only ever drops
+        what was already marked disposable, and leaves every entity itself
+        standing even if this was the only kind of component it carried.
+        """
+        dropped = 0
+        for kind, bucket in list(self._by_type.items()):
+            if not bucket or not is_transient(kind):
+                continue
+            for entity_id, values in bucket.items():
+                dropped += len(values)
+                if self.tracing:
+                    for value in values:
+                        self.changes.append(
+                            Change("detach", entity_id, kind.__name__, value))
+            bucket.clear()
+            self.revision += 1
+        return dropped
 
     def changed(self, entity=None) -> None:
         """Something changed that no attach said -- an index a domain keeps

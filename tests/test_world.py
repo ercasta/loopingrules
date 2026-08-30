@@ -6,7 +6,8 @@ import dataclasses
 import pytest
 
 from loopingrules.world import (Change, Proposal, Reply, Said, World,
-                                arbitrate, census, propose, reply)
+                                arbitrate, census, is_transient, propose,
+                                reply, transient)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -27,6 +28,16 @@ class Stale:
 @dataclasses.dataclass(frozen=True)
 class Big:
     pass
+
+
+@transient
+@dataclasses.dataclass(frozen=True)
+class Scratch:
+    """A resolved, working-set value -- the kind `@transient` exists for:
+    fine to query mid-tick, gone the moment anyone asks to persist or
+    purge."""
+
+    value: int
 
 
 @pytest.fixture
@@ -489,3 +500,50 @@ def test_turning_tracing_off_stops_new_entries_but_keeps_old_ones(w):
     w.tracing = False
     w.spawn()
     assert len(w.changes) == 1, "no new entry once tracing is off"
+
+
+# --- @transient: marked, not treated differently, by anything here -----
+
+def test_transient_marks_the_class_not_the_instance(w):
+    assert is_transient(Scratch) is True
+    assert is_transient(Named) is False
+
+
+def test_a_transient_component_is_ordinary_to_attach_and_query(w):
+    # The whole point: nothing about spawn/attach/get/each knows or cares.
+    entity = w.spawn(Named("a"), Scratch(1))
+    assert w.get(entity, Scratch) == Scratch(1)
+    assert [e for e, _ in w.each(Scratch)] == [entity]
+
+
+def test_purge_transient_drops_only_marked_kinds_everywhere(w):
+    entity = w.spawn(Named("a"), Scratch(1))
+    w.attach(entity, Scratch(2))               # two Scratch on one entity
+    other = w.spawn(Scratch(3))                 # and one more elsewhere
+    dropped = w.purge_transient()
+    assert dropped == 3
+    assert w.get_all(entity, Scratch) == []
+    assert w.get(entity, Named) == Named("a")   # durable component untouched
+    assert other.alive and w.get_all(other, Scratch) == []
+    assert w.purge_transient() == 0, "nothing left to drop"
+
+
+def test_purge_transient_leaves_the_entity_standing(w):
+    # Dropping every component of a kind is not the same as destroying
+    # what carried it -- an entity that becomes componentless this way is
+    # still alive, just bare, same as `w.spawn()` on its own.
+    only_scratch = w.spawn(Scratch(1))
+    w.purge_transient()
+    assert only_scratch.alive
+    assert w.components(only_scratch) == []
+
+
+def test_purge_transient_moves_the_revision_only_if_it_dropped_something(w):
+    w.spawn(Named("a"))
+    before = w.revision
+    assert w.purge_transient() == 0
+    assert w.revision == before
+    w.spawn(Scratch(1))
+    before = w.revision
+    w.purge_transient()
+    assert w.revision == before + 1
