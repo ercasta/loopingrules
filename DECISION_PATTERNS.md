@@ -143,6 +143,41 @@ asserts an ordinary fact and some unrelated rule answers it; `commit` needs no c
 because unblocking is "the guard read false, now it reads true," the same as every rule, always.
 The `Pending` verdict argued for below was not built, for the same reason.
 
+## 2026-08-30 — not built: chart parsing, where the winner is a whole interpretation
+
+Everything above (`arbitrate`, `census`) resolves ONE occasion at a time:
+either exactly one candidate wins outright, or every candidate stands,
+independently, side by side. Neither shape fits a sentence like *"there
+are two loops in function `a`. Delete the first one."* — "the first one"
+is not a fact any single rule can propose on its own. It is the OUTCOME
+of composing several: which loops exist in `a` (a per-loop `Iteration`
+recognizer), what order they come in (an ordering over `Span`, see
+`pystrider/spans.py`), and which one "the first" — a phrase in THIS
+sentence — resolves to, given that ordering. No one candidate is "the
+first loop"; only holding all three together is.
+
+That is chart parsing's own shape (Earley/CYK, the classical technique
+this is named for): a constituent is a claim about a SPAN, and a bigger
+constituent is built by COMBINING smaller ones over adjacent or nested
+spans — never generated whole by one rule in one step. Ported into this
+package's vocabulary: `Proposal(occasion)` today claims "one candidate
+resolves this one occasion"; chart parsing additionally needs a claim of
+"these several already-resolved occasions combine into one bigger one" —
+so what `arbitrate`/`census` hand back as "the winner" is sometimes not a
+leaf proposal at all, but a whole assembled tree of them.
+
+Genuinely not designed past this note — flagged as a real gap, not a
+nice-to-have, because a request shaped like the example above is
+ordinary, not an edge case, for any domain (`pystrider` first) that
+means to understand what a person actually asked for and not just
+recognize isolated facts about one thing at a time. Open: whether this
+wants a THIRD verb alongside `arbitrate`/`census` (a `compose`, say), or
+whether it falls out of `census` plus a domain-authored rule that reads
+several already-censused results and proposes a NEW, larger occasion
+spanning them — the second reuses everything that already exists and
+costs nothing new here, so it is the version to try first if anyone
+picks this up.
+
 ⚠ **Still open.**
 - Does a `ranked` judge ever legitimately need to see *why* something was `ruled_out` (not just that it
   was), or is the boundary between the two total?
