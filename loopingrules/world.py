@@ -236,10 +236,67 @@ class Proposal:
 
 @dataclasses.dataclass(frozen=True)
 class _Ripe:
-    """Private to `arbitrate`, below -- marks an occasion as having
-    survived one full tick since it was first noticed. No responder
-    ever reads or writes this; it is `arbitrate`'s own bookkeeping,
-    not part of the `Proposal` vocabulary a domain writes against."""
+    """Private to `arbitrate`/`census`, below -- marks an occasion as
+    having survived one full tick since it was first noticed. No
+    responder ever reads or writes this; it is this module's own
+    bookkeeping, not part of the `Proposal` vocabulary a domain writes
+    against."""
+
+
+def propose(w, occasion, *components) -> Entity:
+    """`w.spawn(Proposal(occasion), *components)` -- the one line every
+    `propose_*` rule already writes by hand, named for the verb it
+    performs. `occasion` may be the live entity or its plain id, same
+    as any other reference a component field accepts -- there is no
+    `.id` to remember here, only the shape: the occasion first, then
+    whatever component(s) would make this candidate real if it wins
+    (`arbitrate`) or count (`census`)."""
+    return w.spawn(Proposal(occasion), *components)
+
+
+def reply(w, text: str, channel: str = "user") -> Entity:
+    """`w.spawn(Reply(channel, text))` -- broadcast (`"user"`, every
+    channel -- see `loopingrules.engine`'s own `BROADCAST`) unless told
+    otherwise. The one line most domains already hand-write their own
+    `_say`/`_reply` helper for."""
+    return w.spawn(Reply(channel, text))
+
+
+def _resolved(w, occasion_type) -> "list":
+    """Shared by `arbitrate` and `census`, below: every `occasion_type`
+    entity ripe enough to check THIS call -- `(occasion, component,
+    candidates)`, `candidates` the (possibly empty) list of entities
+    carrying a `Proposal` naming it -- plus the `_Ripe` tagging itself.
+    An occasion is never resolved the tick it is (re)noticed: it is
+    tagged here first and only returned the NEXT time this runs.
+    `Loop.tick` calls every registered rule once a tick regardless of
+    priority, so by an occasion's second sighting every rule that
+    watches `occasion_type` -- at any priority, from any domain,
+    installed in any order, known to this function or not -- has
+    already had its one turn. That is the whole of what this buys over
+    resolving on first sight: a single domain's own ordered rule list
+    already guarantees "everyone proposed" for free
+    (`harneskills.examples.fs.arbitrate_parse` needs none of this and
+    does not call it), and gains nothing from the extra tick. This
+    exists for the case that guarantee cannot reach: occasion and
+    resolver in one domain's `install()`, a responder registered by a
+    SECOND domain's `install()` that neither one has any ordering
+    relationship with at all (`loopingrules.help.arbitrate_help`, the
+    first caller).
+
+    What `arbitrate` and `census` do NOT share is what counts as a
+    correct outcome once resolved -- one winner versus every candidate
+    -- which is exactly why this returns the raw candidates rather than
+    deciding anything about them itself.
+    """
+    resolved = []
+    for occasion, component, _ripe in w.each(occasion_type, _Ripe):
+        candidates = [entity for entity, proposal in w.each(Proposal)
+                     if proposal.occasion == occasion.id]
+        resolved.append((occasion, component, candidates))
+    for occasion, _component in w.each(occasion_type, without=_Ripe):
+        w.attach(occasion, _Ripe())
+    return resolved
 
 
 def arbitrate(w, occasion_type) -> "list":
@@ -249,29 +306,11 @@ def arbitrate(w, occasion_type) -> "list":
     occasion itself is destroyed. Returns the `(entity, component)`
     pairs for occasions that got NO candidate -- a caller may say
     something about one, or say nothing; both are legitimate, and
-    neither is this function's call to make.
-
-    An occasion is never resolved on the tick it is (re)noticed --
-    it is tagged `_Ripe` first and only checked for candidates the
-    NEXT time this runs. `Loop.tick` calls every registered rule once
-    a tick regardless of priority, so by an occasion's second sighting
-    every rule that watches `occasion_type` -- at any priority, from
-    any domain, installed in any order, known to this function or
-    not -- has already had its one turn. That is the whole of what
-    this buys over resolving on first sight: a single domain's own
-    ordered rule list already guarantees "everyone proposed" for free
-    (`harneskills.examples.fs.arbitrate_parse` needs none of this and
-    does not call it), and gains nothing from the extra tick. This
-    exists for the case that guarantee cannot reach: occasion and
-    arbiter in one domain's `install()`, a responder registered by a
-    SECOND domain's `install()` that neither one has any ordering
-    relationship with at all (`harneskills.help.arbitrate_help`, the
-    first caller).
+    neither is this function's call to make. See `_resolved`, above,
+    for the two-sighting mechanism this and `census` share.
     """
     unanswered = []
-    for occasion, component, _ripe in w.each(occasion_type, _Ripe):
-        candidates = [entity for entity, proposal in w.each(Proposal)
-                     if proposal.occasion == occasion.id]
+    for occasion, component, candidates in _resolved(w, occasion_type):
         if not candidates:
             unanswered.append((occasion, component))
             w.destroy(occasion)
@@ -281,9 +320,32 @@ def arbitrate(w, occasion_type) -> "list":
             w.destroy(loser)
         w.detach(winner, Proposal)
         w.destroy(occasion)
-    for occasion, _component in w.each(occasion_type, without=_Ripe):
-        w.attach(occasion, _Ripe())
     return unanswered
+
+
+def census(w, occasion_type) -> "list":
+    """Resolve every `occasion_type` entity that is ripe, the same way
+    `arbitrate` does -- but there is no winner here, because a census
+    has no rivalry to judge: EVERY candidate counts. Each keeps
+    whatever it carries beyond `Proposal` (now detached, so it reads as
+    real); none are destroyed for losing, because none lost. The
+    occasion itself is still destroyed, once read.
+
+    Returns `(entity, component, candidates)` for every occasion
+    resolved this call -- `candidates` the (possibly empty) list of
+    entities that proposed against it. An occasion nobody answered is
+    NOT a special case the way `arbitrate`'s `unanswered` is: a census
+    with nothing to report IS the report, and it is the caller's to
+    read (and destroy, once it has) like any other resolved occasion,
+    not this function's to flag as a failure.
+    """
+    resolved = []
+    for occasion, component, candidates in _resolved(w, occasion_type):
+        for candidate in candidates:
+            w.detach(candidate, Proposal)
+        resolved.append((occasion, component, candidates))
+        w.destroy(occasion)
+    return resolved
 
 
 def _lower(value: Any, where: str) -> Any:

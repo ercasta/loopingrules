@@ -11,8 +11,8 @@ inside one.
 never will -- see this package's own README, "Scope." This module is
 different, on purpose, and the difference is worth being honest about
 rather than quietly stretching "no domain" to cover it: `hear_help`,
-`propose_default`, `arbitrate_help` and `reply_help_answer`, below, ARE
-installed behavior, the first this package has ever shipped.
+`open_census`, `close_census`, `arbitrate_help` and `reply_help_answer`,
+below, ARE installed behavior, the first this package has ever shipped.
 
 It is here anyway, briefly: it lived in `harneskills.help` first, and
 moved after `pystrider.domain` had to import it from there to answer
@@ -33,24 +33,24 @@ calls its `install` automatically, and a domain that never mentions
 one instance of that pattern this package carries -- not a `common/`
 grouping for a SECOND one that does not exist yet.
 
-## The shape
+## The shape, for `help TOPIC`
 
-`HelpTopic(topic)` is the occasion -- "" for a bare `help`, the rest of
-the line otherwise. `hear_help` is the only rule that ever spawns one,
-at HIGH priority, so a "help ..." line becomes a `HelpTopic` before any
-OTHER domain's own `hear` gets a look at the same `Said` and tries to
-make it mean something else (`fs.hear` wraps EVERY `Said` regardless of
-content; without this ordering, a "help files" line would cost `fs` a
+`HelpTopic(topic)` is the occasion -- never `""` by the time
+`arbitrate_help`/`reply_help_answer` see one, see below -- and
+`hear_help` is the only rule that ever spawns one, at HIGH priority, so
+a "help ..." line becomes a `HelpTopic` before any OTHER domain's own
+`hear` gets a look at the same `Said` and tries to make it mean
+something else (`fs.hear` wraps EVERY `Said` regardless of content;
+without this ordering, a "help files" line would cost `fs` a
 spawned-and-immediately-discarded `ParseRequest` on the way to the
 right answer, not just an ugly trace).
 
-A responder -- `propose_default` below, `fs.propose_help_files`,
-`pystrider.propose_help_python` -- is `for occasion, topic in
-w.each(HelpTopic): if I recognize topic.topic: w.spawn(Proposal(occasion.id),
-HelpAnswer(...))`. `arbitrate_help` is the arbiter, "first proposal
-wins" -- the SAME trivial rule `fs.arbitrate_parse` already is, because
-these topics are disjoint strings and there has never been real
-rivalry to judge.
+A responder -- `fs.propose_help_files`, `pystrider.propose_help_python`
+-- is `for occasion, topic in w.each(HelpTopic): if I recognize
+topic.topic: propose(w, occasion, HelpAnswer(...))`. `arbitrate_help`
+is the arbiter, "first proposal wins" -- the SAME trivial rule
+`fs.arbitrate_parse` already is, because these topics are disjoint
+strings and there has never been real rivalry to judge.
 
 ## The chokepoint: when is "nobody answered" actually true?
 
@@ -79,21 +79,52 @@ below just calls it and decides what to SAY about an occasion nobody
 answered; `hear_help`'s HIGH priority is a different, narrower thing --
 see its own docstring -- and neither `arbitrate_help` nor
 `reply_help_answer` needs any priority at all, and neither carries one.
+
+## The shape, for a bare `help`: a census, not a contest
+
+A bare `help` used to get `propose_default`'s own hard-coded hint --
+`"try: help files, help python"` -- a string this module had no way of
+knowing was still true (a THIRD domain answering `help kelvinator`
+would never show up in it) or was still even valid (a domain dropped
+from the config would still be advertised). It named `fs`/`pystrider`
+by hand, which is exactly the dependency this module's own docstring,
+above, says a substrate should not have on one harness's specific
+domains.
+
+`HelpCommandCensus` replaces that hint with a live one. `open_census`
+claims a `HelpTopic("")` the instant it is seen -- the same way
+`hear_help` claims a `Said` -- destroys it, and spawns a fresh
+`HelpCommandCensus` in its place: a bare `help` never reaches
+`arbitrate_help` at all, so that rule's own `HelpTopic` handling never
+has to special-case an empty topic. Any domain that wants `help` to
+list it registers its own responder -- `propose_help_python` below is
+one, in `pystrider.domain`; `fs.propose_help_census_files` is another
+-- `for occasion, _c in w.each(HelpCommandCensus): propose(w, occasion,
+HelpTopicName("python"))`.
+
+This is `census`, in `world.py`, not `arbitrate`: there is no rivalry
+to pick a winner from, only an inventory to collect, so EVERY responder
+that proposed counts, not just the first. `close_census` reads what
+`census` resolved, sorts and joins the topic names it collected into
+one line, and says it -- or says that nobody has registered one, if
+`census` resolved with nothing. Either way this is the one place a
+`HelpCommandCensus` ever turns into a `Reply`: unlike `HelpTopic`,
+there is no `Proposal`/`arbitrate`/`HelpAnswer` leg to ride through
+first, because there is no winner to arbitrate.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .world import Proposal, Reply, Said, arbitrate
+from .world import Proposal, Said, arbitrate, census, propose, reply
 
 
 @dataclass(frozen=True)
 class HelpTopic:
-    """The occasion: someone typed `help`, or `help TOPIC`. `topic` is
-    `""` for a bare `help`, never `None` -- a responder that only cares
-    about one exact topic string never has to spell out two cases
-    where this component only ever carries one."""
+    """The occasion: someone typed `help TOPIC`. Never `""` -- see
+    `HelpCommandCensus` for what a bare `help` becomes instead, and
+    `hear_help` for where that split happens."""
 
     topic: str
 
@@ -107,8 +138,21 @@ class HelpAnswer:
     text: str
 
 
-def _say(w, text: str) -> None:
-    w.spawn(Reply("user", text))
+@dataclass(frozen=True)
+class HelpCommandCensus:
+    """The occasion a bare `help` becomes: not who WINS (nothing here
+    rivals anything else) but who wants to be LISTED. Any rule that
+    watches this and recognizes itself should `propose(w, occasion,
+    HelpTopicName(...))` -- see this module's own docstring, the
+    section on a bare `help`, for the whole shape."""
+
+
+@dataclass(frozen=True)
+class HelpTopicName:
+    """A census candidate's payload: "`help NAME` is mine to answer."
+    `close_census` is the only rule that ever reads this."""
+
+    name: str
 
 
 def hear_help(w) -> None:
@@ -131,22 +175,48 @@ def hear_help(w) -> None:
         w.spawn(HelpTopic(topic))
 
 
-def propose_default(w) -> None:
-    """The THIRD responder: a bare `help` belongs to no one domain, so
-    it is this module's own candidate, not a domain's. The only place
-    here that names another domain's topic, and only as a hint for a
-    person to type next -- not an import, and not something this
-    module checks."""
+def open_census(w) -> None:
+    """A bare `help` (`HelpTopic("")`) is not one domain's occasion to
+    answer -- see this module's own docstring -- so it is claimed here,
+    immediately, the same way `hear_help` claims a `Said`: destroyed
+    the instant it is seen, and replaced with a fresh
+    `HelpCommandCensus` for every domain that knows a topic to offer
+    instead.
+
+    `hear_help`'s HIGH priority already guarantees a `HelpTopic` this
+    rule sees was spawned earlier in the SAME tick, so a bare `help`
+    never survives to a second tick regardless of where in that tick
+    this rule happens to run relative to `arbitrate_help` -- neither
+    needs a priority of its own for that reason, and neither carries
+    one.
+    """
     for occasion, topic in w.each(HelpTopic):
         if topic.topic == "":
-            w.spawn(Proposal(occasion.id),
-                   HelpAnswer("try: help files, help python"))
+            w.destroy(occasion)
+            w.spawn(HelpCommandCensus())
+
+
+def close_census(w) -> None:
+    """Once `census` (see `world.py`) says every domain that watches
+    `HelpCommandCensus` has had its turn, the topic names they offered
+    are sorted, joined, and said -- or, if nobody offered any, said as
+    that instead, not silently swallowed."""
+    for _occasion, _component, candidates in census(w, HelpCommandCensus):
+        names = sorted(w.get(c, HelpTopicName).name for c in candidates
+                       if w.has(c, HelpTopicName))
+        for candidate in candidates:
+            w.destroy(candidate)
+        if names:
+            reply(w, "try: " + ", ".join("help %s" % name for name in names))
+        else:
+            reply(w, "no help topics are registered")
 
 
 def arbitrate_help(w) -> None:
     """One winner per `HelpTopic`, via `arbitrate` (see `world.py`) --
     see this module's own docstring, "The chokepoint," for why this
     occasion needs that function and `fs.arbitrate_parse` does not.
+    Never sees a `""` topic -- `open_census` claims those first.
 
     A topic nobody answered is SAID, not swallowed: `hear_help` already
     claimed the line, so the engine's own generic "unheard" report --
@@ -155,7 +225,7 @@ def arbitrate_help(w) -> None:
     all, not a topic no one understood.
     """
     for occasion, topic in arbitrate(w, HelpTopic):
-        _say(w, "no help for %r" % topic.topic)
+        reply(w, "no help for %r" % topic.topic)
 
 
 def reply_help_answer(w) -> None:
@@ -165,24 +235,28 @@ def reply_help_answer(w) -> None:
     occasion."""
     for entity, answer in w.each(HelpAnswer, without=Proposal):
         w.destroy(entity)
-        _say(w, answer.text)
+        reply(w, answer.text)
 
 
-RULES = (hear_help, propose_default, arbitrate_help, reply_help_answer)
+RULES = (hear_help, open_census, close_census, arbitrate_help,
+         reply_help_answer)
 
 
 def install(loop) -> None:
-    """Register this module's four rules and the one word this domain
+    """Register this module's five rules and the one word this domain
     adds to what the prompt's autocorrect pulls a typo towards.
 
     Only `hear_help` needs a priority -- ahead of any other domain's
-    own `hear`, for the reason its own docstring gives. `arbitrate_help`
-    and `reply_help_answer` need none: `arbitrate` is what makes their
-    correctness independent of registration order, not where they sit
-    in this list or what priority they carry.
+    own `hear`, for the reason its own docstring gives. Every other
+    rule here needs none: `arbitrate`/`census` are what make
+    `arbitrate_help`/`close_census` correct independent of registration
+    order, and `open_census` only ever needs to run after `hear_help`
+    within the same tick, which `hear_help`'s own priority already
+    guarantees regardless of where in `RULES` `open_census` sits.
     """
     loop.rule(hear_help, priority=50, watches=(Said,))
-    loop.rule(propose_default, watches=(HelpTopic,))
+    loop.rule(open_census, watches=(HelpTopic,))
+    loop.rule(close_census, watches=(HelpCommandCensus,))
     loop.rule(arbitrate_help, watches=(HelpTopic,))
     loop.rule(reply_help_answer, watches=(HelpAnswer,))
     loop.world.learn("help")

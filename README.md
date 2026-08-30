@@ -70,6 +70,17 @@ exactly where `harneskills.examples.fs`'s `arbitrate_parse` already
 puts it: in the domain whose actual conflict decides what "wins"
 means. See History, "Proposal, a shared tag."
 
+`propose`/`reply` (the one-line spellings of `w.spawn(Proposal(occasion),
+...)` and `w.spawn(Reply(channel, text))`) and `arbitrate`/`census` (the
+two ways an occasion with several `Proposal`s against it can resolve —
+one winner, or every candidate) are the vocabulary that shape gets used
+WITH, not a domain's own rule. Nothing here decides what a rule does
+with a resolved occasion; `arbitrate` and `census` only agree on WHEN
+"everyone who could answer already has" is true — see `arbitrate`'s own
+docstring, and `loopingrules.help.close_census` for a caller that needs
+`census`'s "everyone counts" instead of `arbitrate`'s "one wins." See
+History, "arbitrate, a shared chokepoint" and "help gets a census."
+
 **`help.py` is the one exception to "ships no rules," and it says so
 itself.** `world.py`/`loop.py`/`engine.py`/`save.py` still ship none,
 and that has not changed; `help.py` is installed opt-in, by any domain
@@ -80,6 +91,12 @@ answering `help files`, and depending on `harneskills` — a specific
 harness, not the substrate every domain already depends on — was the
 wrong direction for a domain meant to be host-agnostic. See `help.py`'s
 own docstring and History, "help moves in."
+
+A bare `help` answers through `census`, not a hard-coded hint: any
+domain that wants to be listed registers its own responder against
+`HelpCommandCensus`, and `help.py` itself has no idea, at import time,
+which domains that will turn out to be. See History, "help gets a
+census."
 
 **And no vocabulary above entities and components either, any more.**
 This package used to also ship `facts.py`/`arbitration.py` — a
@@ -103,6 +120,53 @@ does not know `harneskills` exists, and does not know where its checkout
 lives on disk.
 
 ## History
+
+**`help` gets a census, and two helpers a rule no longer has to
+hand-write, 2026-08-30 (later).** A bare `help` used to answer with
+`propose_default`'s own hard-coded `"try: help files, help python"` --
+a string this module had no way of knowing was still complete (a
+THIRD domain would never appear in it) or still correct (a domain
+dropped from the config would still be advertised), and the one place
+`loopingrules.help` named specific domains by hand despite its own
+docstring arguing a substrate should not have to. `HelpCommandCensus`
+replaces it: `open_census` claims a bare `help` the instant `hear_help`
+spawns one -- the same claim-and-destroy `hear_help` already performs
+on `Said` -- and opens a fresh occasion any domain can answer with
+`HelpTopicName("python")`/`HelpTopicName("files")`/whatever it knows.
+`close_census` reads what came back, sorted and joined, or says nobody
+is registered if nothing did.
+
+That needed a mechanism `arbitrate` does not provide: `arbitrate` picks
+ONE winner and destroys the rest, correct for "who answers `help
+python`" (disjoint topics, no rivalry) but wrong for "which domains
+exist" (every answer is real, none are losers). `census`, in `world.py`,
+is `arbitrate`'s sibling -- same two-sighting mechanism (refactored into
+a shared `_resolved()` both now call, rather than duplicated), but every
+candidate survives and none are picked over another. Built the moment a
+SECOND real need for the "has everyone answered yet" question showed up
+with a different answer required once it had — the same reasoning that
+justified `arbitrate` itself over `arbitrate_parse`'s single-domain
+shortcut, applied a second time.
+
+Also added, beside `arbitrate`/`census`: `propose(w, occasion,
+*components)` and `reply(w, text, channel="user")`, the one-line
+spellings of `w.spawn(Proposal(occasion), ...)` and
+`w.spawn(Reply(channel, text))` every `propose_*` rule and every
+domain's own `_say`/`_reply` helper already hand-wrote. Deliberately
+RUNTIME helpers, not a factory that builds and registers a rule for
+you: they shorten what a rule's body already does without hiding
+`loop.rule`/`watches` from whoever needs a shape these two do not
+cover. `help.py` now uses both throughout, replacing its own local
+`_say`; `HelpAnswer`'s `Proposal`-riding leg is untouched -- `help
+TOPIC` still arbitrates exactly as before, only a bare `help` changed
+protocol.
+
+8 new tests in `tests/test_world.py` (`census` mirroring `arbitrate`'s
+own four, plus `propose`/`reply`); `tests/test_help.py`'s own bare-`help`
+test split in two (nobody registered, and two synthetic responders
+registered, sorted and joined) for a net one more. 118 -> 127 passing
+(`harneskills`/`pystrider` get their own responders and test updates in
+their own repos, not counted here — see their own commits).
 
 **A rule's name is unique now, and can be traced, 2026-08-30.** Two
 changes, landed together because the second needed the first: `Loop.rule`

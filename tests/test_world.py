@@ -5,7 +5,8 @@ import dataclasses
 
 import pytest
 
-from loopingrules.world import Change, Proposal, Reply, Said, World, arbitrate
+from loopingrules.world import (Change, Proposal, Reply, Said, World,
+                                arbitrate, census, propose, reply)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -344,6 +345,79 @@ def test_arbitrate_leaves_a_different_occasion_type_alone(w):
     arbitrate(w, Named)
     assert not w.alive(named_occasion)        # resolved
     assert w.alive(size_occasion)             # never looked at
+
+
+# --- census: everyone's answer counts, not just the first --------------
+
+def test_census_does_not_resolve_an_occasion_on_its_first_sighting(w):
+    occasion = w.spawn(Named("count me"))
+    w.spawn(Proposal(occasion.id), Size(1))
+    resolved = census(w, Named)
+    assert resolved == []
+    assert w.alive(occasion)
+    assert len(w.each(Proposal)) == 1
+
+
+def test_census_keeps_every_candidate_not_just_the_first(w):
+    occasion = w.spawn(Named("count me"))
+    first = w.spawn(Proposal(occasion.id), Size(1))
+    second = w.spawn(Proposal(occasion.id), Size(2))
+    census(w, Named)                          # first sighting: only tags ripe
+    [(resolved_occasion, named, candidates)] = census(w, Named)  # second: resolves
+    assert resolved_occasion == occasion and named == Named("count me")
+    assert not w.alive(occasion)               # the occasion is still spent
+    assert set(candidates) == {first, second}   # NEITHER candidate is a loser
+    assert w.alive(first) and w.alive(second)
+    assert not w.has(first, Proposal) and not w.has(second, Proposal)
+    assert {w.get(first, Size), w.get(second, Size)} == {Size(1), Size(2)}
+
+
+def test_census_resolves_with_an_empty_candidate_list_not_as_unanswered(w):
+    # Unlike `arbitrate`'s `unanswered`, a census nobody answered is not
+    # a failure this function flags -- it is still a resolution, just
+    # with nothing in it, for the caller to read as it likes.
+    occasion = w.spawn(Named("count me"))       # no Proposal at all
+    census(w, Named)
+    [(resolved_occasion, _named, candidates)] = census(w, Named)
+    assert resolved_occasion == occasion
+    assert candidates == []
+    assert not w.alive(occasion)
+
+
+def test_census_leaves_a_different_occasion_type_alone(w):
+    named_occasion = w.spawn(Named("mine"))
+    w.spawn(Proposal(named_occasion.id), Size(1))
+    size_occasion = w.spawn(Size(9))
+    w.spawn(Proposal(size_occasion.id), Named("payload"))
+    census(w, Named)
+    census(w, Named)
+    assert not w.alive(named_occasion)
+    assert w.alive(size_occasion)
+
+
+# --- propose / reply: the one-line spellings a rule already hand-writes -
+
+def test_propose_deposits_a_proposal_and_the_candidate_s_own_payload(w):
+    occasion = w.spawn(Named("decide me"))
+    candidate = propose(w, occasion, Size(4300))
+    assert w.get(candidate, Proposal) == Proposal(occasion.id)
+    assert w.get(candidate, Size) == Size(4300)
+
+
+def test_propose_accepts_a_plain_id_the_same_as_a_live_entity(w):
+    occasion = w.spawn(Named("decide me"))
+    candidate = propose(w, occasion.id, Size(1))
+    assert w.get(candidate, Proposal) == Proposal(occasion.id)
+
+
+def test_reply_broadcasts_to_user_by_default(w):
+    entity = reply(w, "hi")
+    assert w.get(entity, Reply) == Reply("user", "hi")
+
+
+def test_reply_can_be_addressed_to_one_channel(w):
+    entity = reply(w, "just for you", channel="term")
+    assert w.get(entity, Reply) == Reply("term", "just for you")
 
 
 def test_vocabulary_is_only_ever_added_to(w):
