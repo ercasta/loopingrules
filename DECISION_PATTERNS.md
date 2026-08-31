@@ -188,3 +188,21 @@ picks this up.
 - `ranked` scores default to `0` for an unranked eligible candidate, so an explicitly *negative* rank
   sorts below silence. Nothing has needed a negative rank yet; the day one does, that default is the
   thing to look at first.
+
+## 2026-08-31 — in parsing, nothing "wins"; interpretations fade out
+
+A pushback on the vocabulary above, prompted by re-reading the chart-parsing note. `winner(occasion,
+option)` names a decision a commit step makes, explicit and final — a contest with a declared outcome.
+Parsing doesn't work that way. A chart holds every interpretation that combines cleanly, in parallel,
+for as long as nothing needs to pick between them. A bad interpretation isn't ruled out by some judge
+weighing it against rivals; it just stops producing anything, because no further rule's antecedent is
+satisfied by it — it makes no meaning, so nothing downstream fires on it. It doesn't lose. It fades out.
+
+So "winning" may not be a fact about parsing itself at all — it's a fact some *domain* rule imposes when
+IT needs a single answer (`pystrider`'s "delete the first loop" needing exactly one referent for "the
+first," from the 2026-08-30 note above). Chart parsing's own contest-free default — an interpretation
+simply goes quiet for lack of anything to trigger — might be the right base case everywhere, with
+`winner`/`ruled_out` reserved for the occasions where a domain rule actually needs to force a pick.
+Not resolved — flagged so the open "third verb" question above (`compose`, or `census` plus a
+domain rule) isn't answered in the wrong vocabulary: composing interpretations and picking a winner
+among them look like they want to stay two different verbs, not one.
