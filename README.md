@@ -26,6 +26,9 @@ tests/
 DECISION_PATTERNS.md   a design note this package no longer ships the code
                           for -- see History, "Facts/arbitration/request
                           removed"
+PRINCIPLES.md           what keeps rules run to a fixpoint over a shared
+                          World producing the wanted kind of emergence,
+                          not the surprising kind
 ```
 
 ## Try it
@@ -120,6 +123,18 @@ does not know `harneskills` exists, and does not know where its checkout
 lives on disk.
 
 ## History
+
+**`PRINCIPLES.md` moves in from `pystrider`, 2026-09-01.** Written there
+2026-08-31 out of a design conversation about whether entity-component-rules
+is a good substrate for emergent behaviour at all, and what has to be true
+for the emergence to be the wanted kind (structural stigmergy through a
+small vocabulary closed under what rules produce) rather than the
+unwanted kind (stochastic surprise). Same move `DECISION_PATTERNS.md` made
+one day earlier in the calendar but a repo-age ago: the question is about
+this substrate, not about Python, so the answer belongs here even though
+the evidence it cites (`pystrider/symbolic.py`, `evaluator.py`, `intake.py`)
+is `pystrider`'s. `pystrider/docs/principles.md` is gone; `pystrider/
+docs/TODO.md` points here instead.
 
 **`help` gets a census, and two helpers a rule no longer has to
 hand-write, 2026-08-30 (later).** A bare `help` used to answer with
