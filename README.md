@@ -122,7 +122,88 @@ on `World` and `Loop` alone. None of that is imported here; this package
 does not know `harneskills` exists, and does not know where its checkout
 lives on disk.
 
+**`examples/cards.py` is a second domain, kept here, and still not
+shipped.** `examples/` is a top-level directory, a sibling of
+`loopingrules/` and `tests/`, not a subpackage of `loopingrules/` — it is
+not in `pyproject.toml`'s `packages=`, so `pip install -e .` puts
+`loopingrules` on a consumer's path and nothing else, exactly as before.
+It is a worked example the same way `harneskills.examples.fs` and
+`pystrider` are, one repo closer to home: one autonomous trading agent
+reacting to a virtual card market according to a goal and a risk profile,
+with no rivalry anywhere in it (one agent, its own money — no
+`Proposal`/`arbitrate`/`census` needed), demonstrating instead the
+compositional-tag idiom `pystrider.patterns.LoopCount` →
+`pystrider.constraints.TooManyLoops` already proved: independent rules
+tagging one shared entity, and a rule that acts only once several tags
+land on it together. `tests/test_examples_cards.py` is where its own
+tests live, importable via the `pythonpath = ["."]` this repo's own
+`pyproject.toml` now carries for exactly that — the same knob, and the
+same reason, `harneskills/pyproject.toml` already uses to import
+`loopingrules` from a sibling checkout without a real install. See
+`examples/cards.py`'s own docstring for the full design, and History,
+"A cards example."
+
 ## History
+
+**A cards example, 2026-09-02.** `examples/cards.py`: a worked domain
+kept in this repo, requested as a demonstration rather than a second
+shipped domain — see the Scope section, above, for what that split
+actually means in `pyproject.toml`. The scope settled on was one
+autonomous agent reacting to a virtual card market by its own goal and
+risk profile, deliberately not a two-party negotiation or a multi-bidder
+market: no rivalry anywhere in it, so none of `Proposal`/`arbitrate`/
+`census` are used at all. What the example is actually FOR is the other
+mechanism this package's own vocabulary doesn't cover: `pystrider.
+patterns.LoopCount` → `pystrider.constraints.TooManyLoops`'s
+independent-rules-tagging-one-entity idiom, restated here as `Wanted`/
+`Affordable`/`FairPriced`, three rules that share no code, composed by
+one more rule (`decide_buy`) that reads all three off one `Listing` with
+no idea which of them derived what.
+
+Two things the naive version of this design got wrong, caught by a
+second design pass before any code was written rather than after: the
+three tags cannot use `LoopCount`'s monotonic `without=`-guarded
+attach-only shape, because the facts under them (`Purse.cash`,
+`Wants.qty`, `Copies.count`) mutate in place on long-lived entities while
+a `Listing` sits on the market for many ticks — `LoopCount`'s guard is
+only safe because a `pystrider` reread destroys and rebuilds the whole
+entity, so nothing changes under a live id there. Each tag rule here
+recomputes fresh every tick and goes both directions (`attach` when true,
+`detach` when false) instead. Separately, `decide_buy` cannot trust the
+one `each()` snapshot it materializes per call: two listings that are
+each affordable ALONE but not TOGETHER — `DECISION_PATTERNS.md`'s
+"composability is a structural test... exactly when footprints are
+disjoint," and two candidates spending the same `Purse` do not have
+disjoint footprints — would otherwise both buy in the same tick and
+overspend. `decide_buy` re-fetches `Purse`/`Wants`/`Copies` fresh at the
+top of each iteration and skips (never destroys) a listing this same call
+already made stale, buying in listing-creation order — a regression test
+(`test_decide_buy_does_not_overspend_across_two_simultaneously_qualifying_
+listings_in_one_tick`) pins the fix with two such listings and asserts
+`Purse.cash` never goes negative and exactly one purchase happens.
+
+Selling is a named, deliberate gap — not built, so the example stays
+small and the composition stays legible; a future `decide_sell` would
+follow the same tag-then-act shape once something actually needs it, per
+`DECISION_PATTERNS.md`'s "grow it only at the rule that actually
+collides."
+
+Kept OUT of `pyproject.toml`'s `packages=` — `examples/` is a top-level
+directory, not a subpackage of `loopingrules/`, so `pip install -e .`
+still installs `loopingrules` alone; `pythonpath = ["."]` was added to
+`[tool.pytest.ini_options]` so `tests/test_examples_cards.py` can import
+it anyway, the same knob and the same reason `harneskills/pyproject.toml`
+already carries for its own sibling-checkout import of `loopingrules`.
+
+24 new tests in `tests/test_examples_cards.py`, including the three
+`PRINCIPLES.md`-mandated `watches=` correctness pins (each rule
+registered alone on a bare `Loop`, a component outside its declared
+`watches=` mutated directly, the rule still shown to fire) and the two
+regressions above. 136 -> 160 passing. Manually run, too, not just under
+`pytest`: `cards.install` seeded, `want dragon` then `list dragon 30`
+typed as `Said`, `loop.run()` settling in two ticks with no hot rules and
+replying `bought dragon for 30` then `goal met -- every wanted card is in
+the collection`.
 
 **`PRINCIPLES.md` moves in from `pystrider`, 2026-09-01.** Written there
 2026-08-31 out of a design conversation about whether entity-component-rules

@@ -28,6 +28,12 @@ dev = ["pytest>=8.0"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 norecursedirs = [".venv", "__pycache__", ".git", "*.egg-info"]
+# `examples/` is source in this repo, never in `packages=` below -- see
+# README.md's "Scope" section. `pythonpath` is what lets `tests/
+# test_examples_cards.py` import it from a checkout without a real
+# install, the same reason and the same knob `harneskills/pyproject.toml`
+# already uses for its own sibling-checkout import of `loopingrules`.
+pythonpath = ["."]
 
 [tool.setuptools]
 py-modules = []
