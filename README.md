@@ -31,6 +31,8 @@ DECISION_PATTERNS.md   a design note this package no longer ships the code
 PRINCIPLES.md           what keeps rules run to a fixpoint over a shared
                           World producing the wanted kind of emergence,
                           not the surprising kind
+TODO.md                 open threads named so they are not lost, not a
+                          schedule
 ```
 
 ## Try it
@@ -160,6 +162,25 @@ same reason, `harneskills/pyproject.toml` already uses to import
 `examples/cards.py`'s own docstring for the full design, and History,
 "A cards example."
 
+**`examples/circuits.py` is a fourth module, and a prototype rather than
+a domain at all.** A closed, minimal catalog of shapes (`TagCircuit`/
+`ValueCircuit`/`ActionCircuit`, plain dataclasses, no loop, no `if`)
+restating five of `cards`'s own thirteen rules -- the four tag rules
+plus a reduced `decide_buy` -- as plain data instead of hand-written
+Python bodies, each checked against the original it restates both by
+running the same regressions and by comparing its own structurally-
+derived reads/writes against `loopingrules.analyze`'s AST-derived ones
+for the original. Motivated by a question none of the earlier ideas in
+this section were answering: a closed shape catalog is what a FUTURE
+search or learning process over rules would need to be tractable, the
+way genetic programming and program synthesis reach for a small typed
+combinator set rather than arbitrary source code. No search or learning
+exists yet -- see `TODO.md` and `circuits.py`'s own docstring for what
+is open. Not wired into `cards.install()`, not shipped, and not
+promoted past `examples/` unless something real needs it, per
+`DECISION_PATTERNS.md`'s "grow it only at the rule that actually
+collides." See History, "circuits.py: a closed shape catalog."
+
 **`examples/judge.py` is a third module in `examples/`, and the only one
 that never imports `examples.cards` back.** It is not a domain — one
 rule, `flag_too_risky`, that reads a generic `Risk`/`RiskTolerance` and
@@ -174,6 +195,60 @@ above, "no vocabulary above entities and components either") — see
 History, "A domain-oblivious judge."
 
 ## History
+
+**`circuits.py`: a closed shape catalog, tried against five real rules,
+2026-09-03 (later still).** A conversation about rule vocabularies and a
+general DSL landed, in order, on: no vast shared vocabulary (`examples.
+judge`), no general DSL (`loopingrules.analyze` got a sound map out of
+plain Python instead), no YAML/JSON middle ground (either a string
+expression language with worse tooling than Python, or a structural
+comparison tree covering the same narrow shape `analyze.py` already
+covers for free) -- and then a genuinely different proposal: not a
+general escape hatch but a DELIBERATELY small, closed set of shapes,
+motivated by future learnability rather than expressiveness or map-
+building. `examples/circuits.py`: `Self`/`Via`/`World`/`Const` for reads
+(missing-safe -- `MISSING` propagates through arithmetic, collapses to
+`False` at a comparison, resolved early by `Coalesce`), `Add`/`Sub`/
+`Mul`/`Min`/`Max`/`SafeDiv` for arithmetic, `Le`/`Lt`/`Ge`/`Gt`/`Eq`/
+`And`/`Or` for conditions, `Format` for one string leaf, and three rule
+shapes -- `TagCircuit` (attach/detach), `ValueCircuit` (replace),
+`ActionCircuit` (a read phase then a write phase over `ReplaceWorld`/
+`ReplaceVia`/`Destroy`/`Spawn` effects, on the single first match a
+tick, never several). `reads(spec)`/`writes(spec)` walk the spec's own
+dataclass tree -- sound by construction, no analysis needed at all.
+
+Tried, not just designed, against `cards.tag_wanted`/`tag_affordable`/
+`tag_fair_priced`/`tag_risk_level` and a reduced `decide_buy`
+(`decide_buy_single`, dropping only the hand-rolled multi-purchase-per-
+tick batching a prior conversation showed was an optimization, not a
+correctness requirement -- the tick loop's own retry-with-fresh-tags
+does the same job). Every one of the five, compiled from its spec and
+SWAPPED IN for the hand-written original on a fully-installed `cards`
+`Loop`, reproduced every existing regression this repo already had
+pinned (the full buy flow, the two-listings overspend regression, the
+too-risky judge regression) byte-for-byte -- the overspend one
+confirmed to now genuinely take more than one tick, proving the
+batching really is gone without reintroducing the bug it used to guard
+against. `circuits.reads()`/`writes()` matched `loopingrules.analyze
+.analyze()`'s AST-derived map on the ORIGINAL rule exactly, for all
+five, on the first run for four of them.
+
+Two real bugs were caught by that equivalence checking before any of it
+was trusted, not glossed over: `Coalesce` returned its unevaluated
+`default` expression node instead of the evaluated value, and the
+reads-walker recursed into a component CLASS's own "fields" (`dataclasses
+.is_dataclass` says yes to a class as readily as an instance) rather
+than treating a type reference as a leaf.
+
+What this does not settle, on purpose: `check_goal`'s "every want is
+met" is a fold over a SET, not a per-entity circuit, and needs a shape
+this catalog does not have yet; `hear_list`/`hear_want`/`hear_status`
+stay plain Python, since string parsing is a different primitive axis
+than numeric circuits; and the actual motivation -- a catalog a future
+search/learning process could work over -- has no search or learning
+built on it. See `TODO.md`, and `circuits.py`'s own docstring.
+
+11 new tests in `tests/test_examples_circuits.py`. 183 -> 194 passing.
 
 **`analyze.py`: a rule's reads and writes, derived from its own AST, not
 declared by hand, 2026-09-03 (later).** Came out of a conversation about
