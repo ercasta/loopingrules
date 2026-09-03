@@ -6,7 +6,7 @@ runs the loop to a settle, and hands back every `Reply` text produced."""
 
 import pytest
 
-from examples import cards
+from examples import cards, judge
 from loopingrules.loop import Loop
 from loopingrules.world import Reply, Said
 
@@ -147,6 +147,36 @@ def test_tag_fair_priced_reads_the_referenced_card_def_by_id(loop):
     assert not w.has(over, cards.FairPriced)
 
 
+def test_tag_risk_level_reflects_the_fraction_of_room_the_price_would_use(loop):
+    w = loop.world
+    say(loop, "list dragon 40")       # cash=100, min_cash_reserve=0 -> room 100
+    listing_entity, _listing = w.first(cards.Listing)
+    risk = w.get(listing_entity, judge.Risk)
+    assert risk.level == pytest.approx(0.4)
+
+
+def test_tag_risk_level_recomputes_as_cash_changes(loop):
+    w = loop.world
+    say(loop, "list dragon 40")
+    listing_entity, _listing = w.first(cards.Listing)
+    purse_entity, _purse = w.first(cards.Purse)
+    w.replace(purse_entity, cards.Purse(45))   # room shrinks to 45
+    loop.tick()
+    risk = w.get(listing_entity, judge.Risk)
+    assert risk.level == pytest.approx(40 / 45)
+
+
+def test_tag_risk_level_caps_at_one_when_no_room_is_left():
+    lp = Loop()
+    cards.install(lp, cash=0)
+    w = lp.world
+    w.spawn(Said("user", "list dragon 40"))
+    lp.run()
+    listing_entity, _listing = w.first(cards.Listing)
+    risk = w.get(listing_entity, judge.Risk)
+    assert risk.level == 1.0
+
+
 # -- acting ---------------------------------------------------------------
 
 def test_decide_buy_requires_all_three_tags_present(loop):
@@ -178,6 +208,30 @@ def test_decide_buy_does_not_overspend_across_two_simultaneously_qualifying_list
     assert w.get(card(w, "griffin"), cards.Copies) == cards.Copies(0)
     assert w.the(cards.Purse) == cards.Purse(20)   # only ONE purchase happened
     assert w.the(cards.Purse).cash >= 0
+
+
+def test_decide_buy_skips_a_listing_the_domain_oblivious_judge_marks_too_risky():
+    """`judge.flag_too_risky` never imports `cards` (see `tests/
+    test_examples_judge.py`) -- this pins the OTHER half, that `cards`'s
+    own `decide_buy` actually honors a tag it did not produce. cash=45,
+    room=45; dragon at 40 is Wanted/Affordable/FairPriced (same as
+    `test_decide_buy_spends_purse_...` at cash=100) but uses 40/45 = 89%
+    of the room, over the judge's default 80% tolerance -- so it is
+    marked `TooRisky` and never bought, though nothing about `cards`'s
+    own three tags would have stopped it."""
+    lp = Loop()
+    cards.install(lp, cash=45)
+    w = lp.world
+    w.spawn(Said("user", "want dragon 1"))
+    w.spawn(Said("user", "list dragon 40"))
+    lp.run()
+    listing_entity, _listing = w.first(cards.Listing)
+    assert w.has(listing_entity, judge.TooRisky)
+    assert w.has(listing_entity, cards.Wanted)
+    assert w.has(listing_entity, cards.Affordable)
+    assert w.has(listing_entity, cards.FairPriced)
+    assert w.each(cards.Bought) == []
+    assert w.the(cards.Purse) == cards.Purse(45)
 
 
 def test_a_freshly_listed_card_can_be_bought_the_same_settle(loop):

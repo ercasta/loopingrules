@@ -143,7 +143,58 @@ same reason, `harneskills/pyproject.toml` already uses to import
 `examples/cards.py`'s own docstring for the full design, and History,
 "A cards example."
 
+**`examples/judge.py` is a third module in `examples/`, and the only one
+that never imports `examples.cards` back.** It is not a domain — one
+rule, `flag_too_risky`, that reads a generic `Risk`/`RiskTolerance` and
+writes `TooRisky`, oblivious to what produced either. `examples.cards.
+tag_risk_level` is the domain-specific half: it projects `Purse`/
+`RiskProfile`/`Listing` onto `Risk`, and `decide_buy` reads the judge's
+`TooRisky` back the same way it reads its own three tags. Built to test,
+concretely, a narrower version of a "shared vocabulary between domains"
+question this README already answers "no" to for the general case (see
+above, "no vocabulary above entities and components either") — see
+`judge.py`'s own docstring for what this does and does not settle, and
+History, "A domain-oblivious judge."
+
 ## History
+
+**A domain-oblivious judge, and the vocabulary question it was built to
+test, 2026-09-03.** `examples/judge.py`: `Risk(level, reason)`,
+`RiskTolerance(max_level)`, and `flag_too_risky`, a rule that reads only
+those two and writes `TooRisky` -- the only module in `examples/` that
+never imports `examples.cards` back. Built to test a question raised in
+conversation: whether `loopingrules` should ship a "vast set of common
+components" (`good`/`bad`/`risk`/`evaluation`...) as a lingua franca
+between domains. This README and `DECISION_PATTERNS.md` already argue
+against that shape in general (`facts.py`/`arbitration.py`, built,
+proven inside `pystrider`, still deleted because nothing here ever
+imported the SHARED version) -- so shipping a vocabulary speculatively
+was declined. What survived from that conversation was `DECISION_
+PATTERNS.md`'s deleted `arbitration.py`'s narrower shape: a judge
+reasoning over `realizes(option, property)` -- a domain PROJECTS its own
+facts onto a shared property, and an oblivious judge reads only the
+projection. `examples.cards.tag_risk_level` is that projection (how much
+of the affordable room a `Listing`'s price would use, as a `0..1`
+float); `judge.flag_too_risky` is the judge; `decide_buy` reads its
+`TooRisky` tag the same way it reads its own three.
+
+Confirmed for real, not just under pytest: at `cash=45`, a `dragon`
+listing at `40` that satisfies `Wanted`/`Affordable`/`FairPriced` still
+never gets bought (`Risk.level` = 0.889, over the judge's default 0.8
+tolerance), while the same listing at `cash=100` buys exactly as it did
+before this change. What this settles: the projection-then-oblivious-
+judge MECHANISM composes cleanly with the existing tag-reading idiom.
+What it does not settle, and `judge.py`'s own docstring says so plainly:
+whether one `Risk` shape actually holds across two UNRELATED domains,
+since only `cards` has ever had to project onto it -- it stays in
+`examples/`, not `loopingrules/`, until a second domain needs to feed
+the same judge, per `DECISION_PATTERNS.md`'s "grow it only at the rule
+that actually collides."
+
+9 new tests (4 in `tests/test_examples_cards.py`, 5 in `tests/test_
+examples_judge.py` -- the latter importing nothing from `cards`, pinning
+the judge's own obliviousness with an AST check of its own imports).
+160 -> 169 passing.
 
 **A cards example, 2026-09-02.** `examples/cards.py`: a worked domain
 kept in this repo, requested as a demonstration rather than a second

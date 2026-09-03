@@ -60,6 +60,21 @@ actually collides": there is no second scenario yet that needs it, and
 guessing at the shape now would be exactly the speculative generality
 that file argues against.
 
+## A fourth tag, projected onto a judge this domain does not own
+
+`tag_risk_level` is like `tag_wanted`/`tag_affordable`/`tag_fair_priced`
+in shape -- recomputed fresh every tick off a `Listing` -- but different
+in kind: it does not attach a boolean this domain reads back itself, it
+projects a fact this domain understands (how much of the room to spend
+this purchase would use) onto `examples.judge.Risk`, a component this
+domain does not define and a threshold (`RiskTolerance`) it does not own
+either. `judge.flag_too_risky` is the actual judge, and it has never
+heard of a `Listing`, a `Purse`, or a card -- see `judge.py`'s own
+docstring for what this is testing. `decide_buy` reading `without=
+TooRisky` alongside its own three tags is the same composition idiom as
+always: one more independently-produced tag, read by a rule that does
+not know or care which rule produced it.
+
 ## Vocabulary
 
 - `CardDef(name, rarity, value)` -- one entity per catalog card, the
@@ -84,6 +99,13 @@ that file argues against.
   own module note). Arrives via `hear_list`; never seeded.
 - `Wanted()` / `Affordable()` / `FairPriced()` -- `@transient` tags on a
   `Listing`, see above.
+- `examples.judge.Risk(level, reason)` -- this domain's own claim, `replace`d
+  fresh onto a `Listing` every tick by `tag_risk_level`, of how much of the
+  affordable room the purchase would use. Not this module's own
+  component -- see "A fourth tag," above, and `judge.py`'s own docstring.
+- `examples.judge.RiskTolerance(max_level)` -- the judge's threshold, seeded
+  by `install` the same BigFloor-style way as `RiskProfile`, but owned by
+  `judge.py`, not by this domain.
 - `Bought(card, price)` / `BadCommand(text, why)` -- short-lived outcome
   facts, consumed same-or-next tick by a `reply_*` rule. Not
   `@transient` -- they're gone before a save would ever see them anyway,
@@ -101,6 +123,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from examples.judge import Risk, RiskTolerance, TooRisky, flag_too_risky
 from loopingrules.world import Said, reply, transient
 
 
@@ -334,21 +357,46 @@ def tag_fair_priced(w) -> None:
             w.detach(entity, FairPriced)
 
 
+def tag_risk_level(w) -> None:
+    """`examples.judge.Risk`, `replace`d fresh onto a `Listing` every
+    tick -- see the module docstring's "A fourth tag." `level` is how
+    much of the room this trade may spend (`Purse.cash` minus
+    `RiskProfile.min_cash_reserve`) the price would use, capped at `1.0`;
+    `replace`, not `attach`/`detach`, because `Risk` is meant to stay
+    singular per listing the same way `Copies`/`Purse` do -- unlike
+    `Wanted`/`Affordable`/`FairPriced`, it is not a boolean with an
+    absent-or-present shape."""
+    purse = w.the(Purse)
+    risk = w.the(RiskProfile)
+    for entity, listing in w.each(Listing):
+        room = purse.cash - risk.min_cash_reserve
+        level = 1.0 if room <= 0 else min(1.0, listing.price / room)
+        w.replace(entity, Risk(
+            level,
+            "would use %.0f%% of the %d cash still free to spend" % (
+                level * 100, max(room, 0))))
+
+
 # -- acting --------------------------------------------------------------
 
 def decide_buy(w) -> None:
-    """Every listing carrying all three tags -> bought. `w.each()` below
-    is materialized once, up front -- so this re-reads `Purse`/`Wants`/
-    `Copies` fresh at the TOP of each iteration and skips (never destroys)
-    a listing this same call has already made stale by an earlier
-    purchase, rather than trusting the snapshot. Two listings that are
-    each affordable ALONE but not TOGETHER do not both buy in one tick --
-    see the module's own history for why that matters (`DECISION_PATTERNS.
-    md`'s "composability is a structural test": two candidates writing the
-    same `Purse` do not have disjoint footprints, so nothing may treat
-    them as free to compose)."""
+    """Every listing carrying all three tags, and not the judge's own
+    `TooRisky`, -> bought. `w.each()` below is materialized once, up
+    front -- so this re-reads `Purse`/`Wants`/`Copies` fresh at the TOP of
+    each iteration and skips (never destroys) a listing this same call
+    has already made stale by an earlier purchase, rather than trusting
+    the snapshot. Two listings that are each affordable ALONE but not
+    TOGETHER do not both buy in one tick -- see the module's own history
+    for why that matters (`DECISION_PATTERNS.md`'s "composability is a
+    structural test": two candidates writing the same `Purse` do not have
+    disjoint footprints, so nothing may treat them as free to compose).
+
+    `without=TooRisky` reads a fourth, independently-produced tag the
+    same way it reads the first three -- this rule does not know, or
+    need to know, that `TooRisky` came from a domain-oblivious judge
+    rather than from one of this module's own `tag_*` rules."""
     for entity, listing, _wanted, _affordable, _fair in w.each(
-            Listing, Wanted, Affordable, FairPriced):
+            Listing, Wanted, Affordable, FairPriced, without=TooRisky):
         wants = w.get(listing.card, Wants)
         copies = w.get(listing.card, Copies)
         have = copies.count if copies else 0
@@ -408,7 +456,8 @@ def reply_goal_met(w) -> None:
 
 
 RULES = (hear_list, hear_want, hear_status,
-         tag_wanted, tag_affordable, tag_fair_priced,
+         tag_wanted, tag_affordable, tag_fair_priced, tag_risk_level,
+         flag_too_risky,
          decide_buy, check_goal,
          reply_bought, reply_bad_command, reply_goal_met)
 
@@ -416,14 +465,19 @@ RULES = (hear_list, hear_want, hear_status,
 def install(loop, cash: int = 100, catalog=DEFAULT_CATALOG) -> None:
     """Register every rule above, each with its own `watches=` (unlike
     `fs.py`'s `RULES` loop, which declares none), then seed the catalog,
-    `Purse`, and `RiskProfile`.
+    `Purse`, `RiskProfile`, and the judge's own `RiskTolerance`.
 
     `CardDef`/`Copies` are seeded per catalog entry, by NAME -- a name
     already present is never touched (see the module docstring); this is
     what lets a catalog grow across versions without a restored world
     losing a since-added card, unlike a single `world.first(CardDef) is
-    None` check would. `Purse`/`RiskProfile` are true singletons, seeded
-    BigFloor-style: only if the world does not already carry one.
+    None` check would. `Purse`/`RiskProfile`/`RiskTolerance` are true
+    singletons, seeded BigFloor-style: only if the world does not already
+    carry one -- `RiskTolerance` right alongside the other two even
+    though `examples.judge` owns its shape, not this module, because
+    `install()` is the one place a fresh `cards` world gets seeded at
+    all, and a `Listing` with no `RiskTolerance` yet would leave `judge.
+    flag_too_risky` abstaining forever (see that rule's own docstring).
     """
     loop.rule(hear_list, watches=(Said,))
     loop.rule(hear_want, watches=(Said,))
@@ -431,6 +485,8 @@ def install(loop, cash: int = 100, catalog=DEFAULT_CATALOG) -> None:
     loop.rule(tag_wanted, watches=(Listing, Wants))
     loop.rule(tag_affordable, watches=(Listing,))
     loop.rule(tag_fair_priced, watches=(Listing,))
+    loop.rule(tag_risk_level, watches=(Listing,))
+    loop.rule(flag_too_risky, watches=(Risk,))
     loop.rule(decide_buy, watches=(Listing,))
     loop.rule(check_goal, watches=(Wants,))
     loop.rule(reply_bought, watches=(Bought,))
@@ -447,4 +503,6 @@ def install(loop, cash: int = 100, catalog=DEFAULT_CATALOG) -> None:
     if world.first(RiskProfile) is None:
         world.spawn(RiskProfile(max_spend_per_trade=50, min_cash_reserve=0,
                                  max_premium=0.25))
+    if world.first(RiskTolerance) is None:
+        world.spawn(RiskTolerance(max_level=0.8))
     world.learn("list", "want", "status", *(c.name for c in catalog))
