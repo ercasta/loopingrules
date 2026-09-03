@@ -18,11 +18,13 @@ loopingrules/
   loop.py         every rule, in order, until nothing changes
   engine.py       one thread, the world, and the channels attached to it
   save.py         the world as JSONL: entities are ints, components are values
+  analyze.py      what a rule reads and writes, derived from its own AST
 tests/
   test_world.py        identity, values, and the intersection of the two
   test_loop.py         order, settling, the budget, a rule that raises
   test_engine.py       one world, several channels, a broadcast reply
   test_save.py         the same world, ids and all, next time
+  test_analyze.py      a rule's reads/writes, and where analysis refuses to guess
 DECISION_PATTERNS.md   a design note this package no longer ships the code
                           for -- see History, "Facts/arbitration/request
                           removed"
@@ -83,6 +85,21 @@ with a resolved occasion; `arbitrate` and `census` only agree on WHEN
 docstring, and `loopingrules.help.close_census` for a caller that needs
 `census`'s "everyone counts" instead of `arbitrate`'s "one wins." See
 History, "arbitrate, a shared chokepoint" and "help gets a census."
+
+**`analyze.py` is the other generic mechanism here, and it is a reader,
+not a vocabulary.** Given a rule — a plain function of one `World` —
+`analyze()` derives which component types it reads and writes by walking
+its own AST, so `Loop.rule(watches=...)` can be checked against what a
+rule actually does instead of trusted by convention; `component_map()`
+builds the `{component: {rules}}` index the same walk produces across
+several rules at once. It knows nothing about any domain's own
+components — only the eleven methods `World`/`Entity` already expose,
+plus `propose`/`reply` by identity (see its own docstring, "Two named
+exceptions," for why those two specifically). A rule that uses its world
+parameter outside the dialect `analyze.py`'s own docstring names is
+never guessed at — it raises `Opaque`, by name and reason, the same
+refuse-rather-than-guess discipline every parse boundary in this
+codebase already applies. See History, "analyze.py."
 
 **`help.py` is the one exception to "ships no rules," and it says so
 itself.** `world.py`/`loop.py`/`engine.py`/`save.py` still ship none,
@@ -157,6 +174,53 @@ above, "no vocabulary above entities and components either") — see
 History, "A domain-oblivious judge."
 
 ## History
+
+**`analyze.py`: a rule's reads and writes, derived from its own AST, not
+declared by hand, 2026-09-03 (later).** Came out of a conversation about
+whether this package should grow a small DSL for rules so a "map" of
+which rules touch which components could be built from analysis instead
+of trusted by convention. `analyze(fn)` walks a rule's own source and
+derives its component reads/writes; `component_map(*fns)` builds the
+`{component: {rule names}}` index; `check_watches(fn, watches, stable=)`
+checks a rule's declared `watches=` against what it actually reads --
+`loop.py`'s own docstring names this exact gap ("declare `watches` too
+narrow... there is no way to catch this from here").
+
+Chose AST analysis of plain Python over a new language because the
+dialect rules are already written in turned out narrow enough to make it
+sound: `PRINCIPLES.md` already establishes rules never call each other,
+so the only indirection worth resolving is a same-module helper a rule
+calls that also touches the world (`examples.cards._find_card`).
+Anything a rule does with its world parameter outside that dialect --
+aliased into a variable, forwarded into an unrelated function, a starred
+call, a component argument that is not a literal `Kind(...)` -- raises
+`Opaque` by name and reason rather than silently under-reporting, the
+same refuse-rather-than-guess discipline `_parse_int` already applies to
+a typed line. `reply`/`propose` (`loopingrules.world`, cross-module by
+construction) are special-cased by identity, since this README already
+promises their shape is stable.
+
+Run against every real rule in `examples.cards` and `examples.judge` (13
+rules), this comes back with ZERO `Opaque` -- the whole corpus this
+package has today already fits the dialect, with no rewriting.
+`check_watches`, though, produced a genuine negative result worth
+recording rather than smoothing over: run with `stable=()` against
+`cards.RULES`, it flags TWELVE of thirteen rules, every one a false
+alarm -- `tag_affordable` reads `Purse`/`RiskProfile` without watching
+either, and `tests/test_examples_cards.py`'s own `test_watches_tag_
+affordable_wakes_on_listing_then_notices_a_purse_only_change` already
+proves that is safe, because both are singletons seeded once at
+`install()` and never removed. `stable=` fixes that category. A SECOND
+category -- `decide_buy` reading `Wanted`/`Affordable`/`TooRisky`
+without watching any of them, safe because those tags only ever land on
+an already-watched `Listing` -- is not fixable by `stable=`, and still
+(correctly) flags; `check_watches` is a hint for human review, not an
+automatic gate, and that limit is pinned as a permanent, named test in
+`tests/test_analyze.py` rather than a bug to loosen away.
+
+14 new tests in `tests/test_analyze.py`, run against the real rules
+rather than synthetic ones wherever that was possible. 169 -> 183
+passing.
 
 **A domain-oblivious judge, and the vocabulary question it was built to
 test, 2026-09-03.** `examples/judge.py`: `Risk(level, reason)`,
