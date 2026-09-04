@@ -1420,3 +1420,152 @@ def test_hear_status_specs_read_everything_the_original_reads():
     assert analyzed.reads <= combined_reads
     assert combined_reads - analyzed.reads == {IsStatusCommand}
     assert circuits.writes(act_status) == analyzed.writes
+
+
+# -- reply_bad_command/reply_bought/reply_goal_met, and SelfId -----------
+#
+# The simplest shape yet -- claim a fact, destroy it, spawn a Reply --
+# except each of the three claims a DIFFERENT number of matches per
+# tick in the original: reply_bad_command/reply_bought loop over EVERY
+# BadCommand/Bought that exists (several can coexist -- two bad lines
+# typed in one tick, or decide_buy's own real batching producing two
+# Boughts at once), where an ActionCircuit only ever acts on the FIRST.
+# Converges to the identical FINAL set of replies either way (checked
+# below) -- but when several Boughts land in one tick, the ORDER
+# reply_bought's replies interleave with reply_goal_met's is no longer
+# guaranteed to match the original's, because two independent one-
+# match-per-tick queues are now competing for tick slots instead of one
+# rule draining both in a single pass. Named plainly as a real,
+# specific cost of composing SEVERAL such reductions together -- not
+# hypothetical, pinned by the test that finds it.
+#
+# reply_goal_met needed one new primitive: SelfId(), for the one effect
+# in this whole catalog that acts on the SAME entity the action
+# matched, not a related or looked-up one (`w.attach(entity,
+# Announced())`, `GoalMet` itself never destroyed).
+
+act_reply_bad_command = circuits.ActionCircuit(
+    require=(cards.BadCommand,), without=(),
+    effects=(circuits.Destroy(),
+             circuits.Spawn(Reply, (circuits.Const("user"),
+                                     circuits.Format("! %s", (circuits.Self(cards.BadCommand, "why"),))))),
+)
+
+act_reply_bought = circuits.ActionCircuit(
+    require=(cards.Bought,), without=(),
+    effects=(circuits.Destroy(),
+             circuits.Spawn(Reply, (circuits.Const("user"), circuits.Format(
+                 "bought %s for %d", (
+                     circuits.Coalesce(
+                         circuits.Via(cards.Bought, "card", CardDef, "name"),
+                         circuits.Format("card #%d", (circuits.Self(cards.Bought, "card"),))),
+                     circuits.Self(cards.Bought, "price")))))),
+)
+
+act_reply_goal_met = circuits.ActionCircuit(
+    require=(GoalMet,), without=(cards.Announced,),
+    effects=(circuits.ReplaceAt(circuits.SelfId(), cards.Announced, ()),
+             circuits.Spawn(Reply, (circuits.Const("user"),
+                                    circuits.Const("goal met -- every wanted card is in the collection")))),
+)
+
+
+def test_self_id_is_the_matched_entitys_own_id():
+    w = World()
+    e = w.spawn(GoalMet())
+    assert circuits.evaluate(circuits.SelfId(), w, e) == e.id
+    assert circuits.evaluate(circuits.SelfId(), w, None) is circuits.MISSING
+
+
+@pytest.mark.parametrize("setup", [["list"], ["blah"], ["list", "want"]])
+def test_reply_bad_command_matches_the_original_exactly(setup):
+    def outcome(loop):
+        w = loop.world
+        for line in setup:
+            w.spawn(Said("user", line))
+        loop.run()
+        return sorted(r.text for _e, r in w.each(Reply))
+
+    original_loop = Loop()
+    cards.install(original_loop, cash=100)
+    original = outcome(original_loop)
+
+    circuit_loop = Loop()
+    cards.install(circuit_loop, cash=100)
+    _swap(circuit_loop, cards.reply_bad_command, circuits.compile_circuit(act_reply_bad_command))
+    circuit = outcome(circuit_loop)
+
+    assert original == circuit
+
+
+def test_reply_bought_matches_the_original_for_one_purchase():
+    def outcome(loop):
+        w = loop.world
+        w.spawn(Said("user", "want dragon 1"))
+        w.spawn(Said("user", "list dragon 40"))
+        loop.run()
+        return [r.text for _e, r in w.each(Reply)]
+
+    original_loop = Loop()
+    cards.install(original_loop, cash=100)
+    original = outcome(original_loop)
+
+    circuit_loop = Loop()
+    cards.install(circuit_loop, cash=100)
+    _swap(circuit_loop, cards.reply_bought, circuits.compile_circuit(act_reply_bought))
+    circuit = outcome(circuit_loop)
+
+    assert original == circuit
+
+
+def test_reply_bought_reaches_the_same_final_replies_but_not_the_same_order_when_batched():
+    """The one real, specific cost: `cards.decide_buy`'s own real
+    batching can produce TWO `Bought`s in one tick; the original's
+    `reply_bought` replies to both immediately, `reply_goal_met`
+    (unchanged) only after. `act_reply_bought` drains one per tick, so
+    `reply_goal_met` can fire in between the two -- same final SET of
+    replies, checked; NOT the same order, checked just as directly,
+    rather than left as a claim nobody verified."""
+    def outcome(loop):
+        w = loop.world
+        for line in ("want dragon 1", "want griffin 1", "list dragon 40", "list griffin 30"):
+            w.spawn(Said("user", line))
+        loop.run()
+        return [r.text for _e, r in w.each(Reply)]
+
+    original_loop = Loop()
+    cards.install(original_loop, cash=200)
+    original = outcome(original_loop)
+
+    circuit_loop = Loop()
+    cards.install(circuit_loop, cash=200)
+    _swap(circuit_loop, cards.reply_bought, circuits.compile_circuit(act_reply_bought))
+    circuit = outcome(circuit_loop)
+
+    assert sorted(original) == sorted(circuit)    # same set
+    assert original != circuit                    # NOT the same order
+
+
+def test_reply_goal_met_fires_exactly_once():
+    def outcome(loop):
+        w = loop.world
+        w.spawn(Said("user", "want dragon 1"))
+        w.replace(_card(w, "dragon"), Copies(1))
+        loop.run()
+        first = [r.text for _e, r in w.each(Reply)]
+        for e, _r in w.each(Reply):
+            w.destroy(e)
+        loop.tick()
+        second = [r.text for _e, r in w.each(Reply)]
+        return first, second
+
+    original_loop = Loop()
+    cards.install(original_loop, cash=100)
+    original = outcome(original_loop)
+
+    circuit_loop = Loop()
+    cards.install(circuit_loop, cash=100)
+    _swap(circuit_loop, cards.reply_goal_met, circuits.compile_circuit(act_reply_goal_met))
+    circuit = outcome(circuit_loop)
+
+    assert original == circuit == (["goal met -- every wanted card is in the collection"], [])

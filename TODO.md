@@ -55,10 +55,33 @@ core"), named so they are not lost rather than scheduled.
   separator). Only two specs needed -- the flattest decomposition of
   the three `hear_*` rules, despite needing the most genuinely new
   machinery. See README History, "hear_status's report."
+- ~~The three `reply_*` rules.~~ The simplest shape yet -- claim, destroy,
+  spawn a `Reply` -- needing one new primitive, `SelfId()` (`ReplaceAt`'s
+  target when an effect acts on the entity its OWN `ActionCircuit`
+  matched, `reply_goal_met`'s `w.attach(entity, Announced())`). Caught
+  a real bug in it before trusting it: `SelfId` first returned the
+  `Entity` HANDLE `entity` may actually be bound to, not the plain int
+  every other read in this catalog resolves to -- found by a unit test
+  that compared the two, not by inspection. Also surfaced, and pinned
+  rather than smoothed over: `reply_bad_command`/`reply_bought` loop
+  over EVERY match in the original (several `BadCommand`s/`Bought`s can
+  coexist in one tick); an `ActionCircuit` only ever acts on the first.
+  Converges to the identical FINAL set of replies either way -- but
+  when `cards.decide_buy`'s own real batching produces two `Bought`s at
+  once, `reply_goal_met` can now fire IN BETWEEN the two replies instead
+  of after both, because two independent one-match-per-tick queues are
+  competing for tick slots instead of one rule draining both in a
+  single pass. Same SET, different ORDER -- checked directly (`tests/
+  test_circuits.py::test_reply_bought_reaches_the_same_final_replies_
+  but_not_the_same_order_when_batched`), the sharper, compounding cousin
+  of the bullet below.
 - **`decide_buy_spec` drops the batching `cards.decide_buy` still does**
   (one match per tick, not several). Correct, per README History, but a
   real behavior change if this were ever adopted for real rather than
-  tested against it -- worth re-flagging if it is.
+  tested against it -- worth re-flagging if it is. Now known to compound
+  when composed with another reduced rule reading its output (see the
+  `reply_bought` bullet above) -- not just decide_buy's own tick count,
+  but cross-rule reply ORDER.
 - ~~Whether any of this is worth promoting past a prototype.~~ Promoted
   (2026-09-06) -- `loopingrules/circuits.py`, ahead of this repo's own
   usual bar (every prior promotion waited for a second domain to

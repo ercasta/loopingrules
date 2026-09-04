@@ -224,6 +224,51 @@ Nothing here touches the actual `pystrider` checkout — see History,
 
 ## History
 
+**The three `reply_*` rules: the simplest shape yet, a real bug caught
+by a unit test, and a genuine cost of composing reductions together,
+2026-09-06 (later still).** `reply_bad_command`/`reply_bought`/
+`reply_goal_met` all reduce to a single `ActionCircuit` each -- claim a
+fact, destroy it (or, for `reply_goal_met`, mark it `Announced` without
+destroying `GoalMet`), spawn a `Reply`. One new primitive, `SelfId()`:
+the plain int id of the entity an `ActionCircuit` itself matched, for
+`reply_goal_met`'s own `w.attach(entity, Announced())` -- the one effect
+in this whole catalog that acts on the SAME entity the match found,
+rather than a related or looked-up one.
+
+`SelfId`'s first implementation returned `entity` exactly as handed to
+it -- which, from `compile_circuit`'s own `ActionCircuit` branch, is an
+`Entity` HANDLE, not the plain int every other expression in this
+catalog resolves to. A unit test comparing `evaluate(SelfId(), w, e)`
+against `e.id` caught it immediately (`Entity.__eq__` compares by
+`(world, id)`, so a handle never equals a bare int by design -- see
+`loopingrules.world.Entity`'s own docstring). Fixed with `getattr
+(entity, "id", entity)`, the same normalization `World.attach` already
+does on the way into a component field.
+
+The other real finding, surfaced by the SAME discipline (check, don't
+assume): `reply_bad_command`/`reply_bought` loop over EVERY match in
+the original (several `BadCommand`s or `Bought`s can coexist in one
+tick); an `ActionCircuit` only ever acts on the first. A first attempt
+at the comparison test used `sorted()` on both sides and passed --
+which would have hidden a real difference. Compared unsorted instead:
+for a single event the order matches exactly, but when `cards.
+decide_buy`'s own real batching produces two `Bought`s in one tick,
+`reply_goal_met` can now land IN BETWEEN the two replies instead of
+after both, because two independent one-match-per-tick queues are
+competing for tick slots where the original had one rule draining both
+in a single pass. Same final SET of replies, different ORDER -- both
+halves checked directly, not assumed, and pinned as a test rather than
+a comment (`test_reply_bought_reaches_the_same_final_replies_but_not_
+the_same_order_when_batched`). This is the sharper, compounding form of
+the cost `decide_buy_spec`'s own batching-drop already named: it is not
+only decide_buy's OWN tick count that changes when the batching goes,
+it is the observable ORDER of everything downstream that reads its
+output through another reduced, one-per-tick rule.
+
+Every rule `examples.cards` registers has now been tried against this
+catalog at least once. 7 new tests in `tests/test_circuits.py`. 276 ->
+283 passing.
+
 **`hear_want`/`hear_status`: the other two `hear_*` rules, and one
 Replace effect where there were three, 2026-09-06 (yet later).**
 `hear_want` is the same four-mutually-exclusive-outcome shape as

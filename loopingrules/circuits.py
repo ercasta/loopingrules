@@ -56,7 +56,12 @@ exist evaluates to `MISSING`, not an exception):
 - `World(component, field)` -- a field of a world SINGLETON (`w.the`).
 - `TheEntity(component)` -- `World`'s sibling: the SINGLETON'S OWN id,
   for an effect that needs to name an entity to act on, not read a
-  value off it.
+  value off it. `SelfId()` is the same idea for the entity currently
+  being evaluated -- `ReplaceAt`'s own target when an effect acts on
+  the SAME entity its `ActionCircuit` matched, not a related or looked-
+  up one. Always a plain int, never the `Entity` handle a rule's own
+  `entity` may actually be, the same discipline `World.attach` itself
+  enforces on a component field.
 - `Const(value)` -- a literal.
 
 Arithmetic and combination, `MISSING`-propagating unless noted:
@@ -237,6 +242,20 @@ class TheEntity:
     itself, for an effect that needs to name WHICH entity to act on
     (`ReplaceAt`, most often) rather than read a value from it."""
     component: type
+
+
+@dataclasses.dataclass(frozen=True)
+class SelfId:
+    """The id of the entity currently being evaluated, ALWAYS as a plain
+    int (never the `Entity` handle a rule's own `entity` may actually be
+    bound to) -- the same "a component field never holds a live handle"
+    discipline `World.attach` itself enforces, kept here too since
+    nothing stops this value from later landing in one. For an
+    `ActionCircuit` effect that acts on the SAME entity the action
+    matched (`examples.cards.reply_goal_met`'s own `w.attach(entity,
+    Announced())`), rather than a related or looked-up one. `TheEntity`'s
+    sibling for "self" instead of a world singleton. `MISSING` if there
+    is no entity in scope."""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -734,6 +753,8 @@ def evaluate(expr, w, entity):
     if isinstance(expr, TheEntity):
         found = w.first(expr.component)
         return found[0].id if found is not None else MISSING
+    if isinstance(expr, SelfId):
+        return MISSING if entity is None else getattr(entity, "id", entity)
     if isinstance(expr, (Add, Sub, Mul)):
         left, right = evaluate(expr.left, w, entity), evaluate(expr.right, w, entity)
         if left is MISSING or right is MISSING:
