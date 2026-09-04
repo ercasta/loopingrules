@@ -13,8 +13,8 @@ import dataclasses
 import pytest
 
 from examples import cards, circuits, judge
-from examples.cards import (Affordable, Bought, Copies, FairPriced, Listing,
-                             Purse, Wanted)
+from examples.cards import (Affordable, Bought, CardDef, Copies, FairPriced,
+                             GoalMet, Listing, Purse, Wanted, Wants)
 from examples.judge import TooRisky
 from loopingrules import analyze
 from loopingrules.loop import Loop
@@ -139,29 +139,66 @@ decide_buy_spec = circuits.ActionCircuit(
 )
 
 
-# -- check_goal: no per-entity match at all, a universal quantifier ----
+# -- check_goal: no per-entity match on the QUESTION, a quantifier over
+# a completely different set -- and "don't fire twice" by CONSUMING a
+# seeded marker, not by testing GoalMet's own absence
 #
 # check_goal is not a per-entity circuit -- "every wanted card is met" is
-# a quantifier over a SET, and "spawn GoalMet once, never again" has no
-# single entity driving it. WorldCircuit + Any/Forall (added for exactly
-# this) restate it: Any(over) is false on an empty set, Forall(over,
-# condition) is vacuously true on one -- combined with And, "at least
-# one goal exists, and all of them are met." The "never again" guard is
-# ordinary self-reference in the condition (Not(Any((GoalMet,)))), not a
-# second monotonic flag saying the same thing a different way.
+# a quantifier over a SET (Any/Forall, added for exactly this: Any(over)
+# is false on an empty set, Forall(over, condition) is vacuously true on
+# one -- combined with And, "at least one goal exists, and all of them
+# are met"). A first attempt matched no entity at all (a WorldCircuit)
+# and guarded "don't fire twice" with self-reference, Not(Any((GoalMet,
+# ))), inside the condition -- correct, but the wrong idiom: `Wants`
+# must never be destroyed (hear_status still reads it), yet the RIGHT
+# answer to "don't fire twice" in this codebase is consuming an occasion
+# (Said, Proposal), not testing an output's own absence. GoalCheck,
+# below, is that occasion -- seeded once, matched by an ordinary
+# ActionCircuit, consumed (Destroy()) the moment the goal turns out to
+# be met. No self-reference to GoalMet needed at all: once GoalCheck is
+# gone, the rule has structurally nothing left to match, ever again.
 
-check_goal_spec = circuits.WorldCircuit(
+@dataclasses.dataclass(frozen=True)
+class GoalCheck:
+    """A seeded, one-shot marker -- not `cards.py`'s own vocabulary,
+    invented here to give `check_goal`'s circuit something to CONSUME.
+    Exists exactly once (seeded like `Purse`/`RiskProfile` are), and is
+    destroyed the moment the goal is confirmed met."""
+
+
+check_goal_spec = circuits.ActionCircuit(
+    require=(GoalCheck,),
+    without=(),
     condition=circuits.And((
         circuits.Any((cards.CardDef, cards.Wants)),
-        circuits.Not(circuits.Any((cards.GoalMet,))),
         circuits.Forall(
             (cards.CardDef, cards.Wants),
             circuits.Ge(
                 circuits.Coalesce(circuits.Self(cards.Copies, "count"), circuits.Const(0)),
                 circuits.Self(cards.Wants, "qty"))),
     )),
-    effects=(circuits.Spawn(cards.GoalMet, ()),),
+    effects=(circuits.Destroy(), circuits.Spawn(cards.GoalMet, ())),
 )
+
+
+def check_goal_consuming(w):
+    """The hand-written reference `check_goal_spec` restates -- the fair
+    comparison point for its own `reads`/`writes` (not the shipped
+    `cards.check_goal`, which guards via `w.the(GoalMet) is not None`
+    instead, a different idiom -- see the module-level note above).
+    Bare names (`CardDef`, not `cards.CardDef`) on purpose -- see
+    `decide_buy_single`'s own docstring for why."""
+    for entity, _check in w.each(GoalCheck):
+        wanted = w.each(CardDef, Wants)
+        if not wanted:
+            return
+        for card_entity, _card_def, wants in wanted:
+            copies = w.get(card_entity, Copies)
+            have = copies.count if copies else 0
+            if have < wants.qty:
+                return
+        w.destroy(entity)
+        w.spawn(GoalMet())
 
 
 # -- unit-level: evaluate the condition directly against a bare World ----
@@ -219,10 +256,16 @@ def test_decide_buy_spec_reads_writes_match_the_reduced_reference():
     assert circuits.destroys(decide_buy_spec) == analyzed.destroys
 
 
-def test_check_goal_spec_reads_writes_match_the_original():
-    analyzed = analyze.analyze(cards.check_goal)
+def test_check_goal_spec_reads_writes_match_the_consuming_reference():
+    """Checked against `check_goal_consuming`, not the shipped `cards.
+    check_goal` -- the two guard "don't fire twice" with different
+    idioms (consume `GoalCheck` vs. test `GoalMet`'s own absence), so
+    their reads legitimately differ (`GoalCheck` here, not `GoalMet` as
+    a read -- `GoalMet` is write-only once nothing tests its absence)."""
+    analyzed = analyze.analyze(check_goal_consuming)
     assert circuits.reads(check_goal_spec) == analyzed.reads
     assert circuits.writes(check_goal_spec) == analyzed.writes
+    assert circuits.destroys(check_goal_spec) == analyzed.destroys
 
 
 def test_any_is_false_on_an_empty_match_and_true_once_something_qualifies():
@@ -251,16 +294,27 @@ def test_forall_checks_every_match_not_just_the_first():
 
 
 def test_check_goal_circuit_never_fires_a_second_time():
-    """The "never again" guard is ordinary self-reference in the
-    condition, not a separate flag -- checked directly: running the
-    compiled rule twice after GoalMet already exists changes nothing."""
+    """"Don't fire twice" is structural, not logical -- GoalCheck is
+    consumed the first time the rule fires, so the SECOND call has
+    nothing left to match at all, checked directly rather than assumed
+    from the design argument."""
     w = World()
-    dragon = w.spawn(cards.CardDef("dragon", "rare", 40), cards.Wants(1), cards.Copies(1))
+    w.spawn(cards.CardDef("dragon", "rare", 40), cards.Wants(1), cards.Copies(1))
+    check = w.spawn(GoalCheck())
     rule = circuits.compile_circuit(check_goal_spec)
     rule(w)
     assert w.each(cards.GoalMet) != []
+    assert not check.alive    # consumed, not just guarded
     rule(w)
     assert len(w.each(cards.GoalMet)) == 1    # still exactly one, not two
+
+
+def test_check_goal_circuit_does_not_fire_while_a_want_is_unmet():
+    w = World()
+    w.spawn(cards.CardDef("dragon", "rare", 40), cards.Wants(2), cards.Copies(1))
+    w.spawn(GoalCheck())
+    circuits.compile_circuit(check_goal_spec)(w)
+    assert w.each(cards.GoalMet) == []
 
 
 # -- end-to-end: swap the compiled circuit in for the real rule ---------
@@ -364,6 +418,7 @@ def _all_circuits_loop(cash):
     _swap(lp, cards.tag_risk_level, circuits.compile_circuit(tag_risk_level_spec))
     _swap(lp, cards.decide_buy, circuits.compile_circuit(decide_buy_spec))
     _swap(lp, cards.check_goal, circuits.compile_circuit(check_goal_spec))
+    lp.world.spawn(GoalCheck())    # check_goal_spec's own occasion to consume
     return lp
 
 

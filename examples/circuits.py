@@ -50,31 +50,71 @@ Comparison, boundary where `MISSING` becomes an ordinary `False` rather
 than propagating further (a condition can always be evaluated, even
 about a fact that does not exist yet -- the same discipline `tag_wanted`
 already applies by hand for a card nobody has asked for):
-`Le`/`Lt`/`Ge`/`Gt`/`Eq`, and `And`/`Or` (n-ary, over already-resolved
-booleans).
+`Le`/`Lt`/`Ge`/`Gt`/`Eq`, and `And`/`Or`/`Not` (`And`/`Or` n-ary, over
+already-resolved booleans).
+
+`Exists(at, component)` -- whether the entity named by `at` (an
+expression giving an id) carries `component` at all; existence, not a
+field read, never `MISSING`. `Any(over)`/`Forall(over, condition)` --
+the two quantifiers over a JOIN (`over`, one type or several, the same
+shape `w.each(*over)` takes) rather than one entity's own fields: `Any`
+is `False` on an empty match set, `Forall` is vacuously `True` on one --
+combined with `And` wherever a rule needs "at least one exists, and all
+of them satisfy..." (`examples.cards.check_goal`'s own shape).
 
 `Format(template, exprs)` -- `template % tuple(evaluated exprs)`, the one
 non-arithmetic leaf, needed for `tag_risk_level`'s human-readable
 `reason` field; `MISSING`-propagating like arithmetic.
 
-## The two rule shapes
+## The three rule shapes
 
 `TagCircuit(for_each, condition, tag)` compiles to: for each entity of
 `for_each`, attach `tag()` if `condition` evaluates true, else detach
 it -- both directions, every tick, the same discipline `tag_affordable`
-&co. already hand-write. `ValueCircuit(for_each, into, fields)` compiles
-to: `replace(entity, into(*evaluated fields))` -- skipped (not guessed
-at) for one tick if any field evaluates `MISSING`.
+&co. already hand-write. `ValueCircuit(for_each, into, fields, condition=
+None, monotonic=False)` compiles to: `replace(entity, into(*evaluated
+fields))` -- skipped (not guessed at) for one tick if any field
+evaluates `MISSING`, or, if `monotonic=True`, an implicit `without=into`
+guard and `attach` instead of `replace` (derive AT MOST ONCE, matching
+`pystrider.patterns`' idiom rather than `examples.cards`'s). `Action
+Circuit(require, without, condition=None, effects)` picks the single
+FIRST entity matching `require`/`without` (never several), checks
+`condition` against it if given, and -- read phase, then write phase,
+never interleaved -- applies `ReplaceWorld`/`ReplaceVia`/`Destroy`/
+`Spawn` effects in order.
+
+## "Don't fire twice" is two different idioms, not one
+
+`ValueCircuit.monotonic`'s `without=into` guards a STANDING property of
+PERSISTENT data (a `Function`, a `CardDef`) that must never be
+re-derived once settled -- the data itself is never consumed, only the
+CONCLUSION about it is guarded, by testing its own absence.
+`ActionCircuit`'s `Destroy` effect is the other idiom: consuming the
+MATCHED entity itself, the same way `Said`/`Proposal` are claimed and
+destroyed the instant a rule acts on them, so there is structurally
+nothing left to match a second time -- no self-reference to an output
+needed at all. The two are not interchangeable: `examples.cards.
+check_goal`'s own `Wants` set must never be destroyed (`hear_status`
+still reads it), so its "don't fire twice" needs a SEPARATE, seeded,
+one-shot marker entity to consume instead of consuming the data the
+question is about -- see `tests/test_examples_circuits.py`'s own
+`check_goal_spec` and `GoalCheck`. A third idiom -- `WorldCircuit`, no
+per-entity match at all, "don't fire twice" as a self-referential
+condition -- was tried first, for exactly this rule, and removed: it
+turned out to be a narrower special case of what `ActionCircuit` with a
+seeded marker and a `condition` already covers, so keeping both would
+have been two ways to say the same thing. See README History, "don't
+fire twice is consuming a component, not testing an absence."
 
 ## No loop, no `if`, by construction
 
-Iteration is `for_each`'s own single `w.each()` walk, not a body a spec
-author writes; branching is `condition`'s own boolean value deciding
-attach-vs-detach, not a spec author's `if`. Nothing here is Turing
-complete on purpose -- there is no recursion, no way to reference another
-entity's kind not already named in `Via`, and no way to loop a variable
-number of times. That is not a missing feature; it is the whole point,
-per the module's own opening paragraph.
+Iteration is `for_each`/`require`'s own single `w.each()` walk, not a
+body a spec author writes; branching is a `condition`'s own boolean
+value, not a spec author's `if`. Nothing here is Turing complete on
+purpose -- there is no recursion, no way to reference another entity's
+kind not already named in `Via`, and no way to loop a variable number of
+times. That is not a missing feature; it is the whole point, per the
+module's own opening paragraph.
 
 ## Reads and writes come from the spec's own shape, not analysis
 
@@ -246,11 +286,10 @@ class Any:
 class Forall:
     """Whether EVERY entity carrying all of `over` satisfies `condition`
     -- `condition` is evaluated with THAT entity as "self," never
-    whatever entity `Forall` itself is being evaluated for (there may be
-    none at all -- see `WorldCircuit`). Vacuously `True` on an empty
-    match set, the classical convention; see `Any`'s own docstring for
-    why a rule that also cares whether the set is non-empty checks both.
-    """
+    whatever entity `Forall` itself is being evaluated for. Vacuously
+    `True` on an empty match set, the classical convention; see `Any`'s
+    own docstring for why a rule that also cares whether the set is
+    non-empty checks both."""
     over: object
     condition: object
 
@@ -352,15 +391,24 @@ class ActionCircuit:
 
     `require`/`without` pick exactly one entity the same way `w.first(
     *require, without=without)` already would -- the FIRST if several
-    qualify, never several at once. `effects`, in order, are the only
-    four things an action may do: `ReplaceWorld`/`ReplaceVia` (write a
-    freshly computed value), `Destroy` (the match itself), `Spawn` (a new
-    entity). Every effect's OWN fields are evaluated against the matched
-    entity BEFORE any effect commits -- a read phase, then a write
-    phase, never interleaved -- so no effect can see another effect's
-    write from the same action, the same "read into locals, then write"
-    shape `decide_buy`'s own hand-written body already has. If any
-    field evaluates `MISSING`, the WHOLE action is skipped, not applied
+    qualify, never several at once. `condition`, if given, is checked
+    AFTER the match (evaluated with the matched entity as self, so it
+    may use `Any`/`Forall` over an entirely different, world-wide join
+    the match itself says nothing about -- `examples.cards.check_goal`'s
+    own restatement is exactly this: `require` finds a seeded, one-shot
+    marker entity, `condition` asks a question about a completely
+    different set, `CardDef`/`Wants`). `None` (the default) means
+    "always," the behaviour before `condition` existed.
+
+    `effects`, in order, are the only four things an action may do:
+    `ReplaceWorld`/`ReplaceVia` (write a freshly computed value),
+    `Destroy` (the match itself), `Spawn` (a new entity). Every effect's
+    OWN fields are evaluated against the matched entity BEFORE any
+    effect commits -- a read phase, then a write phase, never
+    interleaved -- so no effect can see another effect's write from the
+    same action, the same "read into locals, then write" shape
+    `decide_buy`'s own hand-written body already has. If any field
+    evaluates `MISSING`, the WHOLE action is skipped, not applied
     halfway -- refuse rather than guess, same as `ValueCircuit`.
 
     Only ONE action per tick, on purpose -- see `examples.circuits`'s
@@ -369,44 +417,44 @@ class ActionCircuit:
     need to here: the tick loop retrying with freshly recomputed tags is
     what a hand-written loop-and-reread would otherwise have to do by
     hand.
+
+    ## "Don't fire twice" is `Destroy`ing the match, not testing an
+    output's absence
+
+    `Destroy()` in `effects` -- consuming the matched entity as PART OF
+    acting on it -- is this shape's own answer to "don't fire twice,"
+    the same idiom `loopingrules.world.Said`/`Proposal` already use (a
+    rule claims and destroys the occasion the moment it acts, so there
+    is structurally nothing left to match a second time). This is a
+    DIFFERENT idiom from `ValueCircuit.monotonic`'s `without=into` (a
+    standing property of PERSISTENT data -- `Function`s, `CardDef`s --
+    that keeps existing and must never be re-derived once settled), and
+    the two are not interchangeable: a `Wants` set must never be
+    destroyed (`hear_status` still needs to read it), so "goal met"
+    cannot be guarded by consuming the thing it is a question ABOUT --
+    it needs its own, separate, one-shot marker entity to consume
+    instead. See History, "the monotonic mode," and the correction that
+    replaced this shape's first `check_goal` restatement, for the
+    argument in full.
     """
     require: tuple
     without: tuple
-    effects: tuple
-
-
-# -- the fourth shape: no per-entity match at all -------------------------
-
-@dataclasses.dataclass(frozen=True)
-class WorldCircuit:
-    """A world-level action: no per-entity match, unlike every other
-    shape here -- `condition` is evaluated with NO entity in scope, so
-    it may only be built from `Any`/`Forall`/`World`/`Const`-rooted
-    expressions, never `Self`/`Via` (which need one; both return
-    `MISSING` if asked to evaluate with no entity, rather than raise).
-    Fires `effects` (`Spawn` only, today) once `condition` holds.
-
-    The "never fire again" guard is not a separate flag here, unlike
-    `ValueCircuit.monotonic` -- it is ordinary self-reference INSIDE the
-    condition (`Not(Any((GoalMet,)))`), the same discipline `examples.
-    cards.check_goal`'s own `w.the(GoalMet) is not None` guard already
-    uses. A second flag would have been a second way to say the same
-    thing this algebra can already express on its own.
-    """
-    condition: object
-    effects: tuple
+    condition: object = None
+    effects: tuple = ()
 
 
 # -- the interpreter -------------------------------------------------------
 
 def evaluate(expr, w, entity):
     """One expression, evaluated against one entity -- or against NO
-    entity (`entity=None`, `WorldCircuit`'s own case): `Self`/`Via`
-    return `MISSING` rather than raise when asked to read off nothing.
-    `MISSING` elsewhere is where a read's target does not exist -- see
-    the module docstring for which shapes propagate it and which
-    resolve it (`Coalesce`) or collapse it to an ordinary `False`
-    (every comparison)."""
+    entity (`entity=None`): `Self`/`Via` return `MISSING` rather than
+    raise when asked to read off nothing, which is what lets `Any`/
+    `Forall`-rooted conditions (built from no `Self`/`Via` at all) be
+    evaluated standalone, with nothing bound as "self." `MISSING`
+    elsewhere is where a read's target does not exist -- see the module
+    docstring for which shapes propagate it and which resolve it
+    (`Coalesce`) or collapse it to an ordinary `False` (every
+    comparison)."""
     if isinstance(expr, Const):
         return expr.value
     if isinstance(expr, Self):
@@ -504,6 +552,8 @@ def compile_circuit(spec):
             if match is None:
                 return
             entity = match[0]
+            if spec.condition is not None and not evaluate(spec.condition, w, entity):
+                return
             planned = []    # read phase: every effect's fields, pre-write
             for effect in spec.effects:
                 if isinstance(effect, Destroy):
@@ -524,19 +574,6 @@ def compile_circuit(spec):
                     w.destroy(entity)
                 elif isinstance(effect, Spawn):
                     w.spawn(effect.component(*values))
-        return rule
-    if isinstance(spec, WorldCircuit):
-        def rule(w):
-            if not evaluate(spec.condition, w, None):
-                return
-            for effect in spec.effects:
-                if not isinstance(effect, Spawn):
-                    raise TypeError(
-                        "WorldCircuit supports Spawn effects only, got %r" % (effect,))
-                values = [evaluate(f, w, None) for f in effect.fields]
-                if any(v is MISSING for v in values):
-                    return    # refuse the WHOLE action, not half of it
-                w.spawn(effect.component(*values))
         return rule
     raise TypeError("not a circuit spec: %r" % (spec,))
 
@@ -560,8 +597,6 @@ def reads(spec) -> Set[type]:
                 kinds.add(effect.component)
             elif isinstance(effect, ReplaceVia):
                 kinds.add(effect.base)
-    elif isinstance(spec, WorldCircuit):
-        kinds = set()    # everything comes from walking the condition, below
     else:
         kinds = set(_kinds(spec.for_each))
         if isinstance(spec, ValueCircuit) and spec.monotonic:

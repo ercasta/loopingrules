@@ -215,6 +215,60 @@ Nothing here touches the actual `pystrider` checkout — see History,
 
 ## History
 
+**"Don't fire twice" is consuming a component, not testing an absence
+-- `WorldCircuit` removed, 2026-09-05 (later).** A correction to the
+entry directly below this one, landed the same day it did: `check_goal`
+was restated with `WorldCircuit`, guarding "don't fire twice" by
+self-reference inside its own condition (`Not(Any((GoalMet,)))`) --
+correct, but the wrong idiom, pointed out directly: this codebase's own
+answer to "don't fire twice" is CONSUMING the thing that triggered the
+rule (`Said`/`Proposal`, claimed and destroyed the instant a rule acts),
+not testing whether the CONCLUSION already exists. `ValueCircuit.
+monotonic`'s `without=into` guard is a third, genuinely different
+idiom, for a reason worth keeping straight: it guards a STANDING
+property of PERSISTENT data (a `Function` that must never be destroyed)
+by testing the conclusion's own absence, because the data under it
+cannot be consumed and still be useful to anything else that reads it.
+`check_goal`'s `Wants` set is exactly that kind of persistent data
+(`hear_status` still reads it) -- so its "don't fire twice" needed a
+SEPARATE, purpose-built, one-shot marker to consume instead of either
+consuming `Wants` (wrong -- destroys data other rules need) or
+self-referencing `GoalMet` (works, but is the wrong idiom for a rule
+whose actual shape is "handle one occasion, once").
+
+Fixed by giving `ActionCircuit` a `condition` field (checked after the
+match, against the matched entity, but free to ask about an entirely
+different set via `Any`/`Forall` -- `check_goal`'s own shape: the match
+finds a seeded `GoalCheck` marker, the condition asks about `CardDef`/
+`Wants`) and restating `check_goal` as an ordinary `ActionCircuit`:
+match `GoalCheck`, check the condition, and -- if it holds --
+`Destroy()` the marker and `Spawn` `GoalMet`, in the same action. No
+self-reference to `GoalMet` needed at all; the guard is now STRUCTURAL
+(once `GoalCheck` is gone, there is nothing left to match, ever again),
+not logical (a boolean the reader has to trust is wired correctly) --
+the same "make it structural, not prose" preference `PRINCIPLES.md`
+already states for a different guard (abstention). `WorldCircuit` is
+deleted outright, not deprecated: once `ActionCircuit` could express
+everything it did (nothing in it ever needed `Self`/`Via` off a real
+entity, since a seeded marker serves exactly as well as no entity at
+all), keeping both would have been two ways to say the same thing --
+the same reasoning `facts.py`/`arbitration.py`/`deltas` were removed
+for, applied to a shape that lived for exactly one commit this time
+before the redundancy was caught.
+
+`check_goal_spec`'s reads/writes now match a hand-written
+`check_goal_consuming` reference exactly (`{CardDef, Copies, GoalCheck,
+Wants}` reads, `{GoalMet}` writes, `destroys=True`) -- deliberately NOT
+the shipped `cards.check_goal`, which reads `GoalMet` itself as part of
+its own different guard; the two rules answer the same question with
+different idioms, so their reads legitimately differ. The end-to-end
+regressions (goal-met flow, once-only announcement) still hold with
+`GoalCheck` seeded once, the same `install()`-time, BigFloor-style
+seeding `Purse`/`RiskProfile` already use.
+
+2 new tests, net (one added, one rewritten to check the guard is
+structural rather than assumed). 218 -> 219 passing.
+
 **`check_goal`'s quantifier: `WorldCircuit`, `Any`, `Forall`, 2026-09-05.**
 `check_goal` is not a per-entity circuit at all -- "every wanted card is
 met" is a universal quantifier over a SET, and "spawn `GoalMet` once,
