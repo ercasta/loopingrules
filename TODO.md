@@ -4,14 +4,19 @@ Open threads out of the `examples/circuits.py` prototype (see README
 History, "circuits.py: a closed shape catalog"), named so they are not
 lost rather than scheduled.
 
-- ~~`check_goal`'s fold.~~ Done: `WorldCircuit` + `Any`/`Forall` (no
-  per-entity match, a quantifier over a query instead). `patterns.
-  loop_count` (an aggregate too -- how many loops a function directly
-  contains) is NOT the same shape and remains open: it counts, over a
-  query already scoped to ONE entity's own nested structure, not "every
-  entity matching a join" -- `Any`/`Forall` answer yes/no questions,
-  `loop_count` needs an actual `Count`/`Sum` returning a number. Not
-  designed.
+- ~~`check_goal`'s fold.~~ Done: `ActionCircuit` (a seeded `GoalCheck`
+  marker, consumed) + `Any`/`Forall` for the quantifier over `CardDef`/
+  `Wants` the condition asks about. (A first attempt used a fourth rule
+  shape, `WorldCircuit`, guarding "don't fire twice" by self-reference;
+  removed once it turned out to be a strict special case of
+  `ActionCircuit` with a seeded marker -- see README History, "don't
+  fire twice is consuming a component.")
+- ~~`patterns.loop_count`'s aggregate.~~ Done: `Count(over, condition)`
+  (a number, not a boolean -- `Any`/`Forall`'s sibling) plus `Children
+  (base, fk_field, component)`, the one-to-many scope `Via` cannot
+  reach (a `Function`'s `Body` names ONE entity, but that entity carries
+  MANY `Stmt`s), plus `HasSelf(component)` for "does the entity
+  currently being counted carry this."
 - **`hear_list`/`hear_want`/`hear_status` stay plain Python, on purpose,
   for now.** String parsing (split, lowercase, int-parse, look up by
   name, report which check failed) is a different primitive axis than

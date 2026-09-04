@@ -215,6 +215,44 @@ Nothing here touches the actual `pystrider` checkout — see History,
 
 ## History
 
+**`loop_count`'s aggregate: `Count`, `Children`, `HasSelf`, 2026-09-06.**
+`pystrider.patterns.loop_count` -- "how many of a `Function`'s `Stmt`s
+are `ForStmt`s" -- is a third aggregate shape, distinct from both
+`check_goal`'s `Any`/`Forall` (a boolean, over a GLOBAL join) and every
+per-entity circuit before it (one entity's own fields): it needs a
+NUMBER, and what it counts is not a world-wide join at all -- it is
+reached by following `self`'s own `Body` to one specific entity, then
+reading every `Stmt` THERE (`get_all`, plural, the one-to-many hop
+`Via` cannot reach, since `Via` reads a single field off a single
+related entity).
+
+Three additions, each earning its place from this one real rule, not
+speculated in advance: `Children(base, fk_field, component)` names the
+one-to-many scope; `Count(over, condition)` is `Any`/`Forall`'s sibling
+that counts instead of asking yes/no, over EITHER a `Children` scope or
+an ordinary global join; `HasSelf(component)` answers "does the entity
+currently being counted carry this," needed because `Count`'s own
+condition is evaluated with each CHILD as self, not the `Function`
+`loop_count` itself iterates -- `Exists` needs an expression naming an
+id to ask about, and here the id in question just IS self.
+
+Tried for real against the actual `pystrider` checkout, same as the
+monotonic mode and the generic `Part` tag before it: restated exactly
+as `ValueCircuit(for_each=(Function, Body), monotonic=True, fields=
+(Count(Children(Body, "entity", Stmt), HasSelf(ForStmt)),))`, its reads/
+writes matched `loopingrules.analyze.analyze(patterns.loop_count)`
+exactly on the first attempt, and the compiled circuit -- swapped in
+alongside the three already-restated descriptions -- produced a
+byte-identical `LoopCount`, with `constraints.max_loops` (itself already
+a circuit, from two entries ago) still composing correctly on top of
+it. `patterns.py`'s and `constraints.py`'s entire real vocabulary now
+reduces to this catalog, not just the three tag-shaped descriptions.
+
+4 new tests in `tests/test_examples_circuits.py`, self-contained against
+synthetic `Box`/`Item`/`Flagged` components so this suite needs no
+`pystrider` checkout to verify the three new primitives. 219 -> 223
+passing.
+
 **"Don't fire twice" is consuming a component, not testing an absence
 -- `WorldCircuit` removed, 2026-09-05 (later).** A correction to the
 entry directly below this one, landed the same day it did: `check_goal`

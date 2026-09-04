@@ -587,6 +587,111 @@ def test_value_circuit_for_each_accepts_a_multi_component_join():
     assert circuits.reads(spec) == {Count, Ref}
 
 
+# -- Count/Children/HasSelf, added for pystrider.patterns.loop_count ---
+#
+# loop_count is a THIRD aggregate shape, distinct from both check_goal's
+# Any/Forall (a boolean, over a GLOBAL join) and everything else in this
+# file (one entity's own fields): "how many of a Function's Stmts are
+# ForStmts" needs a NUMBER, and the Stmts to count are not a world-wide
+# join at all -- they are reached by following THIS Function's own Body
+# to one specific entity, then reading every Stmt THERE (get_all,
+# plural -- the one-to-many hop Via cannot reach). Children names that
+# scope; Count is Any/Forall's sibling that counts instead of asking
+# yes/no; HasSelf answers "does the entity currently being counted carry
+# this" without needing an expression to name it (it just IS self).
+#
+# Tried for real against a live pystrider checkout (not committed here,
+# same as the monotonic mode and the generic Part tag before it):
+# restated exactly as below (Function/Body/Stmt/ForStmt in place of the
+# synthetic Box/Item/Flagged here), reads/writes matched
+# loopingrules.analyze.analyze(patterns.loop_count) exactly, and the
+# compiled circuit -- swapped in for loop_count alongside the three
+# already-restated descriptions -- produced a byte-identical LoopCount,
+# with constraints.max_loops (itself already a circuit) still composing
+# correctly on top of it. See README History, "loop_count's aggregate."
+
+@dataclasses.dataclass(frozen=True)
+class Box:
+    body: int
+
+
+@dataclasses.dataclass(frozen=True)
+class Item:
+    entity: int
+
+
+@dataclasses.dataclass(frozen=True)
+class Flagged:
+    pass
+
+
+@dataclasses.dataclass(frozen=True)
+class ItemTally:
+    count: int
+
+
+item_tally_spec = circuits.ValueCircuit(
+    for_each=(Box,),
+    into=ItemTally,
+    monotonic=True,
+    fields=(circuits.Count(
+        circuits.Children(Box, "body", Item), circuits.HasSelf(Flagged)),),
+)
+
+
+def item_tally_reference(w):
+    """The hand-written reference `item_tally_spec` restates -- the same
+    shape as `pystrider.patterns.loop_count`, with `Box`/`Item`/`Flagged`
+    standing in for `Function`/`Stmt`/`ForStmt`."""
+    for entity, box in w.each(Box, without=ItemTally):
+        count = sum(1 for item in w.get_all(box.body, Item)
+                    if w.has(item.entity, Flagged))
+        w.attach(entity, ItemTally(count))
+
+
+def test_count_is_zero_on_an_empty_children_scope():
+    w = World()
+    body = w.spawn()
+    box = w.spawn(Box(body.id))
+    assert circuits.evaluate(
+        circuits.Count(circuits.Children(Box, "body", Item), circuits.HasSelf(Flagged)),
+        w, box) == 0
+
+
+def test_count_counts_only_the_children_satisfying_the_condition():
+    w = World()
+    body = w.spawn()
+    box = w.spawn(Box(body.id))
+    flagged_child = w.spawn(Flagged())
+    plain_child = w.spawn()
+    w.attach(body, Item(flagged_child.id), Item(plain_child.id))
+    assert circuits.evaluate(
+        circuits.Count(circuits.Children(Box, "body", Item), circuits.HasSelf(Flagged)),
+        w, box) == 1
+
+
+def test_has_self_is_false_with_no_entity_in_scope():
+    w = World()
+    assert circuits.evaluate(circuits.HasSelf(Flagged), w, None) is False
+
+
+def test_item_tally_spec_matches_the_hand_written_reference():
+    """Unit-level AND structural: same final value on a real world, and
+    the same reads/writes as `loopingrules.analyze` derives from the
+    hand-written reference."""
+    w = World()
+    body = w.spawn()
+    box = w.spawn(Box(body.id))
+    w.attach(body, Item(w.spawn(Flagged()).id), Item(w.spawn(Flagged()).id),
+              Item(w.spawn().id))
+    circuits.compile_circuit(item_tally_spec)(w)
+    assert w.get(box, ItemTally) == ItemTally(2)
+
+    analyzed = analyze.analyze(item_tally_reference)
+    assert circuits.reads(item_tally_spec) == analyzed.reads
+    assert circuits.writes(item_tally_spec) == analyzed.writes
+
+
 # -- recursion, flattened into propagation across ticks ------------------
 #
 # `pystrider.symbolic.fold` recurses in Python over a Left/Right tree --

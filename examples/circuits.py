@@ -54,13 +54,21 @@ already applies by hand for a card nobody has asked for):
 already-resolved booleans).
 
 `Exists(at, component)` -- whether the entity named by `at` (an
-expression giving an id) carries `component` at all; existence, not a
-field read, never `MISSING`. `Any(over)`/`Forall(over, condition)` --
-the two quantifiers over a JOIN (`over`, one type or several, the same
-shape `w.each(*over)` takes) rather than one entity's own fields: `Any`
-is `False` on an empty match set, `Forall` is vacuously `True` on one --
-combined with `And` wherever a rule needs "at least one exists, and all
-of them satisfy..." (`examples.cards.check_goal`'s own shape).
+expression giving an id) carries `component` at all; `HasSelf(
+component)` -- the same question about self, with no `at` to compute.
+Neither reads a field, and neither ever yields `MISSING`.
+
+`Any(over)`/`Forall(over, condition)`/`Count(over, condition)` -- three
+quantifiers over `over` (a GLOBAL join -- a type or several, the same
+shape `w.each(*over)` takes -- or a `Children(base, fk_field, component)`
+SCOPE: self's own `base.fk_field` names a parent, and every `component`
+there contributes its own `.entity`, the one-to-many hop `Via` cannot
+reach). `Any` is `False` on an empty match set; `Forall` is vacuously
+`True` on one (combined with `And` wherever a rule needs "at least one
+exists, and all of them satisfy...", `examples.cards.check_goal`'s own
+shape); `Count` is a definite integer, `0` on one (`pystrider.patterns.
+loop_count`'s own shape: how many of a `Function`'s `Stmt`s are
+`ForStmt`s).
 
 `Format(template, exprs)` -- `template % tuple(evaluated exprs)`, the one
 non-arithmetic leaf, needed for `tag_risk_level`'s human-readable
@@ -256,6 +264,20 @@ class Exists:
 
 
 @dataclasses.dataclass(frozen=True)
+class HasSelf:
+    """Whether the entity CURRENTLY being evaluated (self) carries
+    `component` at all -- `Exists`'s own sibling, for when the id to ask
+    about is not reached by any expression at all, it just IS self
+    (`pystrider.patterns.loop_count`'s "is this statement a `ForStmt`"
+    check, asked of each of a `Function`'s own `Stmt`s in turn -- see
+    `Count`, below, for how `self` gets to mean one of those rather than
+    the `Function` a `loop_count`-shaped circuit iterates). `False` if
+    there is no self in scope (`entity=None`) -- never `MISSING`, the
+    same existence-not-a-read posture `Exists` already has."""
+    component: type
+
+
+@dataclasses.dataclass(frozen=True)
 class And:
     exprs: tuple
 
@@ -290,6 +312,35 @@ class Forall:
     `True` on an empty match set, the classical convention; see `Any`'s
     own docstring for why a rule that also cares whether the set is
     non-empty checks both."""
+    over: object
+    condition: object
+
+
+@dataclasses.dataclass(frozen=True)
+class Children:
+    """A SCOPED alternative to `Any`/`Forall`/`Count`'s plain `over`: the
+    entities reached by following self's own `base.fk_field` to a
+    parent, then reading every `component` THERE (`get_all`, plural --
+    the one-to-many case `Via` cannot reach, because `Via` reads a
+    single field off a single related entity) and quantifying over each
+    one's own `.entity`. `pystrider.patterns.loop_count`'s own shape:
+    a `Function`'s `Body` names ONE entity, but that entity carries MANY
+    `Stmt`s, and it is those `Stmt`s -- not the `Body` itself -- that
+    `loop_count` asks a question about, one at a time."""
+    base: type
+    fk_field: str
+    component: type
+
+
+@dataclasses.dataclass(frozen=True)
+class Count:
+    """How many entities matching `over` (a type/tuple -- a global join,
+    like `Any`/`Forall` -- or a `Children` scope) satisfy `condition`,
+    evaluated with each match as self. Always a definite integer, `0` on
+    an empty match set. `Any`/`Forall` are not rewritten in terms of
+    this -- neither ever needed a NUMBER, only a boolean, and keeping
+    them separate keeps each one's own docstring about what it actually
+    answers."""
     over: object
     condition: object
 
@@ -445,6 +496,22 @@ class ActionCircuit:
 
 # -- the interpreter -------------------------------------------------------
 
+def _matches(w, over, entity):
+    """Every entity id `Any`/`Forall`/`Count` should quantify over --
+    either a GLOBAL join (`over` a type or tuple, `w.each(*over)`, self
+    plays no part), or a `Children` SCOPE (self's own `base.fk_field`
+    names a parent, and every `component` on THAT parent contributes its
+    own `.entity`). Plain ids either way -- `w.get`/`w.has` already
+    normalize an `Entity` handle or a bare int the same way."""
+    if isinstance(over, Children):
+        base = None if entity is None else w.get(entity, over.base)
+        if base is None:
+            return []
+        parent = getattr(base, over.fk_field)
+        return [component.entity for component in w.get_all(parent, over.component)]
+    return [row[0] for row in w.each(*_kinds(over))]
+
+
 def evaluate(expr, w, entity):
     """One expression, evaluated against one entity -- or against NO
     entity (`entity=None`): `Self`/`Via` return `MISSING` rather than
@@ -493,6 +560,8 @@ def evaluate(expr, w, entity):
     if isinstance(expr, Exists):
         at = evaluate(expr.at, w, entity)
         return at is not MISSING and w.get(at, expr.component) is not None
+    if isinstance(expr, HasSelf):
+        return entity is not None and w.get(entity, expr.component) is not None
     if isinstance(expr, (Le, Lt, Ge, Gt, Eq)):
         left, right = evaluate(expr.left, w, entity), evaluate(expr.right, w, entity)
         if left is MISSING or right is MISSING:
@@ -505,10 +574,12 @@ def evaluate(expr, w, entity):
     if isinstance(expr, Not):
         return not evaluate(expr.expr, w, entity)
     if isinstance(expr, Any):
-        return bool(w.each(*_kinds(expr.over)))
+        return bool(_matches(w, expr.over, entity))
     if isinstance(expr, Forall):
-        return all(evaluate(expr.condition, w, row[0])
-                   for row in w.each(*_kinds(expr.over)))
+        return all(evaluate(expr.condition, w, m) for m in _matches(w, expr.over, entity))
+    if isinstance(expr, Count):
+        return sum(1 for m in _matches(w, expr.over, entity)
+                   if evaluate(expr.condition, w, m))
     if isinstance(expr, Format):
         values = [evaluate(e, w, entity) for e in expr.exprs]
         if any(v is MISSING for v in values):
@@ -610,8 +681,13 @@ def reads(spec) -> Set[type]:
             kinds.add(node.component)
         elif isinstance(node, Exists):
             kinds.add(node.component)
-        elif isinstance(node, (Any, Forall)):
-            kinds.update(_kinds(node.over))
+        elif isinstance(node, HasSelf):
+            kinds.add(node.component)
+        elif isinstance(node, Children):
+            kinds.update((node.base, node.component))
+        elif isinstance(node, (Any, Forall, Count)):
+            if not isinstance(node.over, Children):
+                kinds.update(_kinds(node.over))    # a Children scope is its own leaf, above
     return kinds
 
 
