@@ -215,6 +215,53 @@ Nothing here touches the actual `pystrider` checkout — see History,
 
 ## History
 
+**A correction: recursion is not "real computation, not orchestration"
+after all, 2026-09-04 (later still).** A full audit of every rule
+`pystrider` actually registers (51 rules, across `patterns`/
+`constraints`/`repair`/`effects`/`effects_repair`/`plan`/`spans`/
+`symbolic`/`domain`) found 19 `loopingrules.analyze` could not see
+through, sorted into buckets — most were avoidable DRY (a `kind` closed
+over a loop or ternary instead of written out — `symbolic.known_value`
+split into three literally-typed rules analyzes cleanly with zero
+behavior change, checked, not assumed), one was a sibling solution to
+the same problem `circuits.py` solves (`pystrider.rules`'s `derive`/
+`assign`/`minting`, restricted by stripping `World` methods at runtime
+rather than by being data), one was deliberate genericity `PRINCIPLES.
+md` itself celebrates (`_parent_of`/`_reachable`'s walk over `intake.
+PARTS.values()` — see "a generic Part tag," below, for the fix tried),
+and the last bucket was named "real computation, not orchestration" —
+`symbolic.fold`'s recursion over a `Left`/`Right` tree, judged
+irreducible to attach/detach composition.
+
+That last claim was too strong. Production/term-rewriting systems —
+structurally what this substrate already is — are Turing-complete, and
+a recursive call flattens into "compute what depends on nothing yet,
+then whatever now depends only on already-computed values, then
+whatever depends on THAT" — exactly a `ValueCircuit` reading its own
+output on related entities via `Exists`/`Via`, run to a fixpoint across
+TICKS instead of stack frames. Proved with no new primitive:
+`fold_lit`/`fold_add`/`fold_mul` in `tests/test_examples_circuits.py`
+fold `(2 + 3) * (4 + 5)` to `45` with zero Python recursion, using only
+`Add`/`Mul`/`Via`/`Exists`/`Eq`/`Const`, already in the catalog. Not a
+novel discovery, either direction: `pystrider.effects.transitive`'s own
+docstring already states the propagation half ("a call graph five deep
+needs no more code than a call graph one deep — the loop just runs a
+few more ticks"), and `pystrider.symbolic`'s own module docstring
+records that `fold` USED TO work this way and was deliberately rewritten
+to recurse in Python instead — "a side benefit" of an unrelated fix (a
+repair mutating a `Constant` in place needs `fold` to never trust a
+stale per-tick cache). The real, measured cost: ticks-to-settle depends
+on registration order (dependency order resolves a whole tree in ONE
+productive tick, thanks to `Loop.tick`'s own same-tick write visibility;
+the adversarial order costs one tick per nesting level) — correctness
+never does, pinned as two tests reaching the identical answer either
+way. The corrected claim: expressible, but only worth it once something
+else in the world wants to observe or extend an intermediate step —
+otherwise recursion is strictly cheaper, and `pystrider`'s own authors
+already made that exact call, in writing, for this exact function.
+
+3 new tests in `tests/test_examples_circuits.py`. 209 -> 212 passing.
+
 **A generic `Part` tag, prototyped against a real gap in `pystrider`,
 2026-09-04 (later).** `examples/parts.py`: a toy tree (not `pystrider`'s
 real one) with specific edges (`Left`/`Right`/`Body`) minted through one

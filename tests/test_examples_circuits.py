@@ -440,3 +440,124 @@ def test_value_circuit_for_each_accepts_a_multi_component_join():
     circuits.compile_circuit(spec)(w)
     assert w.get(entity, TooMany) == TooMany(5, 9)
     assert circuits.reads(spec) == {Count, Ref}
+
+
+# -- recursion, flattened into propagation across ticks ------------------
+#
+# `pystrider.symbolic.fold` recurses in Python over a Left/Right tree --
+# named, at the time, as "irreducible: real computation, not
+# composition." That claim was too strong. Production/term-rewriting
+# systems (what this substrate structurally is) are Turing-complete; a
+# recursive call can always be flattened into "compute the leaves now,
+# then whatever depends only on already-computed values, then whatever
+# depends on THAT," which is exactly a `ValueCircuit` reading its own
+# output via `Exists`/`Via` on related entities, run to a fixpoint. No
+# new primitive was needed to prove it -- `Add`/`Mul`/`Via`/`Exists`/`Eq`
+# already existed. `pystrider.effects.transitive`'s own docstring already
+# names this same idea for a different propagation ("a call graph five
+# deep needs no more code than a call graph one deep -- the loop just
+# runs a few more ticks"); `pystrider.symbolic`'s own module docstring
+# records that `fold` ITSELF used to work this way and was deliberately
+# rewritten to recurse in Python instead, "a side benefit" of a change
+# made for a different reason (a repair mutating a `Constant` in place
+# needs `fold` to recompute from scratch, not trust a per-tick cache).
+#
+# So both directions are real, working, and already chosen at least
+# once in this project's own history. What this section pins is the
+# actual cost of the propagation direction, not just that it exists:
+# ticks-to-settle depends on registration order (dependency order lets
+# a whole tree resolve within ONE productive tick, thanks to `Loop.
+# tick`'s own same-tick write visibility; the adversarial order costs
+# one tick per nesting level instead) -- correctness never does.
+
+@dataclasses.dataclass(frozen=True)
+class Lit:
+    value: int
+
+
+@dataclasses.dataclass(frozen=True)
+class BinOp:
+    op: str
+    left: int
+    right: int
+
+
+@dataclasses.dataclass(frozen=True)
+class Folded:
+    value: int
+
+
+fold_lit = circuits.ValueCircuit(for_each=Lit, into=Folded,
+                                  fields=(circuits.Self(Lit, "value"),))
+
+fold_add = circuits.ValueCircuit(
+    for_each=BinOp, into=Folded,
+    condition=circuits.And((
+        circuits.Eq(circuits.Self(BinOp, "op"), circuits.Const("add")),
+        circuits.Exists(circuits.Self(BinOp, "left"), Folded),
+        circuits.Exists(circuits.Self(BinOp, "right"), Folded))),
+    fields=(circuits.Add(circuits.Via(BinOp, "left", Folded, "value"),
+                          circuits.Via(BinOp, "right", Folded, "value")),),
+)
+
+fold_mul = circuits.ValueCircuit(
+    for_each=BinOp, into=Folded,
+    condition=circuits.And((
+        circuits.Eq(circuits.Self(BinOp, "op"), circuits.Const("mul")),
+        circuits.Exists(circuits.Self(BinOp, "left"), Folded),
+        circuits.Exists(circuits.Self(BinOp, "right"), Folded))),
+    fields=(circuits.Mul(circuits.Via(BinOp, "left", Folded, "value"),
+                          circuits.Via(BinOp, "right", Folded, "value")),),
+)
+
+
+def _expression_tree():
+    """`(2 + 3) * (4 + 5)` -- two levels of nesting on BOTH operands of
+    the top node, so a single-level propagation could not fake the
+    right answer by accident."""
+    w = World()
+    two, three, four, five = (w.spawn(Lit(v)) for v in (2, 3, 4, 5))
+    add1 = w.spawn(BinOp("add", two.id, three.id))
+    add2 = w.spawn(BinOp("add", four.id, five.id))
+    top = w.spawn(BinOp("mul", add1.id, add2.id))
+    return w, top.id, add1.id, add2.id
+
+
+def test_recursive_fold_flattens_into_propagation_with_no_new_primitives():
+    w, top, add1, add2 = _expression_tree()
+    lp = Loop()
+    lp.rule(circuits.compile_circuit(fold_lit), name="fold_lit", watches=(Lit,))
+    lp.rule(circuits.compile_circuit(fold_add), name="fold_add", watches=(BinOp,))
+    lp.rule(circuits.compile_circuit(fold_mul), name="fold_mul", watches=(BinOp,))
+    lp.world = w
+    settled = lp.run()
+    assert settled.hot == []
+    assert w.get(top, Folded) == Folded(45)
+    assert w.get(add1, Folded) == Folded(5)
+    assert w.get(add2, Folded) == Folded(9)
+
+
+def test_fold_propagation_settles_regardless_of_registration_order():
+    """The one real cost, pinned rather than asserted in prose: ticks-to-
+    settle depends on registration order (same-tick write visibility
+    lets a dependency-ordered registration resolve a whole tree in ONE
+    productive tick); CORRECTNESS does not."""
+    w, top, _add1, _add2 = _expression_tree()
+    lp = Loop()
+    lp.rule(circuits.compile_circuit(fold_mul), name="fold_mul", watches=(BinOp,))
+    lp.rule(circuits.compile_circuit(fold_add), name="fold_add", watches=(BinOp,))
+    lp.rule(circuits.compile_circuit(fold_lit), name="fold_lit", watches=(Lit,))
+    lp.world = w
+    settled = lp.run()
+    assert w.get(top, Folded) == Folded(45)
+    assert settled.ticks > 2    # strictly more ticks than the dependency-ordered case
+
+
+def test_fold_circuits_are_fully_sound_unlike_the_recursive_original():
+    """The genuine win: `fold`/`_fold_binary` (arbitrary Python recursion)
+    is opaque to `loopingrules.analyze` in a way this restatement is not
+    -- every read/write is exact and structural, self-referential
+    `Folded` (both read, via a sibling's own output, and written)
+    included."""
+    assert circuits.reads(fold_add) == {BinOp, Folded}
+    assert circuits.writes(fold_add) == {Folded}
