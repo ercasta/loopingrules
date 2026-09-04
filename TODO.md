@@ -23,14 +23,17 @@ core"), named so they are not lost rather than scheduled.
   `ListResolved`, four `TagCircuit`s for the four mutually exclusive
   outcomes, four `ActionCircuit`s acting on them). All four outcomes
   (wrong arity, unknown card, bad price, a real `Listing`) reproduced
-  exactly, including the specific wording of each `BadCommand`. The
-  honest verdict, not smoothed over: this is by far the worst
-  primitive-to-value ratio tried so far -- six new primitives and ten
-  specs to restate one ~25-line rule, versus zero new primitives for
-  `decide_buy` or three each for `check_goal`/`loop_count`. `hear_want`/
-  `hear_status` were not attempted -- same primitives would likely cover
-  them, at a similar cost, and nothing new would be learned by doing it
-  again. See README History, "hear_list's parsing."
+  exactly, including the specific wording of each `BadCommand`. Originally
+  verdicted here by RAW COUNT ("six primitives, ten specs -- the worst
+  ratio tried") -- corrected: count is not the metric `PRINCIPLES.md`
+  asks for. Each of the sixteen pieces is individually as simple as
+  anything else in this catalog; the one real, specific cost is that the
+  four outcomes' mutual exclusivity is now a hand-authored invariant
+  across four independent conditions rather than an if/elif chain's
+  free guarantee -- checked directly now, not just asserted (`tests/
+  test_circuits.py::test_hear_list_outcomes_are_structurally_mutually_
+  exclusive`). See README History, "count was the wrong metric."
+  `hear_want`/`hear_status` still not attempted.
 - **`decide_buy_spec` drops the batching `cards.decide_buy` still does**
   (one match per tick, not several). Correct, per README History, but a
   real behavior change if this were ever adopted for real rather than

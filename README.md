@@ -224,6 +224,46 @@ Nothing here touches the actual `pystrider` checkout — see History,
 
 ## History
 
+**A correction: count was the wrong metric for `hear_list`'s
+decomposition, 2026-09-06 (later still).** The entry directly below this
+one verdicted the ten-spec, six-primitive restatement of `hear_list` by
+RAW COUNT -- "by far the worst primitive-to-value ratio tried so far...
+costs more structure than it saves." Wrong measure, pointed out
+directly: `PRINCIPLES.md`'s entire argument is that many small,
+individually-legible pieces composing over a shared substrate beat one
+rule holding several branches' worth of decision in its own control
+flow -- Hearsay-II's blackboard architecture, stated as the model this
+whole package is FOR, regardless of how many pieces that composition
+turns out to have. `examples.cards` already has thirteen rules and
+`pystrider.patterns`/`constraints` several more; nobody has ever
+verdicted THOSE by counting them. Judged by the metric this package
+actually uses -- is each piece small and independently legible -- the
+`hear_list` decomposition is unremarkable: a `ValueCircuit` computing
+four small facts, four `TagCircuit`s each one short boolean, four
+`ActionCircuit`s each "match one tag, destroy, spawn one thing," and
+six primitives (`Lower`/`Split`/`At`/`Len`/`ParseInt`/`FindBy`) each
+doing exactly one well-defined, independently-unit-tested thing. None
+of that is worse than `decide_buy_spec`'s own single `ActionCircuit` for
+having more siblings.
+
+There IS one real, specific cost in the decomposition, and it has
+nothing to do with count: the original `hear_list`'s if/elif chain
+guarantees its four outcomes are mutually exclusive BY CONSTRUCTION --
+only one branch can ever run. The four `TagCircuit`s restate that as
+four INDEPENDENTLY-AUTHORED conditions, each written as the negation of
+the ones before it, which is correct today but not structurally
+guaranteed the way control flow is -- a future edit to one condition
+without a matching edit to its siblings could silently break the
+invariant. Named honestly this time, and checked rather than left as
+prose: `test_hear_list_outcomes_are_structurally_mutually_exclusive`
+runs the four tags against ten lines (including non-`list` commands and
+an empty string) and asserts at most one outcome ever lands on the same
+`Said`. That is the actual, specific thing worth watching if this
+decomposition is ever extended -- not the number sixteen.
+
+1 new test (parametrized 10 ways) in `tests/test_circuits.py`. 234 ->
+244 passing.
+
 **`circuits.py` promoted to core, ahead of this repo's own usual bar,
 2026-09-06 (later still).** `examples/circuits.py` -> `loopingrules/
 circuits.py`, `tests/test_examples_circuits.py` -> `tests/test_circuits.

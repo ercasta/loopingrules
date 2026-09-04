@@ -824,10 +824,20 @@ def test_fold_circuits_are_fully_sound_unlike_the_recursive_original():
 # all. Tried against the real hear_list, in full, below -- every one of
 # its four outcomes (wrong arity, unknown card, bad price, a real
 # Listing) reproduced exactly, including the specific wording of each
-# BadCommand. The honest cost, not hidden: SIX new primitives and TEN
-# circuit specs to restate one ~25-line rule -- by far the worst
-# primitive-to-value ratio of anything tried in this file. See README
-# History, "hear_list's parsing," for the verdict that cost earns.
+# BadCommand. SIX new primitives and TEN circuit specs to restate one
+# ~25-line rule is not, on its own, a cost -- PRINCIPLES.md's whole
+# argument is that many small, individually-legible pieces composing
+# beat one rule holding several branches' worth of decision in its own
+# control flow, regardless of how many pieces that turns out to be; a
+# ValueCircuit computing four small facts, four TagCircuits each one
+# short boolean, four ActionCircuits each "match, destroy, spawn one
+# thing" are all individually as simple as anything else in this file.
+# The one REAL, specific cost, not a raw count: the four outcomes'
+# mutual exclusivity is now a hand-maintained invariant across four
+# independently-authored conditions (each the negation of the ones
+# before it) rather than syntactically guaranteed by an if/elif chain --
+# see README History, "count was the wrong metric," for the correction
+# and what a stronger pin would need to check.
 
 def test_lower_and_split_and_at_and_len():
     assert circuits.evaluate(circuits.Lower(circuits.Const("LIST")), World(), None) == "list"
@@ -1023,3 +1033,30 @@ def test_hear_list_decomposition_matches_the_original_exactly(line):
     circuit = outcome(_hear_list_circuit_loop(cash=100))
 
     assert original == circuit
+
+
+@pytest.mark.parametrize("line", [
+    "list dragon 40", "list", "list dragon", "list dragon 40 extra",
+    "list unicorn 40", "list dragon abc", "list DRAGON 40",
+    "want dragon 1", "status", "",
+])
+def test_hear_list_outcomes_are_structurally_mutually_exclusive(line):
+    """The one real cost the decomposition has, checked directly rather
+    than trusted: the four outcome tags are each hand-authored as the
+    negation of the ones before them, not guaranteed exclusive by
+    control flow the way an if/elif chain is. This pins that the
+    authoring is currently correct -- at most one of the four ever
+    lands on the same `Said`, across lines that are not even `list`
+    commands at all, not just the seven the end-to-end test above
+    covers."""
+    w = World()
+    said = w.spawn(Said("user", line))
+    circuits.compile_circuit(parse_spec)(w)
+    circuits.compile_circuit(resolved_spec)(w)
+    for spec in (tag_wrong_arity_list, tag_unknown_card_list, tag_bad_price_list,
+                 tag_valid_list):
+        circuits.compile_circuit(spec)(w)
+    outcomes = [tag for tag in
+                (WrongArityList, UnknownCardList, BadPriceList, ValidList)
+                if w.has(said, tag)]
+    assert len(outcomes) <= 1, "more than one outcome tag landed: %r" % outcomes
