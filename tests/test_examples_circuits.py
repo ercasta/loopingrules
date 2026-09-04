@@ -8,6 +8,8 @@ already pins, to show the compiled circuit produces IDENTICAL behavior
 to the hand-written original, not just a plausible-looking one.
 """
 
+import dataclasses
+
 import pytest
 
 from examples import cards, circuits, judge
@@ -335,3 +337,106 @@ def test_too_risky_regression_holds_with_decide_buy_also_a_circuit():
     assert w.has(listing_entity, judge.TooRisky)
     assert w.each(cards.Bought) == []
     assert w.the(cards.Purse) == cards.Purse(45)
+
+
+# -- the monotonic mode and Exists, added for ../pystrider's OWN idiom --
+#
+# `examples.cards`'s tag rules all recompute and go BOTH directions every
+# tick; `pystrider.patterns`/`constraints` (`LoopCount` -> `TooManyLoops`,
+# the exact idiom `PRINCIPLES.md` cites as the model for this whole
+# catalog) do the opposite -- derive AT MOST ONCE, guarded by `without=
+# self`, never retract. Tried for real against a live `pystrider`
+# checkout (not committed here -- `loopingrules` does not depend on
+# `pystrider`, the same as it does not depend on `harneskills`, per
+# README's own Scope section): `iteration`/`conditional`/`application`/
+# `max_loops`, restated as `ValueCircuit(monotonic=True, condition=...)`
+# using the new `Exists` primitive, matched `loopingrules.analyze`'s
+# reads/writes on the originals exactly, and produced byte-identical
+# `Iteration`/`Choice`/`Applies`/`TooManyLoops` components end-to-end
+# against a real intake of a real Python snippet with three loops (over
+# `MAX_LOOPS=2`) and a conditional call. See README History, "the
+# monotonic mode." The tests below pin the same two primitives
+# self-containedly, against synthetic components, so this suite does not
+# need a `pystrider` checkout to verify them.
+
+@dataclasses.dataclass(frozen=True)
+class Count:
+    value: int
+
+
+@dataclasses.dataclass(frozen=True)
+class TooMany:
+    value: int
+    limit: int
+
+
+@dataclasses.dataclass(frozen=True)
+class Ref:
+    target: int
+
+
+@dataclasses.dataclass(frozen=True)
+class Marker:
+    pass
+
+
+too_many_spec = circuits.ValueCircuit(
+    for_each=Count,
+    into=TooMany,
+    fields=(circuits.Self(Count, "value"), circuits.Const(3)),
+    condition=circuits.Gt(circuits.Self(Count, "value"), circuits.Const(3)),
+    monotonic=True,
+)
+
+
+def test_monotonic_value_circuit_does_not_derive_when_condition_is_false():
+    w = World()
+    entity = w.spawn(Count(1))
+    circuits.compile_circuit(too_many_spec)(w)
+    assert w.get(entity, TooMany) is None
+
+
+def test_monotonic_value_circuit_derives_once_and_never_retracts():
+    w = World()
+    entity = w.spawn(Count(5))
+    rule = circuits.compile_circuit(too_many_spec)
+    rule(w)
+    assert w.get(entity, TooMany) == TooMany(5, 3)
+    w.replace(entity, Count(1))    # back under the limit
+    rule(w)
+    assert w.get(entity, TooMany) == TooMany(5, 3)    # unchanged -- monotonic
+
+
+def test_monotonic_value_circuits_reads_include_the_implicit_without_gate():
+    assert TooMany in circuits.reads(too_many_spec)
+
+
+def test_exists_is_false_for_an_id_naming_no_such_component():
+    w = World()
+    ref = w.spawn(Ref(999999))    # points at nothing
+    assert circuits.evaluate(
+        circuits.Exists(circuits.Self(Ref, "target"), Marker), w, ref) is False
+
+
+def test_exists_is_true_when_the_related_entity_carries_the_component():
+    w = World()
+    target = w.spawn(Marker())
+    ref = w.spawn(Ref(target.id))
+    assert circuits.evaluate(
+        circuits.Exists(circuits.Self(Ref, "target"), Marker), w, ref) is True
+
+
+def test_value_circuit_for_each_accepts_a_multi_component_join():
+    """`for_each` as a TUPLE -- `pystrider.patterns.iteration`'s own
+    `(ForStmt, Target, Iterated, Body)` shape -- not just one type."""
+    spec = circuits.ValueCircuit(
+        for_each=(Count, Ref),
+        into=TooMany,
+        fields=(circuits.Self(Count, "value"), circuits.Self(Ref, "target")),
+    )
+    w = World()
+    entity = w.spawn(Count(5), Ref(9))
+    w.spawn(Count(1))    # no Ref -- must not match the join
+    circuits.compile_circuit(spec)(w)
+    assert w.get(entity, TooMany) == TooMany(5, 9)
+    assert circuits.reads(spec) == {Count, Ref}

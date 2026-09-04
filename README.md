@@ -196,6 +196,50 @@ History, "A domain-oblivious judge."
 
 ## History
 
+**The monotonic mode, and `pystrider.patterns`/`constraints` tried for
+real, 2026-09-04.** A live `pystrider` checkout audited against both
+`loopingrules.analyze` and `examples.circuits` (neither imported by, nor
+imports, this repo — the audit ran the sibling checkout's own rules
+directly, nothing committed here depends on it). `analyze.analyze()`
+resolved `patterns.py`/`constraints.py` — the exact `LoopCount` →
+`TooManyLoops` idiom `PRINCIPLES.md` already cites as the model for this
+whole catalog — with ZERO `Opaque`, on the first try. `circuits.py` did
+not fare as well against the same rules: every one of them uses
+`without=self`-guarded, ATTACH-ONCE-NEVER-DETACH semantics, the opposite
+mode from every rule in `examples.cards`, which recomputes and goes
+both directions every tick. `TagCircuit`/`ValueCircuit` only had the
+`cards` mode.
+
+Fixed by giving `ValueCircuit` a `monotonic` flag (an implicit `without=
+into` guard, `attach` instead of `replace`, never revisited) and a
+separate `condition` (gating whether an entity is derived AT ALL,
+independent of whether its FIELDS are computable — `iteration`'s
+`Readable` checks are not needed to compute `item`/`sequence`/`does`,
+only to decide whether the derivation is trusted yet), plus one new
+expression, `Exists(at, component)` — a boolean existence check
+(`iteration` needs to know THAT three independently-named related
+entities carry `Readable`, not read a field off them), and `for_each`
+generalized to accept a JOIN of several component types (`iteration`'s
+own `(ForStmt, Target, Iterated, Body)`). `TagCircuit` did not need a
+monotonic mode of its own — nothing in `patterns.py`'s actual vocabulary
+is a bare, fieldless tag, so this was not spent speculatively.
+
+Tried for real, not just designed: `iteration`/`conditional`/
+`application`/`max_loops`, restated as `ValueCircuit`s, matched
+`loopingrules.analyze`'s reads/writes on the four real `pystrider` rules
+exactly, and produced byte-identical `Iteration`/`Choice`/`Applies`/
+`TooManyLoops` end-to-end against a real `intake()` of real Python
+source with three loops (over `MAX_LOOPS=2`) and a conditional call —
+run against the actual sibling checkout, not a stand-in. `patterns.
+loop_count` (an aggregate — how many loops a function directly
+contains) was left as the real, hand-written `pystrider` rule; it needs
+a fold/aggregate shape this catalog still does not have, the same gap
+already named in `TODO.md` for `examples.cards.check_goal`.
+
+6 new tests in `tests/test_examples_circuits.py`, self-contained against
+synthetic components so this suite needs no `pystrider` checkout to
+verify the two new primitives. 194 -> 200 passing.
+
 **`circuits.py`: a closed shape catalog, tried against five real rules,
 2026-09-03 (later still).** A conversation about rule vocabularies and a
 general DSL landed, in order, on: no vast shared vocabulary (`examples.

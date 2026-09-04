@@ -199,6 +199,23 @@ class Eq:
 
 
 @dataclasses.dataclass(frozen=True)
+class Exists:
+    """Whether the entity named by `at` (an expression giving an entity
+    id, evaluated first) carries `component` AT ALL -- existence, not a
+    field read, so this needs no field name and never yields `MISSING`:
+    an id that names no such entity, or no such component, is simply
+    `False`. Added for `pystrider.patterns.iteration`'s own `Readable`
+    checks on three INDEPENDENTLY-named related entities (`target.
+    entity`, `iterated.entity`, `body.entity`) -- `Via` reaches ONE hop
+    from a NAMED field on a component already on self; this reaches an
+    id already computed some other way, most often `Self(SomeComponent,
+    "entity")`, to ask a yes/no question about it rather than read a
+    value off it."""
+    at: object
+    component: type
+
+
+@dataclasses.dataclass(frozen=True)
 class And:
     exprs: tuple
 
@@ -222,6 +239,14 @@ _COMPARE = {Le: lambda a, b: a <= b, Lt: lambda a, b: a < b,
 
 # -- the two rule shapes ---------------------------------------------------
 
+def _kinds(for_each) -> tuple:
+    """`for_each` is one component type or several (a JOIN, the same
+    shape `w.each(*kinds)` already takes) -- this is the one place that
+    distinction is resolved, so every other reader of `for_each` can
+    just iterate it."""
+    return for_each if isinstance(for_each, tuple) else (for_each,)
+
+
 @dataclasses.dataclass(frozen=True)
 class TagCircuit:
     for_each: type
@@ -231,9 +256,31 @@ class TagCircuit:
 
 @dataclasses.dataclass(frozen=True)
 class ValueCircuit:
+    """`for_each` -> `into(*fields)`, `replace`d fresh every tick, UNLESS
+    `monotonic=True`.
+
+    `condition`, if given, gates whether this entity is derived AT ALL
+    this tick -- separate from a field simply evaluating `MISSING`,
+    because a condition can be about something OTHER than what the
+    fields themselves need (`pystrider.patterns.iteration`'s `Readable`
+    checks are not needed to COMPUTE `item`/`sequence`/`does`, only to
+    decide whether the derivation is trusted yet). `None` (the default)
+    means "always," the original behaviour.
+
+    `monotonic=True` -- the mode `pystrider.patterns`/`constraints`
+    actually use, throughout, and `examples.cards` never does: derive
+    AT MOST ONCE per entity (an implicit `without=into` on the query),
+    then never touch it again, rather than recomputing and `replace`ing
+    fresh every tick. The two are genuinely different contracts, not two
+    spellings of one idea -- see README History, "the monotonic mode,"
+    for why `cards`'s bidirectional rules and `pystrider`'s monotonic
+    ones cannot share one flag with a single default.
+    """
     for_each: type
     into: type
     fields: tuple
+    condition: object = None
+    monotonic: bool = False
 
 
 # -- the third shape: one action, on one match, per tick ------------------
@@ -340,6 +387,9 @@ def evaluate(expr, w, entity):
     if isinstance(expr, Coalesce):
         value = evaluate(expr.expr, w, entity)
         return evaluate(expr.default, w, entity) if value is MISSING else value
+    if isinstance(expr, Exists):
+        at = evaluate(expr.at, w, entity)
+        return at is not MISSING and w.get(at, expr.component) is not None
     if isinstance(expr, (Le, Lt, Ge, Gt, Eq)):
         left, right = evaluate(expr.left, w, entity), evaluate(expr.right, w, entity)
         if left is MISSING or right is MISSING:
@@ -364,7 +414,8 @@ def compile_circuit(spec):
     rather than a `def`."""
     if isinstance(spec, TagCircuit):
         def rule(w):
-            for entity, _ in w.each(spec.for_each):
+            for row in w.each(*_kinds(spec.for_each)):
+                entity = row[0]
                 if evaluate(spec.condition, w, entity):
                     w.attach(entity, spec.tag())
                 else:
@@ -372,11 +423,18 @@ def compile_circuit(spec):
         return rule
     if isinstance(spec, ValueCircuit):
         def rule(w):
-            for entity, _ in w.each(spec.for_each):
+            without = (spec.into,) if spec.monotonic else ()
+            for row in w.each(*_kinds(spec.for_each), without=without):
+                entity = row[0]
+                if spec.condition is not None and not evaluate(spec.condition, w, entity):
+                    continue
                 values = [evaluate(f, w, entity) for f in spec.fields]
                 if any(v is MISSING for v in values):
                     continue    # refuse rather than guess -- see the docstring
-                w.replace(entity, spec.into(*values))
+                if spec.monotonic:
+                    w.attach(entity, spec.into(*values))
+                else:
+                    w.replace(entity, spec.into(*values))
         return rule
     if isinstance(spec, ActionCircuit):
         def rule(w):
@@ -428,13 +486,17 @@ def reads(spec) -> Set[type]:
             elif isinstance(effect, ReplaceVia):
                 kinds.add(effect.base)
     else:
-        kinds = {spec.for_each}
+        kinds = set(_kinds(spec.for_each))
+        if isinstance(spec, ValueCircuit) and spec.monotonic:
+            kinds.add(spec.into)    # the implicit without=into gate is a read too
     for node in _leaves(spec):
         if isinstance(node, Self):
             kinds.add(node.component)
         elif isinstance(node, Via):
             kinds.update((node.base, node.component))
         elif isinstance(node, World):
+            kinds.add(node.component)
+        elif isinstance(node, Exists):
             kinds.add(node.component)
     return kinds
 
