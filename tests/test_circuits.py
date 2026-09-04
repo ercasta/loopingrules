@@ -1,22 +1,26 @@
-"""`examples.circuits`, proven against the four real rules it was
+"""`loopingrules.circuits`, proven against the four real rules it was
 extracted from: `examples.cards.tag_wanted`/`tag_affordable`/
-`tag_fair_priced`/`tag_risk_level`. Each spec below is checked two ways
--- unit-level, evaluated directly against a bare `World` -- and
-end-to-end, swapped in for the real rule on a fully-installed `cards`
-`Loop`, replaying the exact scenarios `tests/test_examples_cards.py`
-already pins, to show the compiled circuit produces IDENTICAL behavior
-to the hand-written original, not just a plausible-looking one.
+`tag_fair_priced`/`tag_risk_level`. `circuits.py` itself ships no domain
+knowledge -- `examples.cards`/`examples.judge` are still where the
+proof lives, imported here the same way `tests/test_analyze.py` already
+imports them to prove `loopingrules.analyze` against real rules. Each
+spec below is checked two ways -- unit-level, evaluated directly against
+a bare `World` -- and end-to-end, swapped in for the real rule on a
+fully-installed `cards` `Loop`, replaying the exact scenarios `tests/
+test_examples_cards.py` already pins, to show the compiled circuit
+produces IDENTICAL behavior to the hand-written original, not just a
+plausible-looking one.
 """
 
 import dataclasses
 
 import pytest
 
-from examples import cards, circuits, judge
+from examples import cards, judge
 from examples.cards import (Affordable, Bought, CardDef, Copies, FairPriced,
                              GoalMet, Listing, Purse, Wanted, Wants)
 from examples.judge import TooRisky
-from loopingrules import analyze
+from loopingrules import analyze, circuits
 from loopingrules.loop import Loop
 from loopingrules.world import Reply, Said, World
 

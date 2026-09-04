@@ -1,8 +1,8 @@
 # TODO
 
-Open threads out of the `examples/circuits.py` prototype (see README
-History, "circuits.py: a closed shape catalog"), named so they are not
-lost rather than scheduled.
+Open threads out of `loopingrules/circuits.py` (see README History,
+"circuits.py: a closed shape catalog" and "circuits.py promoted to
+core"), named so they are not lost rather than scheduled.
 
 - ~~`check_goal`'s fold.~~ Done: `ActionCircuit` (a seeded `GoalCheck`
   marker, consumed) + `Any`/`Forall` for the quantifier over `CardDef`/
@@ -35,9 +35,25 @@ lost rather than scheduled.
   (one match per tick, not several). Correct, per README History, but a
   real behavior change if this were ever adopted for real rather than
   tested against it -- worth re-flagging if it is.
-- **Whether any of this is worth promoting past a prototype.**
-  `circuits.py` is wired into nothing `cards.install()` actually uses.
-  Its whole motivation was a closed catalog being easier for a future
-  search/learning process to work over -- no search or learning exists
-  yet. Per `DECISION_PATTERNS.md`'s "grow it only at the rule that
-  actually collides," stays a prototype until something real needs it.
+- ~~Whether any of this is worth promoting past a prototype.~~ Promoted
+  (2026-09-06) -- `loopingrules/circuits.py`, ahead of this repo's own
+  usual bar (every prior promotion waited for a second domain to
+  actually depend on the thing at runtime; this one didn't), on the
+  strength of cross-repo evidence alone. See README History, "circuits.py
+  promoted to core." What's still genuinely open, now that it ships:
+  nothing yet actually WRITES a rule as one of these specs outside a
+  test file -- `cards.install()` still registers its own thirteen
+  hand-written rules, unchanged, and no domain (in this repo or
+  `pystrider`) has adopted the catalog for real. Promotion answered
+  "is the catalog sound," not "does anyone use it."
+- **The `check_goal`-shaped `stable=`/false-positive-in-`check_watches`
+  question, and every other `loopingrules.analyze` finding from the
+  `pystrider` audit, are still just conversation, not code.** The
+  6-bucket breakdown (avoidable DRY, `pystrider.rules`'s own capability-
+  stripping sibling solution, deliberate genericity, real computation)
+  lives in this README's History only -- nothing forces `analyze.py`'s
+  own method vocabulary to learn `purge_transient`, and no `pystrider`
+  rule was actually rewritten. 32 of 51 real `pystrider` rules audited
+  analyzed cleanly; `patterns.py`/`constraints.py` specifically (the
+  ones this catalog is built on) were 100%. Left for whoever next wants
+  the map more complete than that.

@@ -21,8 +21,28 @@ the earlier options were -- a closed catalog is the thing a FUTURE search
 or learning process over rules would need to be tractable at all, the
 same reason genetic programming and program synthesis reach for a small
 typed combinator set rather than arbitrary source code. No search or
-learning is built here -- see the module's own History entry in
-`README.md` for what this prototype does and does not settle.
+learning is built yet -- see `README.md`'s own History for what this
+module does and does not settle.
+
+## Promoted from `examples/`, ahead of this repo's own usual bar
+
+This lived in `examples/circuits.py` -- a prototype, not shipped, per
+`TODO.md`'s own standing line ("stays a prototype until something real
+needs it") -- through eight commits of restating real rules against it.
+Every OTHER promotion this repo has made (`Proposal`, `arbitrate`,
+`census`) waited for a second, independently-motivated domain to
+actually depend on the thing at runtime; nothing does that here yet --
+`pystrider` was read from and validated against, repeatedly, never
+wired to import or install any of this. Promoted anyway, deliberately,
+not by forgetting the bar: the cross-repo evidence accumulated instead
+(`loopingrules.analyze` agreement on every spec, byte-identical
+behavior against real rules from two independently-authored domains,
+across twelve restated rules total -- seven of `examples.cards`'s own
+thirteen, five of `pystrider.patterns`/`constraints`'s entire real
+vocabulary) was judged sufficient on its own terms, without waiting for
+a specific consumer to show up first. See
+`README.md`'s own History for the entry this promotion landed in, and
+`TODO.md` for what is still open.
 
 ## The shapes, closed
 
@@ -118,7 +138,7 @@ needed at all. The two are not interchangeable: `examples.cards.
 check_goal`'s own `Wants` set must never be destroyed (`hear_status`
 still reads it), so its "don't fire twice" needs a SEPARATE, seeded,
 one-shot marker entity to consume instead of consuming the data the
-question is about -- see `tests/test_examples_circuits.py`'s own
+question is about -- see `tests/test_circuits.py`'s own
 `check_goal_spec` and `GoalCheck`. A third idiom -- `WorldCircuit`, no
 per-entity match at all, "don't fire twice" as a self-referential
 condition -- was tried first, for exactly this rule, and removed: it
@@ -144,7 +164,7 @@ Because a spec is plain data, `reads(spec)`/`writes(spec)` do not need
 dataclass tree and collect every `component`/`base` a `Self`/`Via`/
 `World` names, and the `tag`/`into` component the shape writes. Sound
 BY CONSTRUCTION, not merely checked after the fact -- see
-`tests/test_examples_circuits.py`'s own cross-check against
+`tests/test_circuits.py`'s own cross-check against
 `loopingrules.analyze.analyze()` run on the hand-written original.
 """
 
@@ -534,8 +554,8 @@ class ActionCircuit:
     evaluates `MISSING`, the WHOLE action is skipped, not applied
     halfway -- refuse rather than guess, same as `ValueCircuit`.
 
-    Only ONE action per tick, on purpose -- see `examples.circuits`'s
-    own module docstring, "No loop, no `if`, and no batching either,"
+    Only ONE action per tick, on purpose -- see this module's own
+    docstring, "No loop, no `if`, and no batching either,"
     for why a rule that could once act on N matches per tick does not
     need to here: the tick loop retrying with freshly recomputed tags is
     what a hand-written loop-and-reread would otherwise have to do by

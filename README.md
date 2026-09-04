@@ -19,12 +19,14 @@ loopingrules/
   engine.py       one thread, the world, and the channels attached to it
   save.py         the world as JSONL: entities are ints, components are values
   analyze.py      what a rule reads and writes, derived from its own AST
+  circuits.py     a closed catalog of shapes a rule can be DATA in
 tests/
   test_world.py        identity, values, and the intersection of the two
   test_loop.py         order, settling, the budget, a rule that raises
   test_engine.py       one world, several channels, a broadcast reply
   test_save.py         the same world, ids and all, next time
   test_analyze.py      a rule's reads/writes, and where analysis refuses to guess
+  test_circuits.py     the catalog, proven against real rules from two domains
 DECISION_PATTERNS.md   a design note this package no longer ships the code
                           for -- see History, "Facts/arbitration/request
                           removed"
@@ -103,6 +105,30 @@ never guessed at — it raises `Opaque`, by name and reason, the same
 refuse-rather-than-guess discipline every parse boundary in this
 codebase already applies. See History, "analyze.py."
 
+**`circuits.py` is a third generic mechanism, and the only one built by
+restating rules rather than by a domain needing to interoperate with
+another.** A closed, minimal catalog of shapes (`TagCircuit`/
+`ValueCircuit`/`ActionCircuit`, plain dataclasses, no loop, no `if`) a
+rule can be DATA in, instead of a hand-written Python body — motivated
+by a closed catalog being what a FUTURE search or learning process over
+rules would need to be tractable, the way genetic programming and
+program synthesis reach for a small typed combinator set rather than
+arbitrary source code. No search or learning is built here yet.
+
+Lived in `examples/circuits.py` — a prototype, not shipped — through
+eight commits of restating real rules against it: seven of `examples.
+cards`'s own thirteen, five of `pystrider.patterns`/`constraints`'s
+entire real vocabulary, every one checked both by replaying the actual
+regression it came from and by comparing its own structurally-derived
+reads/writes against `loopingrules.analyze`'s AST-derived ones for the
+original. Promoted here DELIBERATELY ahead of this repo's own usual bar
+— every other promotion (`Proposal`, `arbitrate`, `census`) waited for
+a second domain to actually depend on the thing at runtime; nothing
+does that for this yet. The cross-repo evidence above was judged
+sufficient on its own, without waiting for a specific consumer — see
+`circuits.py`'s own docstring, `TODO.md` for what is still open, and
+History, "circuits.py promoted to core."
+
 **`help.py` is the one exception to "ships no rules," and it says so
 itself.** `world.py`/`loop.py`/`engine.py`/`save.py` still ship none,
 and that has not changed; `help.py` is installed opt-in, by any domain
@@ -162,27 +188,9 @@ same reason, `harneskills/pyproject.toml` already uses to import
 `examples/cards.py`'s own docstring for the full design, and History,
 "A cards example."
 
-**`examples/circuits.py` is a fourth module, and a prototype rather than
-a domain at all.** A closed, minimal catalog of shapes (`TagCircuit`/
-`ValueCircuit`/`ActionCircuit`, plain dataclasses, no loop, no `if`)
-restating five of `cards`'s own thirteen rules -- the four tag rules
-plus a reduced `decide_buy` -- as plain data instead of hand-written
-Python bodies, each checked against the original it restates both by
-running the same regressions and by comparing its own structurally-
-derived reads/writes against `loopingrules.analyze`'s AST-derived ones
-for the original. Motivated by a question none of the earlier ideas in
-this section were answering: a closed shape catalog is what a FUTURE
-search or learning process over rules would need to be tractable, the
-way genetic programming and program synthesis reach for a small typed
-combinator set rather than arbitrary source code. No search or learning
-exists yet -- see `TODO.md` and `circuits.py`'s own docstring for what
-is open. Not wired into `cards.install()`, not shipped, and not
-promoted past `examples/` unless something real needs it, per
-`DECISION_PATTERNS.md`'s "grow it only at the rule that actually
-collides." See History, "circuits.py: a closed shape catalog."
-
-**`examples/judge.py` is a third module in `examples/`, and the only one
-that never imports `examples.cards` back.** It is not a domain — one
+**`examples/judge.py` is a second module in `examples/` (alongside
+`cards.py`), and the only one that never imports `examples.cards` back.**
+It is not a domain — one
 rule, `flag_too_risky`, that reads a generic `Risk`/`RiskTolerance` and
 writes `TooRisky`, oblivious to what produced either. `examples.cards.
 tag_risk_level` is the domain-specific half: it projects `Purse`/
@@ -194,8 +202,9 @@ above, "no vocabulary above entities and components either") — see
 `judge.py`'s own docstring for what this does and does not settle, and
 History, "A domain-oblivious judge."
 
-**`examples/parts.py` is a fifth module, and the only one built to test a
-question about a SIBLING repo rather than about `loopingrules` itself.**
+**`examples/parts.py` is a third module in `examples/`, and the only one
+built to test a question about a SIBLING repo rather than about
+`loopingrules` itself.**
 `pystrider.symbolic._parent_of`/`_reachable` walk a Python-level dict
 (`intake.PARTS.values()`) generically, rather than enumerating specific
 part-edge types — exactly the shape `PRINCIPLES.md` holds up as the
@@ -214,6 +223,36 @@ Nothing here touches the actual `pystrider` checkout — see History,
 "a generic Part tag."
 
 ## History
+
+**`circuits.py` promoted to core, ahead of this repo's own usual bar,
+2026-09-06 (later still).** `examples/circuits.py` -> `loopingrules/
+circuits.py`, `tests/test_examples_circuits.py` -> `tests/test_circuits.
+py` (the latter still imports `examples.cards`/`examples.judge` to
+prove the catalog against real rules, the same way `tests/test_analyze.
+py` already does for `loopingrules.analyze` -- a real, precedented
+pattern, not a new dependency direction). No code changed in the move;
+`circuits.py` had zero imports beyond `dataclasses`/`typing` to begin
+with, so nothing about promoting it introduced new coupling.
+
+What DID change is which bar this promotion met. Every prior promotion
+in this package's own history (`Proposal`, `arbitrate`, `census`)
+waited for a second, independently-motivated domain to actually
+DEPEND on the thing at runtime -- `harneskills.examples.fs` and
+`pystrider` both needing to recognize one candidate, concretely, is
+what moved `Proposal` here in the first place. Nothing depends on
+`circuits.py` at runtime yet: `pystrider` was read from and validated
+against, repeatedly, across `patterns.py`/`constraints.py`'s entire
+real vocabulary, but never wired to import or install any of it, and
+`cards.install()` still uses none of its own restated rules either.
+Asked directly whether that was the actual trigger or an oversight, the
+answer was direct too: deliberate. The cross-repo evidence accumulated
+across eight prior commits -- `loopingrules.analyze` agreement on every
+spec, byte-identical behavior against real rules from two
+independently-authored domains, twelve rules total -- was judged
+sufficient on its own terms, without waiting for a specific consumer to
+show up first. Named here plainly rather than left to look like the bar
+was forgotten: this is a genuine departure from this package's own
+precedent, made with the precedent in view, not around it.
 
 **`hear_list`'s parsing DOES reduce -- at the worst cost of anything
 tried so far, 2026-09-06 (later).** Named in `TODO.md` as a different
