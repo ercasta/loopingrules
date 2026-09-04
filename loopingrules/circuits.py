@@ -54,6 +54,9 @@ exist evaluates to `MISSING`, not an exception):
   entity id living on the entity being iterated) to another entity, and
   read `component.field` there.
 - `World(component, field)` -- a field of a world SINGLETON (`w.the`).
+- `TheEntity(component)` -- `World`'s sibling: the SINGLETON'S OWN id,
+  for an effect that needs to name an entity to act on, not read a
+  value off it.
 - `Const(value)` -- a literal.
 
 Arithmetic and combination, `MISSING`-propagating unless noted:
@@ -64,7 +67,12 @@ shape added FOR `tag_risk_level` specifically, because "a fraction of
 remaining capacity, defined even when there is none left" is a recurring
 enough idiom in a resource-flavored rule to earn a named primitive
 rather than a general `If`. `Coalesce(expr, default)` -- `default` when
-`expr` is `MISSING`, the one shape that does NOT propagate it.
+`expr` is `MISSING`, the one shape that does NOT propagate it. `If
+(condition, then, else_)` IS the general one, added once a second rule
+(`hear_want`, defaulting an omitted quantity to `1`) needed a default
+that depends on WHICH CASE holds, not on whether a read came back
+`MISSING` -- still a VALUE, not a spec author's `if` (see "No loop, no
+`if`," below, for why that distinction is real).
 
 Comparison, boundary where `MISSING` becomes an ordinary `False` rather
 than propagating further (a condition can always be evaluated, even
@@ -107,6 +115,22 @@ loop_count`'s own shape: how many of a `Function`'s `Stmt`s are
 non-arithmetic leaf, needed for `tag_risk_level`'s human-readable
 `reason` field; `MISSING`-propagating like arithmetic.
 
+`Join(over, expr, sep, sort_by=None)` -- every entity matching `over`,
+`expr`-ed (with THAT entity as self) and joined with `sep`, sorted by
+`sort_by` first if given; an entity whose own `expr`/`sort_by` is
+`MISSING` is DROPPED, not fatal to the whole join. `examples.cards.
+hear_status`'s own `sorted(w.each(CardDef, Wants), key=...)` restated as
+data -- the one place this catalog produces a variable-length, ordered
+piece of TEXT from an unbounded set, where `Any`/`Forall`/`Count` only
+ever reduce one to a boolean or a number. `Optional(condition, expr)` --
+`expr` if `condition`, else a segment that does not exist at all (not
+`If`'s question -- there is no `else_`, just "include this, or don't").
+`JoinStrings(sep, exprs)` is `Join`'s fixed-arity sibling: a handful of
+KNOWN pieces to assemble (`hear_status`'s "cash: ...", the wanted-cards
+report or "no goal set", optionally "goal met"), dropping any that
+evaluate `MISSING` (an `Optional` that didn't apply) rather than joining
+an empty string in their place.
+
 ## The three rule shapes
 
 `TagCircuit(for_each, condition, tag)` compiles to: for each entity of
@@ -121,8 +145,8 @@ guard and `attach` instead of `replace` (derive AT MOST ONCE, matching
 Circuit(require, without, condition=None, effects)` picks the single
 FIRST entity matching `require`/`without` (never several), checks
 `condition` against it if given, and -- read phase, then write phase,
-never interleaved -- applies `ReplaceWorld`/`ReplaceVia`/`Destroy`/
-`Spawn` effects in order.
+never interleaved -- applies `ReplaceAt`/`Destroy`/`Spawn` effects in
+order.
 
 ## "Don't fire twice" is two different idioms, not one
 
@@ -150,12 +174,18 @@ fire twice is consuming a component, not testing an absence."
 ## No loop, no `if`, by construction
 
 Iteration is `for_each`/`require`'s own single `w.each()` walk, not a
-body a spec author writes; branching is a `condition`'s own boolean
-value, not a spec author's `if`. Nothing here is Turing complete on
-purpose -- there is no recursion, no way to reference another entity's
-kind not already named in `Via`, and no way to loop a variable number of
-times. That is not a missing feature; it is the whole point, per the
-module's own opening paragraph.
+body a spec author writes; branching a RULE does (attach-vs-detach,
+which `ActionCircuit` fires) is a `condition`'s own boolean value, not a
+spec author's `if`. `If` itself does not contradict this: it picks
+between two already-evaluated VALUES, the same way `SafeDiv` already
+silently does for one specific case -- there is no way to reach a
+different EFFECT, a different `for_each`, or a different RULE through
+it, only a different number or string inside one field. Nothing here is
+Turing complete on purpose -- there is no recursion, no way to reference
+another entity's kind not already named in `Via`, and no way to loop a
+variable number of times (`Join`'s own iteration is `w.each()`'s, fixed
+in shape, not a spec author's loop either). That is not a missing
+feature; it is the whole point, per the module's own opening paragraph.
 
 ## Reads and writes come from the spec's own shape, not analysis
 
@@ -197,6 +227,16 @@ class Via:
 class World:
     component: type
     field: str
+
+
+@dataclasses.dataclass(frozen=True)
+class TheEntity:
+    """The id of the world's own singleton entity carrying `component`
+    (`w.first`) -- `MISSING` if none. `World`'s own sibling: `World`
+    reads a FIELD off the singleton; this reaches the singleton's id
+    itself, for an effect that needs to name WHICH entity to act on
+    (`ReplaceAt`, most often) rather than read a value from it."""
+    component: type
 
 
 @dataclasses.dataclass(frozen=True)
@@ -245,6 +285,23 @@ class SafeDiv:
 class Coalesce:
     expr: object
     default: object
+
+
+@dataclasses.dataclass(frozen=True)
+class If:
+    """`then` if `condition` else `else_` -- a VALUE, not a spec
+    author's `if`: still ordinary data, evaluated by the interpreter,
+    the same way `SafeDiv`'s "use this instead when the denominator
+    isn't positive" already is a named special case of exactly this
+    shape. Only the CHOSEN branch is evaluated -- the other's `MISSING`,
+    or anything else about it, never counts. Added for `examples.cards.
+    hear_want`'s own "default the quantity to 1 when it was omitted,
+    otherwise parse what was typed" -- a default that depends on WHICH
+    case holds, not on whether a read came back `MISSING` (`Coalesce`'s
+    own, narrower question)."""
+    condition: object
+    then: object
+    else_: object
 
 
 # -- strings and lookup -- added for hear_list's own parsing -------------
@@ -443,6 +500,49 @@ class Format:
     exprs: tuple
 
 
+@dataclasses.dataclass(frozen=True)
+class Join:
+    """Join every entity matching `over` (a global join, or a `Children`
+    scope) into ONE string: `expr` (evaluated with each matching entity
+    as self, NOT whatever entity `Join` itself is being evaluated for --
+    the same rebinding `Forall`/`Count` already do) gives each entity's
+    own text, `sep` joins them, and `sort_by` (also evaluated per
+    entity, optional) orders them first. `examples.cards.hear_status`'s
+    own `sorted(w.each(CardDef, Wants), key=lambda row: row[1].name)`
+    restated as data -- the one place this catalog produces a variable-
+    length, ordered piece of text from an unbounded set, rather than a
+    number or a boolean. An entity whose own `expr`/`sort_by` evaluates
+    `MISSING` is DROPPED, not `MISSING` for the whole join -- one broken
+    line missing from a report is more useful than no report at all."""
+    over: object
+    expr: object
+    sep: str
+    sort_by: object = None
+
+
+@dataclasses.dataclass(frozen=True)
+class Optional:
+    """`expr` if `condition`, else a segment that does not exist at all
+    -- only meaningful inside `JoinStrings`, where a dropped segment is
+    OMITTED, not joined as an empty string in its place. Not the same
+    question `If` answers (`If` always has an `else_`); this is "include
+    this piece, or don't," which is what an optional trailing "goal met"
+    needs, not a substitute value for when it is absent."""
+    condition: object
+    expr: object
+
+
+@dataclasses.dataclass(frozen=True)
+class JoinStrings:
+    """`sep.join(evaluated exprs)`, dropping any that evaluate `MISSING`
+    entirely -- `Join`'s fixed-arity sibling: a handful of KNOWN pieces
+    to assemble (`examples.cards.hear_status`'s "cash: ...", the wanted-
+    cards report or "no goal set", optionally "goal met"), not a
+    dynamic collection to iterate."""
+    sep: str
+    exprs: tuple
+
+
 _ARITH = {Add: lambda a, b: a + b, Sub: lambda a, b: a - b, Mul: lambda a, b: a * b}
 _COMPARE = {Le: lambda a, b: a <= b, Lt: lambda a, b: a < b,
             Ge: lambda a, b: a >= b, Gt: lambda a, b: a > b,
@@ -498,20 +598,22 @@ class ValueCircuit:
 # -- the third shape: one action, on one match, per tick ------------------
 
 @dataclasses.dataclass(frozen=True)
-class ReplaceWorld:
-    """Replace the world's own singleton of `component` with a freshly
-    computed value -- `examples.cards.decide_buy`'s `Purse` update."""
-    component: type
-    fields: tuple
-
-
-@dataclasses.dataclass(frozen=True)
-class ReplaceVia:
-    """Replace `base.fk_field`'s own `component` (on the RELATED entity,
-    reached the same way `Via` reads it) with a freshly computed value --
-    `decide_buy`'s `Copies` update, on the card a `Listing` names."""
-    base: type
-    fk_field: str
+class ReplaceAt:
+    """Replace `component` on the entity named by `at` (an expression,
+    evaluated once, in the same read phase every other effect's fields
+    are) with a freshly computed value. `at` is usually `Self(base,
+    fk_field)` (the RELATED entity a stored id names -- `decide_buy`'s
+    own `Copies` update, on the card a `Listing` names) or `TheEntity
+    (component)` (the world's own singleton -- `decide_buy`'s `Purse`
+    update) or `FindBy(...)` (a dynamically LOOKED-UP entity -- `hear_
+    want`'s own `Wants` update, on whichever card was typed by name).
+    One effect covers what used to be two (`ReplaceVia`/`ReplaceWorld`,
+    removed): both were this shape with a specific `at` expression
+    already baked in, and neither could reach a `FindBy`-found entity
+    at all -- caught while `hear_want` needed exactly that and neither
+    old effect could express it. See README History, "one Replace
+    effect, not three.\""""
+    at: object
     component: type
     fields: tuple
 
@@ -543,9 +645,10 @@ class ActionCircuit:
     different set, `CardDef`/`Wants`). `None` (the default) means
     "always," the behaviour before `condition` existed.
 
-    `effects`, in order, are the only four things an action may do:
-    `ReplaceWorld`/`ReplaceVia` (write a freshly computed value),
-    `Destroy` (the match itself), `Spawn` (a new entity). Every effect's
+    `effects`, in order, are the only three things an action may do:
+    `ReplaceAt` (write a freshly computed value onto an entity an
+    expression names), `Destroy` (the match itself), `Spawn` (a new
+    entity). Every effect's
     OWN fields are evaluated against the matched entity BEFORE any
     effect commits -- a read phase, then a write phase, never
     interleaved -- so no effect can see another effect's write from the
@@ -628,6 +731,9 @@ def evaluate(expr, w, entity):
     if isinstance(expr, World):
         comp = w.the(expr.component)
         return getattr(comp, expr.field) if comp is not None else MISSING
+    if isinstance(expr, TheEntity):
+        found = w.first(expr.component)
+        return found[0].id if found is not None else MISSING
     if isinstance(expr, (Add, Sub, Mul)):
         left, right = evaluate(expr.left, w, entity), evaluate(expr.right, w, entity)
         if left is MISSING or right is MISSING:
@@ -649,6 +755,9 @@ def evaluate(expr, w, entity):
     if isinstance(expr, Coalesce):
         value = evaluate(expr.expr, w, entity)
         return evaluate(expr.default, w, entity) if value is MISSING else value
+    if isinstance(expr, If):
+        branch = expr.then if evaluate(expr.condition, w, entity) else expr.else_
+        return evaluate(branch, w, entity)
     if isinstance(expr, Lower):
         value = evaluate(expr.expr, w, entity)
         return value.lower() if isinstance(value, str) else MISSING
@@ -707,6 +816,22 @@ def evaluate(expr, w, entity):
         if any(v is MISSING for v in values):
             return MISSING
         return expr.template % tuple(values)
+    if isinstance(expr, Join):
+        rows = []
+        for m in _matches(w, expr.over, entity):
+            text = evaluate(expr.expr, w, m)
+            if text is MISSING:
+                continue    # drop just this one entity, not the whole join
+            key = evaluate(expr.sort_by, w, m) if expr.sort_by is not None else None
+            rows.append((key, text))
+        if expr.sort_by is not None:
+            rows.sort(key=lambda row: row[0])
+        return expr.sep.join(text for _key, text in rows)
+    if isinstance(expr, Optional):
+        return evaluate(expr.expr, w, entity) if evaluate(expr.condition, w, entity) else MISSING
+    if isinstance(expr, JoinStrings):
+        values = [evaluate(e, w, entity) for e in expr.exprs]
+        return expr.sep.join(v for v in values if v is not MISSING)
     raise TypeError("not a circuit expression: %r" % (expr,))
 
 
@@ -747,22 +872,23 @@ def compile_circuit(spec):
             entity = match[0]
             if spec.condition is not None and not evaluate(spec.condition, w, entity):
                 return
-            planned = []    # read phase: every effect's fields, pre-write
-            for effect in spec.effects:
+            planned = []    # read phase: every effect's fields (and, for
+            for effect in spec.effects:   # ReplaceAt, its own target), pre-write
                 if isinstance(effect, Destroy):
-                    planned.append((effect, None))
+                    planned.append((effect, None, None))
                     continue
+                target = None
+                if isinstance(effect, ReplaceAt):
+                    target = evaluate(effect.at, w, entity)
+                    if target is MISSING:
+                        return    # refuse the WHOLE action, not half of it
                 values = [evaluate(f, w, entity) for f in effect.fields]
                 if any(v is MISSING for v in values):
                     return    # refuse the WHOLE action, not half of it
-                planned.append((effect, values))
-            for effect, values in planned:    # write phase
-                if isinstance(effect, ReplaceWorld):
-                    target, _ = w.first(effect.component)
+                planned.append((effect, target, values))
+            for effect, target, values in planned:    # write phase
+                if isinstance(effect, ReplaceAt):
                     w.replace(target, effect.component(*values))
-                elif isinstance(effect, ReplaceVia):
-                    base = w.get(entity, effect.base)
-                    w.replace(getattr(base, effect.fk_field), effect.component(*values))
                 elif isinstance(effect, Destroy):
                     w.destroy(entity)
                 elif isinstance(effect, Spawn):
@@ -776,20 +902,16 @@ def compile_circuit(spec):
 def reads(spec) -> Set[type]:
     """Every component type `spec` could read -- `for_each` (or
     `require`/`without`, for an `ActionCircuit`), plus every `Self`/
-    `Via`/`World` (and `Via`'s own `base`) reached while walking its
-    expression tree, plus, for an `ActionCircuit`, `ReplaceVia`'s own
-    `base` and `ReplaceWorld`'s own `component` -- `ReplaceWorld` has to
-    read the singleton it targets (`w.first(component)`) before it can
-    replace it. Structural, not inferred: a node's `component`/`base`
-    field IS the read -- there is nothing here to get wrong the way a
-    general analyzer could."""
+    `Via`/`World`/`TheEntity` (and `Via`'s own `base`) reached while
+    walking its expression tree -- `ReplaceAt`'s own `at` is just
+    another expression in that tree, so a `TheEntity(component)` or
+    `Self(base, fk_field)` naming its target is already picked up here,
+    the same as anywhere else one appears; no separate case is needed
+    for it. Structural, not inferred: a node's `component`/`base` field
+    IS the read -- there is nothing here to get wrong the way a general
+    analyzer could."""
     if isinstance(spec, ActionCircuit):
         kinds: Set[type] = set(spec.require) | set(spec.without)
-        for effect in spec.effects:
-            if isinstance(effect, ReplaceWorld):
-                kinds.add(effect.component)
-            elif isinstance(effect, ReplaceVia):
-                kinds.add(effect.base)
     else:
         kinds = set(_kinds(spec.for_each))
         if isinstance(spec, ValueCircuit) and spec.monotonic:
@@ -801,6 +923,8 @@ def reads(spec) -> Set[type]:
             kinds.update((node.base, node.component))
         elif isinstance(node, World):
             kinds.add(node.component)
+        elif isinstance(node, TheEntity):
+            kinds.add(node.component)
         elif isinstance(node, Exists):
             kinds.add(node.component)
         elif isinstance(node, HasSelf):
@@ -809,7 +933,7 @@ def reads(spec) -> Set[type]:
             kinds.update((node.base, node.component))
         elif isinstance(node, FindBy):
             kinds.add(node.component)
-        elif isinstance(node, (Any, Forall, Count)):
+        elif isinstance(node, (Any, Forall, Count, Join)):
             if not isinstance(node.over, Children):
                 kinds.update(_kinds(node.over))    # a Children scope is its own leaf, above
     return kinds
@@ -828,7 +952,7 @@ def writes(spec) -> Set[type]:
     if isinstance(spec, ValueCircuit):
         return {spec.into}
     return {effect.component for effect in spec.effects
-            if isinstance(effect, (ReplaceWorld, ReplaceVia, Spawn))}
+            if isinstance(effect, (ReplaceAt, Spawn))}
 
 
 def destroys(spec: ActionCircuit) -> bool:

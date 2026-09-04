@@ -33,7 +33,28 @@ core"), named so they are not lost rather than scheduled.
   free guarantee -- checked directly now, not just asserted (`tests/
   test_circuits.py::test_hear_list_outcomes_are_structurally_mutually_
   exclusive`). See README History, "count was the wrong metric."
-  `hear_want`/`hear_status` still not attempted.
+- ~~`hear_want`'s parsing.~~ Same four-outcome shape as `hear_list`,
+  with one new wrinkle: its success effect replaces a component on an
+  entity FOUND BY NAME (`FindBy`), not one reached by a stored field --
+  which `ReplaceVia`/`ReplaceWorld` could not do at all. Generalized
+  into one `ReplaceAt(at, component, fields)` instead of adding a third,
+  narrower effect -- `ReplaceVia`/`ReplaceWorld` turned out to both be
+  `ReplaceAt` with a specific `at` already baked in, so they are gone,
+  not kept alongside it. `If(condition, then, else_)` also added --
+  defaulting an omitted quantity to `1` depends on WHICH case holds, not
+  on a read coming back `MISSING`. See README History, "one Replace
+  effect, not three."
+- ~~`hear_status`'s parsing.~~ A different shape from the other two --
+  no wrong outcome to reject, just one report to build, needing a
+  variable-length, SORTED piece of TEXT from an unbounded set (every
+  wanted card, alphabetically) that nothing built so far could produce.
+  `Join(over, expr, sep, sort_by=None)` (`Any`/`Forall`/`Count`'s
+  sibling, reducing a set to text instead of a boolean or a number),
+  `Optional(condition, expr)`, `JoinStrings(sep, exprs)` (a handful of
+  known pieces, some conditionally present, assembled with one
+  separator). Only two specs needed -- the flattest decomposition of
+  the three `hear_*` rules, despite needing the most genuinely new
+  machinery. See README History, "hear_status's report."
 - **`decide_buy_spec` drops the batching `cards.decide_buy` still does**
   (one match per tick, not several). Correct, per README History, but a
   real behavior change if this were ever adopted for real rather than

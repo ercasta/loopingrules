@@ -125,12 +125,12 @@ decide_buy_spec = circuits.ActionCircuit(
     require=(cards.Listing, cards.Wanted, cards.Affordable, cards.FairPriced),
     without=(judge.TooRisky,),
     effects=(
-        circuits.ReplaceWorld(
-            cards.Purse,
+        circuits.ReplaceAt(
+            circuits.TheEntity(cards.Purse), cards.Purse,
             (circuits.Sub(circuits.World(cards.Purse, "cash"),
                           circuits.Self(cards.Listing, "price")),)),
-        circuits.ReplaceVia(
-            cards.Listing, "card", cards.Copies,
+        circuits.ReplaceAt(
+            circuits.Self(cards.Listing, "card"), cards.Copies,
             (circuits.Add(
                 circuits.Coalesce(
                     circuits.Via(cards.Listing, "card", cards.Copies, "count"),
@@ -1060,3 +1060,363 @@ def test_hear_list_outcomes_are_structurally_mutually_exclusive(line):
                 (WrongArityList, UnknownCardList, BadPriceList, ValidList)
                 if w.has(said, tag)]
     assert len(outcomes) <= 1, "more than one outcome tag landed: %r" % outcomes
+
+
+# -- If/TheEntity/ReplaceAt, added for hear_want -------------------------
+#
+# hear_want is the same four-outcome shape as hear_list, with one new
+# wrinkle: its success effect REPLACES a component on an entity FOUND BY
+# NAME (FindBy), not one reached by a field self already stores -- what
+# used to be two effects (ReplaceVia/ReplaceWorld) turned out to both be
+# "ReplaceAt, with a specific `at` expression already baked in" once
+# there was a THIRD case (a FindBy-found entity) neither could reach.
+# One effect now covers all three -- see README History, "one Replace
+# effect, not three." `If` is the other addition: hear_want defaults an
+# omitted quantity to 1, which depends on WHICH case holds (word count),
+# not on whether a read came back MISSING (`Coalesce`'s own question).
+
+def test_if_picks_the_correct_branch():
+    w = World()
+    yes = circuits.If(circuits.Const(True), circuits.Const("a"), circuits.Const("b"))
+    no = circuits.If(circuits.Const(False), circuits.Const("a"), circuits.Const("b"))
+    assert circuits.evaluate(yes, w, None) == "a"
+    assert circuits.evaluate(no, w, None) == "b"
+
+
+def test_the_entity_finds_the_world_singleton_or_is_missing():
+    w = World()
+    assert circuits.evaluate(circuits.TheEntity(Purse), w, None) is circuits.MISSING
+    purse = w.spawn(Purse(100))
+    assert circuits.evaluate(circuits.TheEntity(Purse), w, None) == purse.id
+
+
+@dataclasses.dataclass(frozen=True)
+class WantParse:
+    is_want: bool
+    word_count: int
+    card_word: str
+    qty_word: str     # "" if the 3rd word was never typed
+
+
+@dataclasses.dataclass(frozen=True)
+class WantResolved:
+    card: int     # -1 sentinel if not found
+    qty: int      # -1 sentinel if unparseable, else the parsed int (may be < 1)
+
+
+@dataclasses.dataclass(frozen=True)
+class WrongArityWant:
+    pass
+
+
+@dataclasses.dataclass(frozen=True)
+class UnknownCardWant:
+    pass
+
+
+@dataclasses.dataclass(frozen=True)
+class BadQuantityWant:
+    pass
+
+
+@dataclasses.dataclass(frozen=True)
+class ValidWant:
+    pass
+
+
+want_parse_spec = circuits.ValueCircuit(
+    for_each=Said,
+    into=WantParse,
+    fields=(
+        circuits.Eq(circuits.Lower(circuits.Coalesce(
+            circuits.At(circuits.Split(circuits.Self(Said, "text")), 0), circuits.Const(""))),
+            circuits.Const("want")),
+        circuits.Len(circuits.Split(circuits.Self(Said, "text"))),
+        circuits.Coalesce(circuits.At(circuits.Split(circuits.Self(Said, "text")), 1),
+                          circuits.Const("")),
+        circuits.Coalesce(circuits.At(circuits.Split(circuits.Self(Said, "text")), 2),
+                          circuits.Const("")),
+    ),
+)
+
+want_resolved_spec = circuits.ValueCircuit(
+    for_each=(Said, WantParse),
+    into=WantResolved,
+    condition=circuits.And((
+        circuits.Self(WantParse, "is_want"),
+        circuits.Or((circuits.Eq(circuits.Self(WantParse, "word_count"), circuits.Const(2)),
+                     circuits.Eq(circuits.Self(WantParse, "word_count"), circuits.Const(3)))))),
+    fields=(
+        circuits.Coalesce(
+            circuits.FindBy(cards.CardDef, "name",
+                            circuits.Lower(circuits.Self(WantParse, "card_word"))),
+            circuits.Const(-1)),
+        circuits.Coalesce(
+            circuits.ParseInt(circuits.If(
+                circuits.Eq(circuits.Self(WantParse, "qty_word"), circuits.Const("")),
+                circuits.Const("1"), circuits.Self(WantParse, "qty_word"))),
+            circuits.Const(-1)),
+    ),
+)
+
+tag_wrong_arity_want = circuits.TagCircuit(
+    for_each=(Said, WantParse),
+    condition=circuits.And((
+        circuits.Self(WantParse, "is_want"),
+        circuits.Not(circuits.Or((
+            circuits.Eq(circuits.Self(WantParse, "word_count"), circuits.Const(2)),
+            circuits.Eq(circuits.Self(WantParse, "word_count"), circuits.Const(3))))))),
+    tag=WrongArityWant,
+)
+tag_unknown_card_want = circuits.TagCircuit(
+    for_each=(Said, WantParse, WantResolved),
+    condition=circuits.And((circuits.Self(WantParse, "is_want"),
+                            circuits.Eq(circuits.Self(WantResolved, "card"), circuits.Const(-1)))),
+    tag=UnknownCardWant,
+)
+tag_bad_quantity_want = circuits.TagCircuit(
+    for_each=(Said, WantParse, WantResolved),
+    condition=circuits.And((
+        circuits.Self(WantParse, "is_want"),
+        circuits.Not(circuits.Eq(circuits.Self(WantResolved, "card"), circuits.Const(-1))),
+        circuits.Lt(circuits.Self(WantResolved, "qty"), circuits.Const(1)))),
+    tag=BadQuantityWant,
+)
+tag_valid_want = circuits.TagCircuit(
+    for_each=(Said, WantParse, WantResolved),
+    condition=circuits.And((
+        circuits.Self(WantParse, "is_want"),
+        circuits.Not(circuits.Eq(circuits.Self(WantResolved, "card"), circuits.Const(-1))),
+        circuits.Not(circuits.Lt(circuits.Self(WantResolved, "qty"), circuits.Const(1))))),
+    tag=ValidWant,
+)
+
+act_wrong_arity_want = circuits.ActionCircuit(
+    require=(Said, WrongArityWant), without=(),
+    effects=(circuits.Destroy(),
+             circuits.Spawn(cards.BadCommand,
+                            (circuits.Self(Said, "text"),
+                             circuits.Const("usage: want <card> [qty]")))),
+)
+act_unknown_card_want = circuits.ActionCircuit(
+    require=(Said, UnknownCardWant, WantParse), without=(),
+    effects=(circuits.Destroy(),
+             circuits.Spawn(cards.BadCommand,
+                            (circuits.Self(Said, "text"),
+                             circuits.Format("unknown card %r",
+                                             (circuits.Self(WantParse, "card_word"),))))),
+)
+act_bad_quantity_want = circuits.ActionCircuit(
+    require=(Said, BadQuantityWant, WantParse), without=(),
+    effects=(circuits.Destroy(),
+             circuits.Spawn(cards.BadCommand,
+                            (circuits.Self(Said, "text"),
+                             circuits.Format("not a quantity: %r",
+                                             (circuits.Self(WantParse, "qty_word"),))))),
+)
+act_valid_want = circuits.ActionCircuit(
+    require=(Said, ValidWant, WantResolved), without=(),
+    effects=(circuits.Destroy(),
+             circuits.ReplaceAt(circuits.Self(WantResolved, "card"), Wants,
+                                (circuits.Self(WantResolved, "qty"),))),
+)
+
+HEAR_WANT_SPECS = (want_parse_spec, want_resolved_spec, tag_wrong_arity_want,
+                   tag_unknown_card_want, tag_bad_quantity_want, tag_valid_want,
+                   act_wrong_arity_want, act_unknown_card_want, act_bad_quantity_want,
+                   act_valid_want)
+
+
+def _hear_want_circuit_loop(cash=100):
+    lp = Loop()
+    cards.install(lp, cash=cash)
+    lp.rules = [(n, f) for n, f in lp.rules if f is not cards.hear_want]
+    for i, spec in enumerate(HEAR_WANT_SPECS):
+        lp.rule(circuits.compile_circuit(spec), name="hear_want_circuit.%d" % i,
+                watches=(Said,))
+    return lp
+
+
+@pytest.mark.parametrize("line", [
+    "want dragon",              # defaults qty to 1
+    "want dragon 3",            # a real Wants
+    "want",                     # wrong arity (too few)
+    "want dragon 3 extra",      # wrong arity (too many)
+    "want unicorn",             # unknown card
+    "want unicorn 2",           # unknown card
+    "want dragon abc",          # bad quantity (unparseable)
+    "want dragon 0",            # bad quantity (parses, but < 1)
+    "want dragon -1",           # bad quantity (parses to the SAME sentinel this uses)
+    "want DRAGON 2",            # case-insensitive lookup, still valid
+])
+def test_hear_want_decomposition_matches_the_original_exactly(line):
+    def outcome(loop):
+        w = loop.world
+        w.spawn(Said("user", line))
+        loop.run()
+        wants = sorted((w.get(e, CardDef).name, want.qty) for e, want in w.each(Wants))
+        replies = [r.text for _e, r in w.each(Reply)]
+        return wants, replies
+
+    original_loop = Loop()
+    cards.install(original_loop, cash=100)
+    original = outcome(original_loop)
+
+    circuit = outcome(_hear_want_circuit_loop(cash=100))
+
+    assert original == circuit
+
+
+@pytest.mark.parametrize("line", [
+    "want dragon", "want", "want dragon 3 extra", "want unicorn",
+    "want dragon abc", "want dragon 0", "list dragon 40", "status", "",
+])
+def test_hear_want_outcomes_are_structurally_mutually_exclusive(line):
+    w = World()
+    said = w.spawn(Said("user", line))
+    circuits.compile_circuit(want_parse_spec)(w)
+    circuits.compile_circuit(want_resolved_spec)(w)
+    for spec in (tag_wrong_arity_want, tag_unknown_card_want, tag_bad_quantity_want,
+                 tag_valid_want):
+        circuits.compile_circuit(spec)(w)
+    outcomes = [tag for tag in
+                (WrongArityWant, UnknownCardWant, BadQuantityWant, ValidWant)
+                if w.has(said, tag)]
+    assert len(outcomes) <= 1, "more than one outcome tag landed: %r" % outcomes
+
+
+# -- Join/JoinStrings/Optional, added for hear_status --------------------
+#
+# hear_status is a different shape from hear_list/hear_want: no wrong
+# outcome to reject at all (any trailing garbage after "status" is
+# ignored, matching the original exactly), just ONE report to build --
+# but building it needs a variable-length, SORTED piece of text from an
+# unbounded set (every wanted card, alphabetically), which nothing built
+# so far can produce (Any/Forall/Count all reduce a set to a boolean or
+# a number, never text). Two specs only -- a single TagCircuit plus a
+# single ActionCircuit -- the flattest decomposition of the three
+# hear_* rules, even though it needed the most genuinely NEW machinery.
+
+def test_join_sorts_and_joins_by_a_key():
+    w = World()
+    dragon = w.spawn(CardDef("dragon", "rare", 40), Wants(1))
+    ant = w.spawn(CardDef("ant", "common", 1), Wants(5))
+    joined = circuits.Join(
+        (CardDef, Wants),
+        circuits.Format("%s:%d", (circuits.Self(CardDef, "name"), circuits.Self(Wants, "qty"))),
+        "; ", sort_by=circuits.Self(CardDef, "name"))
+    assert circuits.evaluate(joined, w, None) == "ant:5; dragon:1"
+
+
+def test_join_drops_an_entity_whose_own_expr_is_missing_not_the_whole_join():
+    w = World()
+    w.spawn(CardDef("dragon", "rare", 40), Wants(1))
+    w.spawn(CardDef("ant", "common", 1))    # no Wants -- Self(Wants, "qty") is MISSING
+    joined = circuits.Join(
+        (CardDef, Wants),
+        circuits.Format("%s:%d", (circuits.Self(CardDef, "name"), circuits.Self(Wants, "qty"))),
+        "; ")
+    assert circuits.evaluate(joined, w, None) == "dragon:1"
+
+
+def test_join_is_the_empty_string_on_an_empty_match():
+    assert circuits.evaluate(
+        circuits.Join(CardDef, circuits.Const("x"), "; "), World(), None) == ""
+
+
+def test_optional_is_dropped_not_joined_as_empty():
+    js = circuits.JoinStrings("; ", (
+        circuits.Const("a"),
+        circuits.Optional(circuits.Const(False), circuits.Const("skipped")),
+        circuits.Optional(circuits.Const(True), circuits.Const("b")),
+    ))
+    assert circuits.evaluate(js, World(), None) == "a; b"
+
+
+@dataclasses.dataclass(frozen=True)
+class IsStatusCommand:
+    pass
+
+
+tag_is_status = circuits.TagCircuit(
+    for_each=Said,
+    condition=circuits.Eq(
+        circuits.Lower(circuits.Coalesce(circuits.At(circuits.Split(circuits.Self(Said, "text")), 0),
+                                         circuits.Const(""))),
+        circuits.Const("status")),
+    tag=IsStatusCommand,
+)
+
+_per_card_report = circuits.Join(
+    (CardDef, Wants),
+    circuits.Format("%s: %d/%d", (circuits.Self(CardDef, "name"),
+                                   circuits.Coalesce(circuits.Self(Copies, "count"), circuits.Const(0)),
+                                   circuits.Self(Wants, "qty"))),
+    "; ",
+    sort_by=circuits.Self(CardDef, "name"),
+)
+
+_status_text = circuits.JoinStrings("; ", (
+    circuits.Format("cash: %d", (circuits.World(Purse, "cash"),)),
+    circuits.If(circuits.Eq(_per_card_report, circuits.Const("")),
+               circuits.Const("no goal set"), _per_card_report),
+    circuits.Optional(circuits.Any(GoalMet), circuits.Const("goal met")),
+))
+
+act_status = circuits.ActionCircuit(
+    require=(Said, IsStatusCommand), without=(),
+    effects=(circuits.Destroy(), circuits.Spawn(Reply, (circuits.Const("user"), _status_text))),
+)
+
+HEAR_STATUS_SPECS = (tag_is_status, act_status)
+
+
+def _hear_status_circuit_loop(cash=100):
+    lp = Loop()
+    cards.install(lp, cash=cash)
+    lp.rules = [(n, f) for n, f in lp.rules if f is not cards.hear_status]
+    for i, spec in enumerate(HEAR_STATUS_SPECS):
+        lp.rule(circuits.compile_circuit(spec), name="hear_status_circuit.%d" % i,
+                watches=(Said,))
+    return lp
+
+
+@pytest.mark.parametrize("setup,cash", [
+    ([], 100),                                            # no goal set
+    (["want dragon 1"], 100),                             # one unmet want
+    (["want dragon 1", "want griffin 2"], 100),           # sorted output, unsorted input order
+    (["want dragon 1", "list dragon 40"], 100),           # goal met
+    (["want dragon 2", "list dragon 40"], 100),           # partially met (1/2)
+    ([], 45),                                             # different cash
+])
+def test_hear_status_decomposition_matches_the_original_exactly(setup, cash):
+    def last_reply(loop):
+        w = loop.world
+        for line in setup:
+            w.spawn(Said("user", line))
+            loop.run()
+        w.spawn(Said("user", "status"))
+        loop.run()
+        replies = [r.text for _e, r in w.each(Reply)]
+        return replies[-1] if replies else None
+
+    original_loop = Loop()
+    cards.install(original_loop, cash=cash)
+    original = last_reply(original_loop)
+
+    circuit = last_reply(_hear_status_circuit_loop(cash=cash))
+
+    assert original == circuit
+
+
+def test_hear_status_specs_read_everything_the_original_reads():
+    """`act_status` combined with `tag_is_status` reads everything
+    `loopingrules.analyze.analyze(cards.hear_status)` does, plus the
+    one intermediate tag the decomposition itself introduces -- the
+    same "extra component for the mechanism, not the domain" gap
+    `check_goal_spec`'s own comparison already has."""
+    analyzed = analyze.analyze(cards.hear_status)
+    combined_reads = circuits.reads(tag_is_status) | circuits.reads(act_status)
+    assert analyzed.reads <= combined_reads
+    assert combined_reads - analyzed.reads == {IsStatusCommand}
+    assert circuits.writes(act_status) == analyzed.writes

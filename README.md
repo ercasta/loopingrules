@@ -224,6 +224,58 @@ Nothing here touches the actual `pystrider` checkout — see History,
 
 ## History
 
+**`hear_want`/`hear_status`: the other two `hear_*` rules, and one
+Replace effect where there were three, 2026-09-06 (yet later).**
+`hear_want` is the same four-mutually-exclusive-outcome shape as
+`hear_list`, restated the same way (two `ValueCircuit`s, four
+`TagCircuit`s, four `ActionCircuit`s) -- but its success effect
+replaces `Wants` on the card entity `FindBy` looks up BY NAME, and
+neither `ReplaceVia` (a stored fk field) nor `ReplaceWorld` (the world
+singleton) could reach an entity found that way. Rather than add a
+third, narrower effect for the third way of naming a target, `ReplaceAt
+(at, component, fields)` generalizes all three: `at` is just an
+expression, `Self(base, fk_field)` for what `ReplaceVia` did,
+`TheEntity(component)` (new) for what `ReplaceWorld` did, `FindBy(...)`
+for the new case. `ReplaceVia`/`ReplaceWorld` are deleted outright, not
+kept alongside it -- `decide_buy_spec` (the only other consumer)
+rewritten onto `ReplaceAt` and reverified against every regression it
+already had, unchanged. `If(condition, then, else_)` was also needed --
+`hear_want` defaults an omitted quantity to `1`, which depends on WHICH
+case holds (was a third word typed at all), not on whether a read came
+back `MISSING` (`Coalesce`'s narrower question) -- explicitly NOT a
+contradiction of "no loop, no `if`, by construction": it selects
+between two already-evaluated VALUES, never a different effect, rule,
+or `for_each`, the same as `SafeDiv` already silently does for one
+specific case.
+
+`hear_status` is a different shape from both -- no wrong outcome to
+reject at all (trailing garbage after "status" is ignored, matching the
+original exactly), just one report to build. Building it needed a
+genuinely new kind of aggregate: `Join(over, expr, sep, sort_by=None)`,
+`Any`/`Forall`/`Count`'s sibling, reducing an unbounded set to
+variable-length, SORTED TEXT instead of a boolean or a number --
+`examples.cards.hear_status`'s own `sorted(w.each(CardDef, Wants),
+key=lambda row: row[1].name)` restated as data, an entity whose own
+`expr`/`sort_by` is `MISSING` dropped rather than failing the whole
+report. `Optional(condition, expr)`/`JoinStrings(sep, exprs)` assemble
+the fixed, small set of KNOWN pieces around it (cash, the per-card
+report or "no goal set", optionally "goal met") -- `Optional` drops a
+segment entirely rather than joining an empty string in its place.
+Needing the most genuinely new machinery of the three `hear_*` rules
+produced the FLATTEST decomposition of them: two specs total, one
+`TagCircuit` and one `ActionCircuit`, no branching at all.
+
+Both checked against the real rules, exactly: `hear_want` across ten
+lines (defaulted quantity, an explicit one, both directions of wrong
+arity, unknown card, three distinct bad-quantity shapes including one
+that parses to the same `-1` sentinel this restatement uses internally,
+case-insensitive lookup) with its own mutual-exclusivity pin, the same
+discipline `hear_list`'s correction already established; `hear_status`
+across six scenarios (no goal, one unmet want, two wants sorted out of
+input order, goal met, partially met, different cash).
+
+32 new tests in `tests/test_circuits.py`. 244 -> 276 passing.
+
 **A correction: count was the wrong metric for `hear_list`'s
 decomposition, 2026-09-06 (later still).** The entry directly below this
 one verdicted the ten-spec, six-primitive restatement of `hear_list` by
