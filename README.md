@@ -194,7 +194,55 @@ above, "no vocabulary above entities and components either") — see
 `judge.py`'s own docstring for what this does and does not settle, and
 History, "A domain-oblivious judge."
 
+**`examples/parts.py` is a fifth module, and the only one built to test a
+question about a SIBLING repo rather than about `loopingrules` itself.**
+`pystrider.symbolic._parent_of`/`_reachable` walk a Python-level dict
+(`intake.PARTS.values()`) generically, rather than enumerating specific
+part-edge types — exactly the shape `PRINCIPLES.md` holds up as the
+model, and exactly the shape `loopingrules.analyze` cannot see into
+(there is no literal component type at that call site for a static
+reader to point at). `parts.py` prototypes the fix: a generic `Part`
+component, minted through ONE choke point alongside every specific edge,
+so a generic reader walks `Part` alone — proven, not just argued, to
+keep the actual property that matters (a brand-new edge kind, added
+after the walkers are written, costs them zero changes) while becoming
+fully analyzable. Also proves, honestly, what it does NOT fix: a reader
+parameterized by which ANCESTOR kind to stop at (`pystrider.symbolic.
+_enclosing`) stays opaque regardless, a separate, sibling instance of
+the "kind held in a variable" pattern found elsewhere in `pystrider`.
+Nothing here touches the actual `pystrider` checkout — see History,
+"a generic Part tag."
+
 ## History
+
+**A generic `Part` tag, prototyped against a real gap in `pystrider`,
+2026-09-04 (later).** `examples/parts.py`: a toy tree (not `pystrider`'s
+real one) with specific edges (`Left`/`Right`/`Body`) minted through one
+choke point, `part_edge()`, that ALSO attaches a generic `Part(entity,
+label)` on the same call. `parent_of`/`reachable`, restated to walk
+`Part` alone, analyze cleanly (`reads == {Part}`, exactly) where
+`pystrider.symbolic._parent_of`/`_reachable`'s real walk over `intake.
+PARTS.values()` cannot — proof, not assertion, that the fix keeps the
+actual property PRINCIPLES.md credits the original design with: a test
+defines a BRAND NEW edge kind (`Otherwise`) after both walkers already
+exist, mints it through the same choke point, and confirms neither
+walker needed a single line changed to see it. The handoff the fix
+depends on also checked: `both_operands_readable`, a rule keying on the
+SPECIFIC `Left`/`Right`/`Readable` vocabulary and never mentioning
+`Part`, analyzes cleanly on its own, oblivious to the generic walkers
+the same way every tag-composition rule in this codebase already is of
+every other one.
+
+Named honestly, not smoothed over: `enclosing` (`_enclosing`'s
+restatement) stays `Opaque` even after the fix, pinned as its own test —
+it is parameterized by WHICH ancestor kind to stop at, a separate,
+sibling instance of the "kind held in a variable" pattern the `pystrider`
+audit already found elsewhere (`known_value` and others), and `Part`
+only ever fixed the traversal half of that function's job.
+
+Nothing here touches the actual `pystrider` checkout — `loopingrules`
+does not depend on it, the same as it never has on `harneskills`. 9 new
+tests in `tests/test_examples_parts.py`. 200 -> 209 passing.
 
 **The monotonic mode, and `pystrider.patterns`/`constraints` tried for
 real, 2026-09-04.** A live `pystrider` checkout audited against both
