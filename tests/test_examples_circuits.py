@@ -139,6 +139,31 @@ decide_buy_spec = circuits.ActionCircuit(
 )
 
 
+# -- check_goal: no per-entity match at all, a universal quantifier ----
+#
+# check_goal is not a per-entity circuit -- "every wanted card is met" is
+# a quantifier over a SET, and "spawn GoalMet once, never again" has no
+# single entity driving it. WorldCircuit + Any/Forall (added for exactly
+# this) restate it: Any(over) is false on an empty set, Forall(over,
+# condition) is vacuously true on one -- combined with And, "at least
+# one goal exists, and all of them are met." The "never again" guard is
+# ordinary self-reference in the condition (Not(Any((GoalMet,)))), not a
+# second monotonic flag saying the same thing a different way.
+
+check_goal_spec = circuits.WorldCircuit(
+    condition=circuits.And((
+        circuits.Any((cards.CardDef, cards.Wants)),
+        circuits.Not(circuits.Any((cards.GoalMet,))),
+        circuits.Forall(
+            (cards.CardDef, cards.Wants),
+            circuits.Ge(
+                circuits.Coalesce(circuits.Self(cards.Copies, "count"), circuits.Const(0)),
+                circuits.Self(cards.Wants, "qty"))),
+    )),
+    effects=(circuits.Spawn(cards.GoalMet, ()),),
+)
+
+
 # -- unit-level: evaluate the condition directly against a bare World ----
 
 def test_tag_wanted_condition_is_false_when_nobody_wants_the_card():
@@ -192,6 +217,50 @@ def test_decide_buy_spec_reads_writes_match_the_reduced_reference():
     assert circuits.reads(decide_buy_spec) == analyzed.reads
     assert circuits.writes(decide_buy_spec) == analyzed.writes
     assert circuits.destroys(decide_buy_spec) == analyzed.destroys
+
+
+def test_check_goal_spec_reads_writes_match_the_original():
+    analyzed = analyze.analyze(cards.check_goal)
+    assert circuits.reads(check_goal_spec) == analyzed.reads
+    assert circuits.writes(check_goal_spec) == analyzed.writes
+
+
+def test_any_is_false_on_an_empty_match_and_true_once_something_qualifies():
+    w = World()
+    assert circuits.evaluate(circuits.Any(cards.GoalMet), w, None) is False
+    w.spawn(cards.GoalMet())
+    assert circuits.evaluate(circuits.Any(cards.GoalMet), w, None) is True
+
+
+def test_forall_is_vacuously_true_on_an_empty_match():
+    w = World()
+    always_false = circuits.Forall(cards.GoalMet, circuits.Const(False))
+    assert circuits.evaluate(always_false, w, None) is True
+
+
+def test_forall_checks_every_match_not_just_the_first():
+    w = World()
+    dragon = w.spawn(cards.CardDef("dragon", "rare", 40), cards.Wants(1), cards.Copies(1))
+    griffin = w.spawn(cards.CardDef("griffin", "rare", 35), cards.Wants(1), cards.Copies(0))
+    condition = circuits.Ge(circuits.Self(cards.Copies, "count"), circuits.Self(cards.Wants, "qty"))
+    assert circuits.evaluate(
+        circuits.Forall((cards.CardDef, cards.Wants), condition), w, None) is False
+    w.replace(griffin, cards.Copies(1))
+    assert circuits.evaluate(
+        circuits.Forall((cards.CardDef, cards.Wants), condition), w, None) is True
+
+
+def test_check_goal_circuit_never_fires_a_second_time():
+    """The "never again" guard is ordinary self-reference in the
+    condition, not a separate flag -- checked directly: running the
+    compiled rule twice after GoalMet already exists changes nothing."""
+    w = World()
+    dragon = w.spawn(cards.CardDef("dragon", "rare", 40), cards.Wants(1), cards.Copies(1))
+    rule = circuits.compile_circuit(check_goal_spec)
+    rule(w)
+    assert w.each(cards.GoalMet) != []
+    rule(w)
+    assert len(w.each(cards.GoalMet)) == 1    # still exactly one, not two
 
 
 # -- end-to-end: swap the compiled circuit in for the real rule ---------
@@ -283,7 +352,8 @@ def test_too_risky_regression_holds_under_the_compiled_tags():
     assert w.the(cards.Purse) == cards.Purse(45)
 
 
-# -- end-to-end again, this time with decide_buy ALSO a circuit --------
+# -- end-to-end again, this time with decide_buy and check_goal ALSO
+# circuits -- six of cards.py's thirteen rules, all restated as data
 
 def _all_circuits_loop(cash):
     lp = Loop()
@@ -293,6 +363,7 @@ def _all_circuits_loop(cash):
     _swap(lp, cards.tag_fair_priced, circuits.compile_circuit(tag_fair_priced_spec))
     _swap(lp, cards.tag_risk_level, circuits.compile_circuit(tag_risk_level_spec))
     _swap(lp, cards.decide_buy, circuits.compile_circuit(decide_buy_spec))
+    _swap(lp, cards.check_goal, circuits.compile_circuit(check_goal_spec))
     return lp
 
 
@@ -308,6 +379,25 @@ def test_full_buy_flow_holds_with_decide_buy_also_a_circuit():
     replies = [r.text for _e, r in w.each(Reply)]
     assert "bought dragon for 40" in replies
     assert "goal met -- every wanted card is in the collection" in replies
+
+
+def test_goal_met_reply_still_fires_exactly_once_with_check_goal_a_circuit():
+    """Replays `test_examples_cards.py`'s own `test_goal_met_is_announced_
+    exactly_once` against the circuit-compiled check_goal -- the guard
+    against re-announcing lives in `reply_goal_met` (untouched, real
+    Python, `without=Announced`), not in `check_goal` itself; this pins
+    that the two still compose correctly when one of them is a circuit."""
+    lp = _all_circuits_loop(cash=100)
+    w = lp.world
+    w.spawn(Said("user", "want dragon 1"))
+    w.replace(_card(w, "dragon"), cards.Copies(1))
+    lp.run()
+    first = [r.text for _e, r in w.each(Reply)]
+    for e, _r in w.each(Reply):
+        w.destroy(e)
+    assert first == ["goal met -- every wanted card is in the collection"]
+    lp.tick()
+    assert w.each(Reply) == []
 
 
 def test_overspend_regression_holds_with_decide_buy_also_a_circuit():

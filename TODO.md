@@ -4,11 +4,14 @@ Open threads out of the `examples/circuits.py` prototype (see README
 History, "circuits.py: a closed shape catalog"), named so they are not
 lost rather than scheduled.
 
-- **`check_goal`'s fold.** `TagCircuit`/`ValueCircuit`/`ActionCircuit` all
-  read one entity's own fields; `check_goal`'s "every wanted card is met"
-  is a universal quantifier over a SET of entities, not a per-entity
-  circuit. The catalog needs at least one aggregate shape (`Forall`/
-  `Count`/`Sum` over a query) before this one reduces -- not designed.
+- ~~`check_goal`'s fold.~~ Done: `WorldCircuit` + `Any`/`Forall` (no
+  per-entity match, a quantifier over a query instead). `patterns.
+  loop_count` (an aggregate too -- how many loops a function directly
+  contains) is NOT the same shape and remains open: it counts, over a
+  query already scoped to ONE entity's own nested structure, not "every
+  entity matching a join" -- `Any`/`Forall` answer yes/no questions,
+  `loop_count` needs an actual `Count`/`Sum` returning a number. Not
+  designed.
 - **`hear_list`/`hear_want`/`hear_status` stay plain Python, on purpose,
   for now.** String parsing (split, lowercase, int-parse, look up by
   name, report which check failed) is a different primitive axis than

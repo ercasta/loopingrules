@@ -215,6 +215,38 @@ Nothing here touches the actual `pystrider` checkout — see History,
 
 ## History
 
+**`check_goal`'s quantifier: `WorldCircuit`, `Any`, `Forall`, 2026-09-05.**
+`check_goal` is not a per-entity circuit at all -- "every wanted card is
+met" is a universal quantifier over a SET, and "spawn `GoalMet` once,
+never again" has no single entity driving it, unlike every shape
+`circuits.py` had until now. Fixed with a fourth rule shape,
+`WorldCircuit(condition, effects)` -- no per-entity match, `condition`
+evaluated with NO entity in scope (`Self`/`Via` return `MISSING` rather
+than raise when asked to read off nothing) -- plus two expressions:
+`Any(over)` (at least one entity matches this join; `False` on an empty
+set) and `Forall(over, condition)` (every matching entity satisfies
+`condition`, evaluated with THAT entity as self; vacuously `True` on an
+empty set, the classical convention, which is exactly why `check_goal`
+needs both combined with `And` -- no goal is ever "met" if none was
+stated). The "never fire again" guard is not a third flag: it is
+ordinary self-reference inside the condition (`Not(Any((GoalMet,)))`),
+the same discipline `check_goal`'s own `w.the(GoalMet) is not None`
+already uses -- a separate flag would have said the same thing twice.
+
+`check_goal_spec`'s reads/writes matched `loopingrules.analyze.analyze
+(cards.check_goal)` exactly on the first attempt (`{CardDef, Copies,
+GoalMet, Wants}` / `{GoalMet}`), and the compiled circuit, swapped in
+for the real rule alongside the five already-restated ones, reproduces
+the goal-met flow byte-for-byte, including the once-only announcement
+that depends on `reply_goal_met` (untouched, real Python) composing
+correctly with a circuit-derived `GoalMet`. `patterns.loop_count`
+(an aggregate too, but "how many loops does one function directly
+contain," not "how many entities in a query satisfy a condition") is a
+different shape `Any`/`Forall` do not reach -- named in `TODO.md`,
+not attempted.
+
+6 new tests in `tests/test_examples_circuits.py`. 212 -> 218 passing.
+
 **A correction: recursion is not "real computation, not orchestration"
 after all, 2026-09-04 (later still).** A full audit of every rule
 `pystrider` actually registers (51 rules, across `patterns`/

@@ -226,6 +226,36 @@ class Or:
 
 
 @dataclasses.dataclass(frozen=True)
+class Not:
+    expr: object
+
+
+@dataclasses.dataclass(frozen=True)
+class Any:
+    """Whether at least one entity carries ALL of `over` (a type, or a
+    tuple of them -- the same join `w.each(*over)` already takes) --
+    boolean, and an EMPTY match set makes this `False`. The complement
+    of `Forall`, below, which is vacuously `True` on an empty set --
+    the two are combined with `And` wherever a rule needs "at least one
+    exists, AND all of them satisfy..." (`examples.cards.check_goal`'s
+    own shape: no goal is ever "met" if none was stated)."""
+    over: object
+
+
+@dataclasses.dataclass(frozen=True)
+class Forall:
+    """Whether EVERY entity carrying all of `over` satisfies `condition`
+    -- `condition` is evaluated with THAT entity as "self," never
+    whatever entity `Forall` itself is being evaluated for (there may be
+    none at all -- see `WorldCircuit`). Vacuously `True` on an empty
+    match set, the classical convention; see `Any`'s own docstring for
+    why a rule that also cares whether the set is non-empty checks both.
+    """
+    over: object
+    condition: object
+
+
+@dataclasses.dataclass(frozen=True)
 class Format:
     template: str
     exprs: tuple
@@ -345,20 +375,45 @@ class ActionCircuit:
     effects: tuple
 
 
+# -- the fourth shape: no per-entity match at all -------------------------
+
+@dataclasses.dataclass(frozen=True)
+class WorldCircuit:
+    """A world-level action: no per-entity match, unlike every other
+    shape here -- `condition` is evaluated with NO entity in scope, so
+    it may only be built from `Any`/`Forall`/`World`/`Const`-rooted
+    expressions, never `Self`/`Via` (which need one; both return
+    `MISSING` if asked to evaluate with no entity, rather than raise).
+    Fires `effects` (`Spawn` only, today) once `condition` holds.
+
+    The "never fire again" guard is not a separate flag here, unlike
+    `ValueCircuit.monotonic` -- it is ordinary self-reference INSIDE the
+    condition (`Not(Any((GoalMet,)))`), the same discipline `examples.
+    cards.check_goal`'s own `w.the(GoalMet) is not None` guard already
+    uses. A second flag would have been a second way to say the same
+    thing this algebra can already express on its own.
+    """
+    condition: object
+    effects: tuple
+
+
 # -- the interpreter -------------------------------------------------------
 
 def evaluate(expr, w, entity):
-    """One expression, evaluated against one entity. `MISSING` where a
-    read's target does not exist -- see the module docstring for which
-    shapes propagate it and which resolve it (`Coalesce`) or collapse it
-    to an ordinary `False` (every comparison)."""
+    """One expression, evaluated against one entity -- or against NO
+    entity (`entity=None`, `WorldCircuit`'s own case): `Self`/`Via`
+    return `MISSING` rather than raise when asked to read off nothing.
+    `MISSING` elsewhere is where a read's target does not exist -- see
+    the module docstring for which shapes propagate it and which
+    resolve it (`Coalesce`) or collapse it to an ordinary `False`
+    (every comparison)."""
     if isinstance(expr, Const):
         return expr.value
     if isinstance(expr, Self):
-        comp = w.get(entity, expr.component)
+        comp = None if entity is None else w.get(entity, expr.component)
         return getattr(comp, expr.field) if comp is not None else MISSING
     if isinstance(expr, Via):
-        base = w.get(entity, expr.base)
+        base = None if entity is None else w.get(entity, expr.base)
         if base is None:
             return MISSING
         related = w.get(getattr(base, expr.fk_field), expr.component)
@@ -399,6 +454,13 @@ def evaluate(expr, w, entity):
         return all(evaluate(e, w, entity) for e in expr.exprs)
     if isinstance(expr, Or):
         return any(evaluate(e, w, entity) for e in expr.exprs)
+    if isinstance(expr, Not):
+        return not evaluate(expr.expr, w, entity)
+    if isinstance(expr, Any):
+        return bool(w.each(*_kinds(expr.over)))
+    if isinstance(expr, Forall):
+        return all(evaluate(expr.condition, w, row[0])
+                   for row in w.each(*_kinds(expr.over)))
     if isinstance(expr, Format):
         values = [evaluate(e, w, entity) for e in expr.exprs]
         if any(v is MISSING for v in values):
@@ -463,6 +525,19 @@ def compile_circuit(spec):
                 elif isinstance(effect, Spawn):
                     w.spawn(effect.component(*values))
         return rule
+    if isinstance(spec, WorldCircuit):
+        def rule(w):
+            if not evaluate(spec.condition, w, None):
+                return
+            for effect in spec.effects:
+                if not isinstance(effect, Spawn):
+                    raise TypeError(
+                        "WorldCircuit supports Spawn effects only, got %r" % (effect,))
+                values = [evaluate(f, w, None) for f in effect.fields]
+                if any(v is MISSING for v in values):
+                    return    # refuse the WHOLE action, not half of it
+                w.spawn(effect.component(*values))
+        return rule
     raise TypeError("not a circuit spec: %r" % (spec,))
 
 
@@ -485,6 +560,8 @@ def reads(spec) -> Set[type]:
                 kinds.add(effect.component)
             elif isinstance(effect, ReplaceVia):
                 kinds.add(effect.base)
+    elif isinstance(spec, WorldCircuit):
+        kinds = set()    # everything comes from walking the condition, below
     else:
         kinds = set(_kinds(spec.for_each))
         if isinstance(spec, ValueCircuit) and spec.monotonic:
@@ -498,6 +575,8 @@ def reads(spec) -> Set[type]:
             kinds.add(node.component)
         elif isinstance(node, Exists):
             kinds.add(node.component)
+        elif isinstance(node, (Any, Forall)):
+            kinds.update(_kinds(node.over))
     return kinds
 
 
