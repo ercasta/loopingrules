@@ -58,6 +58,19 @@ expression giving an id) carries `component` at all; `HasSelf(
 component)` -- the same question about self, with no `at` to compute.
 Neither reads a field, and neither ever yields `MISSING`.
 
+Strings and lookup, added for `hear_list`'s own parsing -- a different
+primitive AXIS than everything above: not arithmetic over already-
+structured data, but turning raw TEXT into structured data at all.
+`Lower(expr)`, `Split(expr)` (the one place a value here is a LIST, not
+a scalar), `At(expr, index)`/`Len(expr)` (the only two things that ever
+read a list back out, `index` a literal int -- `MISSING`, not an
+`IndexError`, out of range), `ParseInt(expr)` (`MISSING`, not a
+`ValueError`). `FindBy(component, field, value)` is a different KIND of
+"reach a related entity" than `Via`: `Via` follows an id a field already
+stores; `FindBy` scans for the entity whose field EQUALS a computed
+value, the reverse lookup `examples.cards._find_card` already does by
+hand.
+
 `Any(over)`/`Forall(over, condition)`/`Count(over, condition)` -- three
 quantifiers over `over` (a GLOBAL join -- a type or several, the same
 shape `w.each(*over)` takes -- or a `Children(base, fk_field, component)`
@@ -212,6 +225,65 @@ class SafeDiv:
 class Coalesce:
     expr: object
     default: object
+
+
+# -- strings and lookup -- added for hear_list's own parsing -------------
+#
+# A different primitive AXIS than everything above: not arithmetic over
+# already-structured data, but the process of turning raw text INTO
+# structured data at all. `Split` is the one place a value flowing
+# through this algebra is a LIST rather than a scalar -- `At`/`Len` are
+# the only two things that ever read one back out. `FindBy` is a
+# different kind of "reach a related entity" than `Via`: `Via` follows
+# an ID a field already stores; `FindBy` scans for the entity whose
+# field EQUALS a computed value, the reverse-lookup `examples.cards.
+# _find_card` already does by hand.
+
+@dataclasses.dataclass(frozen=True)
+class Lower:
+    expr: object
+
+
+@dataclasses.dataclass(frozen=True)
+class Split:
+    expr: object
+
+
+@dataclasses.dataclass(frozen=True)
+class At:
+    """`expr[index]` -- `index` a literal int, not itself an expression
+    (the same reasoning `Via`'s `fk_field` being a plain string is:
+    WHICH field/position to read is part of the shape, not data the
+    shape computes). `MISSING`, not an `IndexError`, out of range."""
+    expr: object
+    index: int
+
+
+@dataclasses.dataclass(frozen=True)
+class Len:
+    expr: object
+
+
+@dataclasses.dataclass(frozen=True)
+class ParseInt:
+    """`int(expr)`, or `MISSING` -- the same refuse-rather-than-guess
+    discipline `examples.cards._parse_int` already spells out by hand,
+    restated as a primitive instead of a helper function."""
+    expr: object
+
+
+@dataclasses.dataclass(frozen=True)
+class FindBy:
+    """The id of the (first) entity whose `component.field` equals
+    `value` (an expression) -- `MISSING` if none. Case-sensitive, unlike
+    `examples.cards._find_card`, which lowers both sides -- a named
+    simplification: lower `value` yourself (`Lower(...)`) and rely on
+    the catalog's own names already being stored lowercase, true of
+    every `DEFAULT_CATALOG` entry today, rather than have this primitive
+    guess which field deserves case-folding on the STORED side too."""
+    component: type
+    field: str
+    value: object
 
 
 # -- comparison and boolean combination -----------------------------------
@@ -557,6 +629,36 @@ def evaluate(expr, w, entity):
     if isinstance(expr, Coalesce):
         value = evaluate(expr.expr, w, entity)
         return evaluate(expr.default, w, entity) if value is MISSING else value
+    if isinstance(expr, Lower):
+        value = evaluate(expr.expr, w, entity)
+        return value.lower() if isinstance(value, str) else MISSING
+    if isinstance(expr, Split):
+        value = evaluate(expr.expr, w, entity)
+        return value.split() if isinstance(value, str) else MISSING
+    if isinstance(expr, At):
+        value = evaluate(expr.expr, w, entity)
+        if not isinstance(value, list) or not (0 <= expr.index < len(value)):
+            return MISSING
+        return value[expr.index]
+    if isinstance(expr, Len):
+        value = evaluate(expr.expr, w, entity)
+        return len(value) if isinstance(value, list) else MISSING
+    if isinstance(expr, ParseInt):
+        value = evaluate(expr.expr, w, entity)
+        if not isinstance(value, str):
+            return MISSING
+        try:
+            return int(value)
+        except ValueError:
+            return MISSING
+    if isinstance(expr, FindBy):
+        value = evaluate(expr.value, w, entity)
+        if value is MISSING:
+            return MISSING
+        for candidate, component in w.all(expr.component):
+            if getattr(component, expr.field) == value:
+                return candidate.id
+        return MISSING
     if isinstance(expr, Exists):
         at = evaluate(expr.at, w, entity)
         return at is not MISSING and w.get(at, expr.component) is not None
@@ -685,6 +787,8 @@ def reads(spec) -> Set[type]:
             kinds.add(node.component)
         elif isinstance(node, Children):
             kinds.update((node.base, node.component))
+        elif isinstance(node, FindBy):
+            kinds.add(node.component)
         elif isinstance(node, (Any, Forall, Count)):
             if not isinstance(node.over, Children):
                 kinds.update(_kinds(node.over))    # a Children scope is its own leaf, above

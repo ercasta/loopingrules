@@ -811,3 +811,211 @@ def test_fold_circuits_are_fully_sound_unlike_the_recursive_original():
     included."""
     assert circuits.reads(fold_add) == {BinOp, Folded}
     assert circuits.writes(fold_add) == {Folded}
+
+
+# -- Lower/Split/At/Len/ParseInt/FindBy, added for hear_list's parsing --
+#
+# A different primitive AXIS than everything above: not arithmetic over
+# already-structured data, but turning raw TEXT into structured data at
+# all. Tried against the real hear_list, in full, below -- every one of
+# its four outcomes (wrong arity, unknown card, bad price, a real
+# Listing) reproduced exactly, including the specific wording of each
+# BadCommand. The honest cost, not hidden: SIX new primitives and TEN
+# circuit specs to restate one ~25-line rule -- by far the worst
+# primitive-to-value ratio of anything tried in this file. See README
+# History, "hear_list's parsing," for the verdict that cost earns.
+
+def test_lower_and_split_and_at_and_len():
+    assert circuits.evaluate(circuits.Lower(circuits.Const("LIST")), World(), None) == "list"
+    words = circuits.Split(circuits.Const("list dragon 40"))
+    assert circuits.evaluate(words, World(), None) == ["list", "dragon", "40"]
+    assert circuits.evaluate(circuits.At(words, 1), World(), None) == "dragon"
+    assert circuits.evaluate(circuits.Len(words), World(), None) == 3
+
+
+def test_at_is_missing_out_of_range_not_an_indexerror():
+    words = circuits.Split(circuits.Const("list"))
+    assert circuits.evaluate(circuits.At(words, 5), World(), None) is circuits.MISSING
+
+
+def test_parse_int_refuses_rather_than_raises():
+    w = World()
+    assert circuits.evaluate(circuits.ParseInt(circuits.Const("40")), w, None) == 40
+    assert circuits.evaluate(circuits.ParseInt(circuits.Const("forty")), w, None) is circuits.MISSING
+
+
+def test_find_by_scans_for_a_field_equal_to_a_value():
+    w = World()
+    dragon = w.spawn(cards.CardDef("dragon", "rare", 40))
+    found = circuits.FindBy(cards.CardDef, "name", circuits.Const("dragon"))
+    assert circuits.evaluate(found, w, None) == dragon.id
+    miss = circuits.FindBy(cards.CardDef, "name", circuits.Const("griffin"))
+    assert circuits.evaluate(miss, w, None) is circuits.MISSING
+
+
+# -- the full decomposition: 4 mutually exclusive outcomes, tag-composed
+
+@dataclasses.dataclass(frozen=True)
+class ListParse:
+    is_list: bool
+    word_count: int
+    card_word: str
+    price_word: str
+
+
+@dataclasses.dataclass(frozen=True)
+class ListResolved:
+    card: int     # -1 sentinel if not found
+    price: int    # -1 sentinel if unparseable
+
+
+@dataclasses.dataclass(frozen=True)
+class WrongArityList:
+    pass
+
+
+@dataclasses.dataclass(frozen=True)
+class UnknownCardList:
+    pass
+
+
+@dataclasses.dataclass(frozen=True)
+class BadPriceList:
+    pass
+
+
+@dataclasses.dataclass(frozen=True)
+class ValidList:
+    pass
+
+
+parse_spec = circuits.ValueCircuit(
+    for_each=Said,
+    into=ListParse,
+    fields=(
+        circuits.Eq(circuits.Lower(circuits.Coalesce(
+            circuits.At(circuits.Split(circuits.Self(Said, "text")), 0), circuits.Const(""))),
+            circuits.Const("list")),
+        circuits.Len(circuits.Split(circuits.Self(Said, "text"))),
+        circuits.Coalesce(circuits.At(circuits.Split(circuits.Self(Said, "text")), 1),
+                          circuits.Const("")),
+        circuits.Coalesce(circuits.At(circuits.Split(circuits.Self(Said, "text")), 2),
+                          circuits.Const("")),
+    ),
+)
+
+resolved_spec = circuits.ValueCircuit(
+    for_each=(Said, ListParse),
+    into=ListResolved,
+    condition=circuits.And((circuits.Self(ListParse, "is_list"),
+                            circuits.Eq(circuits.Self(ListParse, "word_count"), circuits.Const(3)))),
+    fields=(
+        circuits.Coalesce(
+            circuits.FindBy(cards.CardDef, "name",
+                            circuits.Lower(circuits.Self(ListParse, "card_word"))),
+            circuits.Const(-1)),
+        circuits.Coalesce(circuits.ParseInt(circuits.Self(ListParse, "price_word")),
+                          circuits.Const(-1)),
+    ),
+)
+
+tag_wrong_arity_list = circuits.TagCircuit(
+    for_each=(Said, ListParse),
+    condition=circuits.And((circuits.Self(ListParse, "is_list"),
+                            circuits.Not(circuits.Eq(circuits.Self(ListParse, "word_count"),
+                                                     circuits.Const(3))))),
+    tag=WrongArityList,
+)
+tag_unknown_card_list = circuits.TagCircuit(
+    for_each=(Said, ListParse, ListResolved),
+    condition=circuits.And((circuits.Self(ListParse, "is_list"),
+                            circuits.Eq(circuits.Self(ListResolved, "card"), circuits.Const(-1)))),
+    tag=UnknownCardList,
+)
+tag_bad_price_list = circuits.TagCircuit(
+    for_each=(Said, ListParse, ListResolved),
+    condition=circuits.And((
+        circuits.Self(ListParse, "is_list"),
+        circuits.Not(circuits.Eq(circuits.Self(ListResolved, "card"), circuits.Const(-1))),
+        circuits.Eq(circuits.Self(ListResolved, "price"), circuits.Const(-1)))),
+    tag=BadPriceList,
+)
+tag_valid_list = circuits.TagCircuit(
+    for_each=(Said, ListParse, ListResolved),
+    condition=circuits.And((
+        circuits.Self(ListParse, "is_list"),
+        circuits.Not(circuits.Eq(circuits.Self(ListResolved, "card"), circuits.Const(-1))),
+        circuits.Not(circuits.Eq(circuits.Self(ListResolved, "price"), circuits.Const(-1))))),
+    tag=ValidList,
+)
+
+act_wrong_arity_list = circuits.ActionCircuit(
+    require=(Said, WrongArityList), without=(),
+    effects=(circuits.Destroy(),
+             circuits.Spawn(cards.BadCommand,
+                            (circuits.Self(Said, "text"),
+                             circuits.Const("usage: list <card> <price>")))),
+)
+act_unknown_card_list = circuits.ActionCircuit(
+    require=(Said, UnknownCardList, ListParse), without=(),
+    effects=(circuits.Destroy(),
+             circuits.Spawn(cards.BadCommand,
+                            (circuits.Self(Said, "text"),
+                             circuits.Format("unknown card %r",
+                                             (circuits.Self(ListParse, "card_word"),))))),
+)
+act_bad_price_list = circuits.ActionCircuit(
+    require=(Said, BadPriceList, ListParse), without=(),
+    effects=(circuits.Destroy(),
+             circuits.Spawn(cards.BadCommand,
+                            (circuits.Self(Said, "text"),
+                             circuits.Format("not a price: %r",
+                                             (circuits.Self(ListParse, "price_word"),))))),
+)
+act_valid_list = circuits.ActionCircuit(
+    require=(Said, ValidList, ListResolved), without=(),
+    effects=(circuits.Destroy(),
+             circuits.Spawn(Listing, (circuits.Self(ListResolved, "card"),
+                                       circuits.Self(ListResolved, "price")))),
+)
+
+HEAR_LIST_SPECS = (parse_spec, resolved_spec, tag_wrong_arity_list, tag_unknown_card_list,
+                   tag_bad_price_list, tag_valid_list, act_wrong_arity_list,
+                   act_unknown_card_list, act_bad_price_list, act_valid_list)
+
+
+def _hear_list_circuit_loop(cash=100):
+    lp = Loop()
+    cards.install(lp, cash=cash)
+    lp.rules = [(n, f) for n, f in lp.rules if f is not cards.hear_list]
+    for i, spec in enumerate(HEAR_LIST_SPECS):
+        lp.rule(circuits.compile_circuit(spec), name="hear_list_circuit.%d" % i,
+                watches=(Said,))
+    return lp
+
+
+@pytest.mark.parametrize("line", [
+    "list dragon 40",           # a real Listing
+    "list",                     # wrong arity (too few)
+    "list dragon",              # wrong arity (too few)
+    "list dragon 40 extra",     # wrong arity (too many)
+    "list unicorn 40",          # unknown card
+    "list dragon abc",          # bad price
+    "list DRAGON 40",           # case-insensitive lookup, still valid
+])
+def test_hear_list_decomposition_matches_the_original_exactly(line):
+    def outcome(loop):
+        w = loop.world
+        w.spawn(Said("user", line))
+        loop.run()
+        listings = [(l.card, l.price) for _e, l in w.each(cards.Listing)]
+        replies = [r.text for _e, r in w.each(Reply)]
+        return listings, replies
+
+    original_loop = Loop()
+    cards.install(original_loop, cash=100)
+    original = outcome(original_loop)
+
+    circuit = outcome(_hear_list_circuit_loop(cash=100))
+
+    assert original == circuit

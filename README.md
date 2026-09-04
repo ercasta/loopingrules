@@ -215,6 +215,56 @@ Nothing here touches the actual `pystrider` checkout — see History,
 
 ## History
 
+**`hear_list`'s parsing DOES reduce -- at the worst cost of anything
+tried so far, 2026-09-06 (later).** Named in `TODO.md` as a different
+primitive axis (string parsing, not arithmetic) and left untried. Tried,
+in full: `Lower`, `Split` (the one place a value in this algebra is a
+LIST, not a scalar), `At`/`Len` (the only two things that ever read one
+back out), `ParseInt` (`MISSING`, not a `ValueError`), and `FindBy
+(component, field, value)` -- a different KIND of "reach a related
+entity" than `Via`: `Via` follows an id a field already stores, `FindBy`
+scans for the entity whose field EQUALS a computed value, the reverse
+lookup `examples.cards._find_card` already does by hand.
+
+The SHAPE of the decision turned out to be exactly the tag-composition
+idiom already used everywhere else, once split: `hear_list` claims a
+`Said` and produces exactly one of four MUTUALLY EXCLUSIVE outcomes
+(wrong arity, unknown card, bad price, a real `Listing`) -- restated as
+two `ValueCircuit`s (`ListParse` -- is this a `list` line, how many
+words, the two words after the verb; `ListResolved` -- the card looked
+up and the price parsed, both sentineled `-1` on failure, computed only
+once arity is confirmed right), four `TagCircuit`s (one per outcome,
+each condition the negation of the ones before it, so they are
+provably mutually exclusive), and four `ActionCircuit`s, each keyed on
+its own outcome's tag so `w.first()`'s "first match" is never ambiguous
+about WHICH `Said` it means even with several in flight at once -- the
+same reason `decide_buy_spec` needed its tags precomputed rather than
+folded into a post-hoc condition.
+
+Checked against the real `hear_list`, exactly, across all four outcomes
+plus a case-insensitive successful match (`list DRAGON 40`) and both
+directions of wrong arity (too few words, too many) -- seven cases,
+parametrized, byte-identical listings AND replies, including the exact
+wording of each distinct `BadCommand`.
+
+The honest verdict, stated plainly rather than folded into a tidy
+success story: this is by far the WORST primitive-to-value ratio of
+anything tried in this file. `decide_buy` needed zero new primitives.
+`check_goal` needed three (`Any`/`Forall`, plus the `ActionCircuit`
+`condition` field). `loop_count` needed three (`Count`/`Children`/
+`HasSelf`). `hear_list` needed SIX new primitives and TEN specs to
+restate one rule of about twenty-five lines. It is fully, exactly
+expressible -- and that is a different claim from it being a good idea:
+nothing here changes the recommendation `TODO.md` already carries for
+`hear_want`/`hear_status` (not attempted, same primitives, same cost,
+nothing new to learn from doing it again), and if this catalog is ever
+promoted past a prototype, string parsing is the strongest candidate
+for "stays hand-written Python on purpose," not because it can't be
+done, but because doing it costs more structure than it saves.
+
+11 new tests in `tests/test_examples_circuits.py` (4 for the new
+primitives, 7 parametrized end-to-end cases). 223 -> 234 passing.
+
 **`loop_count`'s aggregate: `Count`, `Children`, `HasSelf`, 2026-09-06.**
 `pystrider.patterns.loop_count` -- "how many of a `Function`'s `Stmt`s
 are `ForStmt`s" -- is a third aggregate shape, distinct from both

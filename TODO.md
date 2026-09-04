@@ -17,12 +17,20 @@ lost rather than scheduled.
   reach (a `Function`'s `Body` names ONE entity, but that entity carries
   MANY `Stmt`s), plus `HasSelf(component)` for "does the entity
   currently being counted carry this."
-- **`hear_list`/`hear_want`/`hear_status` stay plain Python, on purpose,
-  for now.** String parsing (split, lowercase, int-parse, look up by
-  name, report which check failed) is a different primitive axis than
-  numeric circuits. Might reduce via the same tag-then-compose idiom (a
-  `WrongArity`/`UnknownCard`/`BadPrice` tag per failure) -- not
-  attempted.
+- ~~`hear_list`'s parsing.~~ Tried, and it DOES reduce, exactly, with
+  `Lower`/`Split`/`At`/`Len`/`ParseInt`/`FindBy` (six new primitives) and
+  a ten-spec decomposition (two `ValueCircuit`s computing `ListParse`/
+  `ListResolved`, four `TagCircuit`s for the four mutually exclusive
+  outcomes, four `ActionCircuit`s acting on them). All four outcomes
+  (wrong arity, unknown card, bad price, a real `Listing`) reproduced
+  exactly, including the specific wording of each `BadCommand`. The
+  honest verdict, not smoothed over: this is by far the worst
+  primitive-to-value ratio tried so far -- six new primitives and ten
+  specs to restate one ~25-line rule, versus zero new primitives for
+  `decide_buy` or three each for `check_goal`/`loop_count`. `hear_want`/
+  `hear_status` were not attempted -- same primitives would likely cover
+  them, at a similar cost, and nothing new would be learned by doing it
+  again. See README History, "hear_list's parsing."
 - **`decide_buy_spec` drops the batching `cards.decide_buy` still does**
   (one match per tick, not several). Correct, per README History, but a
   real behavior change if this were ever adopted for real rather than
