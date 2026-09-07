@@ -93,6 +93,27 @@ structure," reach for something shaped like `_parent_of`/`_reachable`
 what lets new compositions become answerable by code nobody wrote with that
 specific combination in mind.
 
+**A new component type earns its place by being meaningful to a rule
+that does not exist yet; the cost to weigh against it is not how many
+pieces a decomposition produces, but which invariant those pieces used
+to get for free and now have to hand-maintain.** `loopingrules.circuits`'s
+own `TODO.md` records the correction directly: `hear_list`'s reduction
+was first verdicted by raw count ("six primitives, ten specs — the
+worst ratio tried"), and that verdict was wrong — each of the sixteen
+resulting pieces was individually as simple as anything else in the
+catalog. The real, specific cost, found only once it was named, was
+that the four outcomes' mutual exclusivity stopped being an `if`/`elif`
+chain's free guarantee and became an invariant across four
+independently-evaluated conditions that had to be asserted and tested
+by hand (`tests/test_circuits.py::
+test_hear_list_outcomes_are_structurally_mutually_exclusive`). So the
+question at the moment of deciding "new component, or more complexity
+inside one rule" is not "how many things am I adding" — it is "what did
+the single-rule version guarantee for free, and can I still cheaply
+state and test that guarantee once this is several independently-
+evaluated facts." If the answer is no, the split hid a coupling instead
+of removing one.
+
 ## To guard it
 
 **⚠⚠ A wrong conclusion is worse than a missing one — make abstention
@@ -149,6 +170,25 @@ forever... nothing detects that in general." As the rule count grows, a new
 rule that accidentally creates a feedback loop with an existing one should
 fail a test, not quietly become a "hot" rule nobody scripted anything to
 notice.
+
+**A component or field a rule touches must stay a literal in that
+rule's own declaration, never a name resolved from world data at
+runtime — that is what keeps `loopingrules.analyze`'s and
+`loopingrules.circuits`'s `reads`/`writes` answerable at all, not just
+usually accurate.** Both already draw this line, independently, for the
+same reason: `analyze.py`'s own docstring names `getattr`, a callable
+stored in a variable, or "a component argument that is not a literal
+`Kind(...)` or a bare `Kind` name" as exactly the dynamism that forces
+it to raise `Opaque` rather than guess; `circuits.py`'s `reads()` only
+works because every `Via`/`Self`/`TagCircuit.tag` field holding a
+component type is a literal on the spec, never an expression. A rule
+language that let "which component" be computed at runtime would not
+fail loudly the way `Opaque` does — it would silently make every
+`watches=` derived from it wrong in the one direction that matters (too
+narrow), because the true answer to "what can this touch" becomes
+"anything." The generic combinators already here (`Via`, `Children`,
+`Any`/`Forall`) are the right amount of genericity: the same shape works
+for any named type, but it still has to be a named type.
 
 **No caching until a rule's own cost is empirically the bottleneck it
 names.** The "recompute fresh, never cache" discipline (`fold`, `bound_to`,
