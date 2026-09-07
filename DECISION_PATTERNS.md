@@ -206,3 +206,61 @@ simply goes quiet for lack of anything to trigger — might be the right base ca
 Not resolved — flagged so the open "third verb" question above (`compose`, or `census` plus a
 domain rule) isn't answered in the wrong vocabulary: composing interpretations and picking a winner
 among them look like they want to stay two different verbs, not one.
+
+## 2026-09-07 — not built: rules as world data, examples in, spec out, never reflection in between
+
+Prompted by a conversation asking whether `loopingrules.circuits`'s specs (`TagCircuit`/`ValueCircuit`/
+`ActionCircuit`, promoted 2026-09-06, see `README.md` History) should live as entities and components in
+the `World` itself, rather than as plain Python values — with some rule or process watching for one and
+turning it into a live, registered rule. Worked through, not built, because the two halves of that
+question have different, and differently-sized, answers.
+
+**Embedding a spec's own tree as entities costs more than it looks like it should.** A `TagCircuit`'s
+expression tree is recursive, and several of its leaves are Python *types* (`Le(Via(base=Listing, ...),
+Const(5))`) — neither shape fits a component field, which `World.attach()`'s own `_lower()` restricts to
+primitives, an `Entity` id, or a list/dict/tuple of those, on purpose (`world.py`'s module note: "a
+component field never holds a live Python object reference"). Embedding a spec for real means turning
+every node of the tree into its own entity and every type-valued field into a resolved name string
+(`loopingrules/save.py`'s existing `module:ClassName` trick, but needed at every leaf instead of once at
+the top) — and "ingestion" then has to walk that entity graph back into a real spec object, which *is* a
+parser, just one pointed at a graph instead of text: no line numbers, no `git diff`, and every one of the
+sixteen-odd entities a reduction like `hear_list`'s needs (`TODO.md`) now clutters `w.show()`, `census`,
+and `save.dump()` with something that means "program text," not "domain fact" — a category `World`'s
+existing generic tools have no way to tell apart from an ordinary one.
+
+**Framing the human's role as *examples*, not *authorship in any form*, dissolves the reason to embed at
+all.** The original pressure for putting a spec in the World was letting some other rule *generate* one
+without needing a parser — composability the same way `KnownValue`/`LoopCount` already get it. But if a
+person only ever supplies before/after examples and a synthesizer derives the spec, nobody hand-authors
+the spec as text *or* as an entity graph — so the spec's own representation stops being a human-ergonomics
+question and becomes a pure implementation choice for whatever does the deriving. Plain Python data (what
+`circuits.py` already is) is easier to enumerate and score during a search than an equivalent entity
+graph, for the same reason `_lower()` forbids nested object references in the first place. What *should*
+be world-visible, because it is ordinary data and already has a home: the examples themselves (a
+before/after snapshot, using `loopingrules/save`'s own serialization rather than a second format), and
+the request to derive a rule from them — structurally the same `ask`/`answer`/`checked` shape this file
+already names above, not a new verb. A synthesized spec is installed by *reference* (a name pointing at a
+Python value), the way `save.py` already resolves a component class from `module:ClassName` — never by
+exploding its tree into the World.
+
+**A handful of examples routinely underdetermines the rule, and that risk already has a home in this
+file's own vocabulary.** Several distinct specs can satisfy the same two or three examples and diverge on
+a case nobody demonstrated — the `ranked`/`ruled_out` machinery above, and the Forced/Ambiguous/Unresolved
+verdicts, apply one level up: rank candidate specs consistent with every example by simplicity, and treat
+a tie — more than one candidate equally consistent — as `Ambiguous`, refusing to install rather than
+silently picking one. `PRINCIPLES.md`'s one non-negotiable ("a wrong conclusion is worse than a missing
+one") is exactly as true of a wrongly-generalized rule as it is of a wrongly-guessed fact; it is just one
+level more diffuse, because everything the installed rule touches afterward inherits its mistake.
+
+**Genuinely rejected, not just left undone: letting the rule language itself refer to a component or
+field without ever naming it, resolved from world data at runtime instead.** That would have been one way
+to make a search's job easier, but it defeats the exact property the whole exercise above depends on —
+see `PRINCIPLES.md`'s new "To guard it" entry on this. A synthesizer's *search* can range over many named
+candidates; the spec it settles on must still name them, literally, or nothing downstream (`reads`,
+`writes`, `watches=`) stays answerable.
+
+⚠ Nothing here is implemented: no request/response wiring for "derive a rule from these examples," no
+synthesizer, no `Loop`-level step to install what one finds. Flagged because `circuits.py`'s own docstring
+already named this as the reason its catalog is closed ("a closed catalog is the thing a FUTURE search or
+learning process over rules would need to be tractable at all... No search or learning is built yet") —
+this is that thread, picked up in conversation and not yet in code.
