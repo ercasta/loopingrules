@@ -118,3 +118,33 @@ core"), named so they are not lost rather than scheduled.
 - `shopping.NeededBy` has no command to clear it once set -- a
   deliberate gap, the same shape as `cards.py`'s "selling," not
   something forgotten.
+- **`circuits.Call` -- a spec can now dispatch, by name, to a
+  pre-registered Python tool, proven against real disk I/O in
+  `examples/files.py` -- but nothing has actually authored a spec
+  through anything other than Python yet.** The motivating question
+  ("confine free Python to tools, keep rules as data an untrusted
+  author cannot turn into arbitrary code") is answered at the
+  MECHANISM level -- `tool` is a literal string, resolved against a
+  caller-supplied registry, checked eagerly at `compile_circuit` time;
+  a tool receives only already-evaluated data, never a live `Entity`,
+  never a callable (see `Call`'s own docstring, and `tests/
+  test_examples_files.py::
+  test_call_hands_the_tool_a_plain_int_never_a_live_entity`, which
+  checks this rather than assumes it) -- but the SURFACE a genuinely
+  untrusted author (a person, an LLM) would actually type specs
+  through does not exist: `do_stat_spec` is still a Python literal, in
+  a file only someone who can already write Python edits. A YAML (or
+  other human-friendly) loader onto these same dataclasses was
+  discussed and deliberately deferred -- see `README.md`'s History,
+  the entry that added `Call` -- until a real authoring workflow needs
+  one, the same "grow it only at the rule that actually collides"
+  discipline `DECISION_PATTERNS.md` already states.
+- **`reads()`/`writes()` raising `Opaque` for any `Call`-bearing spec is
+  correct but coarse.** A tool that only ever touches one or two known
+  component types (`stat` only ever touches `Size`/`Modified`/`Failed`)
+  gets the same total refusal as one that could touch anything --
+  `circuits.py` has no way for a tool's REGISTRATION to declare what it
+  reads/writes the way `Loop.rule`'s own `watches=` lets a hand-written
+  rule declare (unverified) reads. Worth doing only once something
+  downstream actually wants a non-`Opaque` answer for a `Call`-bearing
+  spec -- `component_map()`-style tooling, say -- nothing does yet.

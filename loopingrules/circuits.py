@@ -201,6 +201,39 @@ dataclass tree and collect every `component`/`base` a `Self`/`Via`/
 BY CONSTRUCTION, not merely checked after the fact -- see
 `tests/test_circuits.py`'s own cross-check against
 `loopingrules.analyze.analyze()` run on the hand-written original.
+
+## `Call`: the one way a spec reaches outside the World, by name only
+
+Every effect above only ever writes to the `World` -- which is exactly
+what makes a spec SAFE to author without trusting the author with
+Python: there is no `eval`, no import, nothing a spec could name that
+runs code the compiling caller did not already choose to run. `Call
+(tool, args)` is the deliberate, narrow exception, added for a
+different motivation than the rest of this catalog (see `README.md`'s
+History, "circuits.py: a closed shape catalog" for the ORIGINAL
+motivation -- future learnability -- and the entry that added `Call`
+for why safety is a second, independent reason the same closure pays
+for): `tool` is a literal string, resolved against a `tools={name:
+callable}` registry the CALLER of `compile_circuit` supplies -- never
+a callable the spec itself carries, and never resolved by importing
+anything the spec names. `args` are ordinary expressions, evaluated
+missing-safe in the same read phase every other effect's fields are,
+so a tool only ever receives plain data (`int`/`float`/`str`/`bool`/
+`None`/`list`/`dict`) -- never a live `Entity`, never a callable,
+never the spec itself. The tool function it dispatches to is ordinary,
+TRUSTED Python (`fn(w, *data_args)`, the exact shape `harneskills.
+examples.fs_tools.rename`/`stat`/`ls` already have) -- pre-registered
+by whoever compiles the spec, not by whoever wrote it. An untrusted
+spec can pick WHICH pre-approved capability runs and WHAT DATA it
+gets; it can never pick what code runs.
+
+This is also the one place `reads()`/`writes()` stop being sound: a
+`Call`-registered tool may read or write anything at all (the same as
+`fs_tools.rename` does, freely, to `Entry`/`Contents`), and nothing in
+the spec says what. Rather than guess, `reads()`/`writes()` raise
+`Opaque` (below) the moment a spec contains one, naming which tool --
+the same refuse-rather-than-guess discipline `loopingrules.analyze`'s
+own `Opaque` already applies to an AST it cannot resolve.
 """
 
 from __future__ import annotations
@@ -210,6 +243,18 @@ from typing import Set
 
 
 MISSING = object()
+
+
+class Opaque(Exception):
+    """Raised by `reads()`/`writes()` when asked about a spec containing
+    a `Call` effect: a pre-registered Python tool this module cannot see
+    into (see `Call`'s own docstring, above) may touch anything, so
+    claiming a sound set here would be exactly the guess this module's
+    own docstring promises never to make. Named after, but NOT the same
+    class as, `loopingrules.analyze.Opaque` -- this module has no import
+    on `analyze.py`, and the two raise for structurally different
+    reasons (an AST walk that cannot resolve an indirection, versus a
+    closed catalog that knows precisely where its own knowledge ends)."""
 
 
 # -- reads ---------------------------------------------------------------
@@ -650,6 +695,31 @@ class Spawn:
 
 
 @dataclasses.dataclass(frozen=True)
+class Call:
+    """Invoke a pre-registered Python tool by NAME, with already-evaluated
+    data arguments -- the one effect that reaches outside the `World` at
+    all. See this module's own docstring, "`Call`: the one way a spec
+    reaches outside the World, by name only," for the full argument;
+    this is the mechanical half of it.
+
+    `tool` is a literal string, resolved against a `tools={name:
+    callable}` mapping passed to `compile_circuit` -- checked (and
+    raised on, by name, if missing) at COMPILE time, not on first tick,
+    the same eager-refusal discipline `analyze.py`'s own parse
+    boundaries already apply. `args` are expressions, positional --
+    evaluated missing-safe in the read phase like every other effect's
+    `fields`, then splatted into the call: `tools[tool](w, *values)`,
+    the exact `fn(w, *data)` shape `harneskills.examples.fs_tools.
+    rename`/`stat`/`ls` already have. The tool receives the live `w`
+    and may write to it freely -- it is TRUSTED code, registered by
+    whoever compiled the spec, not carried by the spec itself; only
+    WHICH tool runs and WHAT DATA it gets come from the (possibly
+    untrusted) spec."""
+    tool: str
+    args: tuple = ()
+
+
+@dataclasses.dataclass(frozen=True)
 class ActionCircuit:
     """The one match this tick gets to act on, and what happens to it.
 
@@ -664,10 +734,12 @@ class ActionCircuit:
     different set, `CardDef`/`Wants`). `None` (the default) means
     "always," the behaviour before `condition` existed.
 
-    `effects`, in order, are the only three things an action may do:
+    `effects`, in order, are the only four things an action may do:
     `ReplaceAt` (write a freshly computed value onto an entity an
     expression names), `Destroy` (the match itself), `Spawn` (a new
-    entity). Every effect's
+    entity), `Call` (dispatch to a pre-registered tool -- see `Call`'s
+    own docstring; the only one of the four that is not a plain World
+    write). Every effect's
     OWN fields are evaluated against the matched entity BEFORE any
     effect commits -- a read phase, then a write phase, never
     interleaved -- so no effect can see another effect's write from the
@@ -856,11 +928,22 @@ def evaluate(expr, w, entity):
     raise TypeError("not a circuit expression: %r" % (expr,))
 
 
-def compile_circuit(spec):
-    """A `TagCircuit`/`ValueCircuit` -> a plain function of one `World`,
-    installable on `Loop.rule` exactly like any hand-written rule --
-    nothing downstream of this needs to know a rule came from a spec
-    rather than a `def`."""
+def compile_circuit(spec, tools=None):
+    """A `TagCircuit`/`ValueCircuit`/`ActionCircuit` -> a plain function of
+    one `World`, installable on `Loop.rule` exactly like any hand-written
+    rule -- nothing downstream of this needs to know a rule came from a
+    spec rather than a `def`.
+
+    `tools` is the `{name: fn(w, *data)}` registry any `Call` effect in
+    `spec` resolves against -- see `Call`'s own docstring. Checked HERE,
+    eagerly, for every `Call` the spec contains, so a spec naming a tool
+    that was never registered fails loudly at compile time, by name --
+    not silently on whichever tick first tries to run it."""
+    if isinstance(spec, ActionCircuit):
+        for effect in spec.effects:
+            if isinstance(effect, Call) and (tools is None or effect.tool not in tools):
+                raise KeyError(
+                    "compile_circuit: no tool named %r registered" % effect.tool)
     if isinstance(spec, TagCircuit):
         def rule(w):
             for row in w.each(*_kinds(spec.for_each)):
@@ -903,7 +986,8 @@ def compile_circuit(spec):
                     target = evaluate(effect.at, w, entity)
                     if target is MISSING:
                         return    # refuse the WHOLE action, not half of it
-                values = [evaluate(f, w, entity) for f in effect.fields]
+                exprs = effect.args if isinstance(effect, Call) else effect.fields
+                values = [evaluate(f, w, entity) for f in exprs]
                 if any(v is MISSING for v in values):
                     return    # refuse the WHOLE action, not half of it
                 planned.append((effect, target, values))
@@ -914,6 +998,8 @@ def compile_circuit(spec):
                     w.destroy(entity)
                 elif isinstance(effect, Spawn):
                     w.spawn(effect.component(*values))
+                elif isinstance(effect, Call):
+                    tools[effect.tool](w, *values)
         return rule
     raise TypeError("not a circuit spec: %r" % (spec,))
 
@@ -930,7 +1016,14 @@ def reads(spec) -> Set[type]:
     the same as anywhere else one appears; no separate case is needed
     for it. Structural, not inferred: a node's `component`/`base` field
     IS the read -- there is nothing here to get wrong the way a general
-    analyzer could."""
+    analyzer could.
+
+    Raises `Opaque`, by tool name, if `spec` contains a `Call` effect --
+    see this module's own docstring, "`Call`: the one way a spec reaches
+    outside the World, by name only": a registered tool may read
+    anything at all, so this walk cannot claim to be sound the moment
+    one is present."""
+    _refuse_calls(spec, "reads")
     if isinstance(spec, ActionCircuit):
         kinds: Set[type] = set(spec.require) | set(spec.without)
     else:
@@ -967,7 +1060,11 @@ def writes(spec) -> Set[type]:
     `destroy(entity)`: it destroys the matched entity WHOLE, so nothing
     here claims to know every component type that entity happened to
     carry -- see `destroys()` for the flag that records only that the
-    action CAN destroy, not what it destroys."""
+    action CAN destroy, not what it destroys.
+
+    Raises `Opaque`, by tool name, for the same reason `reads()` does --
+    a registered `Call` tool may write anything at all."""
+    _refuse_calls(spec, "writes")
     if isinstance(spec, TagCircuit):
         return {spec.tag}
     if isinstance(spec, ValueCircuit):
@@ -978,6 +1075,20 @@ def writes(spec) -> Set[type]:
 
 def destroys(spec: ActionCircuit) -> bool:
     return any(isinstance(effect, Destroy) for effect in spec.effects)
+
+
+def _refuse_calls(spec, caller: str) -> None:
+    """Shared by `reads()`/`writes()`, above: raise `Opaque`, naming
+    every tool involved, if `spec` is an `ActionCircuit` carrying one or
+    more `Call` effects -- see `Call`'s own docstring for why neither
+    function can stay sound once one is present."""
+    if not isinstance(spec, ActionCircuit):
+        return
+    tools = [effect.tool for effect in spec.effects if isinstance(effect, Call)]
+    if tools:
+        raise Opaque(
+            "%s(): opaque -- this ActionCircuit calls tool(s) %s, which "
+            "may touch anything; not guessed at" % (caller, ", ".join(sorted(tools))))
 
 
 def _leaves(spec):

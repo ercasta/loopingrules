@@ -224,6 +224,83 @@ Nothing here touches the actual `pystrider` checkout — see History,
 
 ## History
 
+**`circuits.Call`: a rule can now dispatch to trusted Python by name --
+the closed catalog's incidental sandbox, used on purpose for the first
+time, 2026-09-08 (later).** A conversation about whether `loopingrules`
+needed a rule DSL for safety -- confine free Python to tools, keep
+rules as data an untrusted author cannot turn into arbitrary code --
+started by nearly repeating a question this repo already answered:
+`circuits.py`'s own docstring already declined a general DSL and a
+YAML/JSON middle ground, in writing (see the entry below, "`circuits.
+py`: a closed shape catalog"). What made this NOT a repeat is that the
+earlier rejection was argued on a different axis entirely -- future
+learnability for a search/synthesis process, never safety -- and
+`circuits.py`'s actual shape (plain dataclasses, walked by one fixed
+interpreter, no `eval`, no import) already has the safety property by
+accident: nothing a spec could name runs code its compiling caller did
+not already choose to trust. What that shape never had was any way to
+reach OUTSIDE the `World` at all -- every existing effect
+(`Spawn`/`Destroy`/`Attach`/`Detach`/`ReplaceAt`) only ever writes to
+it, which is safe but also means "confine free Python to tools" had
+nothing to confine TO yet.
+
+`Call(tool, args)` is the fourth effect, and the only one that is not a
+plain `World` write: `tool` is a literal string, resolved against a
+`{name: fn(w, *data)}` registry `compile_circuit` takes -- checked
+EAGERLY, at compile time, so a spec naming an unregistered tool fails
+loudly before ever touching a `World`, not silently on whichever tick
+first tries to run it. `args` are ordinary expressions, evaluated
+missing-safe in the same read phase every other effect's fields
+already are, so a tool only ever receives plain data -- never a live
+`Entity`, never a callable, never the spec itself. The tool function it
+dispatches to is ordinary, TRUSTED Python, in the exact `fn(w, *data)`
+shape `harneskills.examples.fs_tools.rename`/`stat`/`ls` already have
+-- registered by whoever COMPILES the spec, never by whoever wrote it.
+An untrusted spec (a person typing one by hand today, an LLM
+generating one tomorrow) can choose WHICH pre-approved capability runs
+and WHAT DATA it gets; it can never choose what code runs. This is also
+the one place `reads()`/`writes()` stop being sound -- a registered
+tool may touch anything, the same as `fs_tools.rename` freely touches
+`Entry`/`Contents` -- so both now raise a new `circuits.Opaque`, named
+after but deliberately not the same class as `loopingrules.analyze.
+Opaque`, the instant a spec contains a `Call`, rather than silently
+under-reporting what it touches.
+
+Proven against real disk I/O, not a stand-in: `examples/files.py`
+restates `fs_tools.stat`/`_observe`'s real half (real `os.stat`,
+`Size`/`Modified` replaced on success, `Failed` spawned on an OSError)
+as a tool named `"stat"`, and one `Call`-bearing `ActionCircuit` that
+never mentions the Python function at all -- only the string. Nothing
+here imports `harneskills`, consistent with this package never knowing
+that checkout exists on disk; `stat` is a small, self-contained
+restatement, not an import. The safety claim was checked, not just
+argued: a tool that asserts its own argument `isinstance(x, int)` still
+succeeds (`tests/test_examples_files.py::
+test_call_hands_the_tool_a_plain_int_never_a_live_entity`) -- proof
+`Call` resolves `Self`/`SelfId`-style reads to the same plain int
+`World.attach` already enforces everywhere else, not the `Entity`
+handle a rule's own local variable might actually be bound to (the
+exact bug `SelfId`'s first implementation had, see the `reply_*` entry
+below) -- and a spec naming a tool nobody registered fails at
+`compile_circuit`, before any `World` is touched, pinned the same way.
+
+What this does not settle, named plainly rather than left to look
+settled: nothing has actually authored a `circuits.py` spec through
+anything other than a Python literal yet -- `do_stat_spec` is still
+edited by someone who can already write Python, so the actual
+authoring surface an untrusted human or an LLM would type through (a
+YAML loader onto these same dataclasses, discussed in the conversation
+that produced this entry) is deliberately NOT built, per
+`DECISION_PATTERNS.md`'s "grow it only at the rule that actually
+collides" -- there is no real authoring workflow to build it against
+yet. `Opaque` is also coarse: a tool cannot declare what it reads or
+writes the way `Loop.rule`'s own `watches=` lets a hand-written rule
+claim (unverified) reads, so a `Call`-bearing spec gets total refusal
+from `reads()`/`writes()` regardless of how narrow the tool actually
+is. Both left open in `TODO.md` rather than built speculatively.
+
+7 new tests in `tests/test_examples_files.py`. 303 -> 310 passing.
+
 **`examples/shopping.py`: the second domain `examples.judge`'s `Risk`
 has ever had to serve, 2026-09-08.** `judge.py`'s own docstring named the
 open question plainly: whether one `Risk` shape "holds across two
