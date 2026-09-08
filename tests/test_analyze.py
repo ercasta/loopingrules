@@ -7,7 +7,7 @@ import functools
 
 import pytest
 
-from examples import cards, judge
+from examples import cards, judge, shopping
 from examples.cards import Wanted
 from loopingrules import analyze
 from loopingrules.world import Reply, World
@@ -156,6 +156,59 @@ def test_check_watches_still_flags_a_downstream_tag_even_with_stable():
     with pytest.raises(ValueError):
         analyze.check_watches(cards.decide_buy, watches=(cards.Listing,),
                                stable=stable)
+
+
+def test_check_watches_stable_absorbs_shoppings_own_install_time_singleton():
+    """Same category as `test_check_watches_stable_absorbs_install_time_
+    singletons`, on the SECOND domain `examples.judge` has ever fed --
+    `Item`, seeded once at `shopping.install()` and never removed, is
+    exactly the same kind of permanent background fact `CardDef` already
+    was for `cards`."""
+    stable = (shopping.Item, judge.RiskTolerance)
+    analyze.check_watches(shopping.hear_stock, watches=(shopping.Said,),
+                           stable=stable)
+    analyze.check_watches(shopping.hear_needby, watches=(shopping.Said,),
+                           stable=stable)
+    analyze.check_watches(shopping.project_urgency,
+                           watches=(shopping.NeededBy,), stable=stable)
+    analyze.check_watches(judge.flag_too_risky, watches=(shopping.Risk,),
+                           stable=stable)
+
+
+def test_check_watches_flags_a_report_rule_too_but_for_a_third_reason():
+    """A third category, distinct from both `stable=` and "downstream of
+    an already-watched type" above, and not specific to either domain:
+    `cards.hear_status`/`shopping.hear_status` each read several types
+    (`Wants`/`GoalMet`; `NeededBy`/`OnList`/`Stock`) purely to build a
+    report, gated entirely on `Said` -- none of those reads needs to WAKE
+    the rule, because nothing about reporting status is triggered by any
+    of them changing on their own, only by someone asking. `stable=`
+    cannot express this (none of them is a permanent background fact) and
+    neither can the downstream-tag reasoning (nothing here is downstream
+    of `Said`) -- a third, genuinely different reason a read needn't be
+    watched, surfaced by comparing two independent domains' own "report
+    on demand" rules, not engineered into either one on purpose."""
+    with pytest.raises(ValueError):
+        analyze.check_watches(cards.hear_status, watches=(cards.Said,),
+                               stable=(cards.CardDef, cards.Purse,
+                                       cards.RiskProfile, judge.RiskTolerance,
+                                       cards.Copies))
+    with pytest.raises(ValueError):
+        analyze.check_watches(shopping.hear_status, watches=(shopping.Said,),
+                               stable=(shopping.Item, judge.RiskTolerance))
+
+
+def test_check_watches_still_flags_shoppings_own_downstream_tag_too():
+    """The same honest limit as `test_check_watches_still_flags_a_
+    downstream_tag_even_with_stable`, one domain over: `add_to_list`
+    reads `TooRisky` without watching it, safe only because `TooRisky`
+    never lands anywhere but an already-watched `Item` -- a second,
+    independent instance of the structural-coupling case `stable=`
+    cannot absorb, not a coincidence specific to `cards.decide_buy`."""
+    stable = (shopping.Item, judge.RiskTolerance)
+    with pytest.raises(ValueError):
+        analyze.check_watches(shopping.add_to_list,
+                               watches=(shopping.Item,), stable=stable)
 
 
 # -- the dialect itself, pinned against a bare World --------------------

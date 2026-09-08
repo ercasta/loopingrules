@@ -104,3 +104,17 @@ core"), named so they are not lost rather than scheduled.
   analyzed cleanly; `patterns.py`/`constraints.py` specifically (the
   ones this catalog is built on) were 100%. Left for whoever next wants
   the map more complete than that.
+- **Whether `examples.judge.Risk` is general enough to promote into
+  `loopingrules/`.** `examples/shopping.py` (see `README.md` History,
+  "the second domain `examples.judge`'s `Risk` has ever had to serve")
+  is a second, deliberately different data point, and it held -- but one
+  more independently-motivated domain agreeing is not yet the same bar
+  `circuits.py` waited for (a second domain actually depending on it AT
+  RUNTIME, not just in a test file feeding it on purpose). Still open:
+  does a THIRD domain, picked without trying to make `Risk` work, also
+  fit the same `level`/`reason` shape -- and if `Risk` does get
+  promoted, does it keep its name, or does "risk" stop being the right
+  word once a shopping list is calling the same field "urgency"?
+- `shopping.NeededBy` has no command to clear it once set -- a
+  deliberate gap, the same shape as `cards.py`'s "selling," not
+  something forgotten.

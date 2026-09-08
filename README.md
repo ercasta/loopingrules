@@ -224,6 +224,57 @@ Nothing here touches the actual `pystrider` checkout — see History,
 
 ## History
 
+**`examples/shopping.py`: the second domain `examples.judge`'s `Risk`
+has ever had to serve, 2026-09-08.** `judge.py`'s own docstring named the
+open question plainly: whether one `Risk` shape "holds across two
+UNRELATED domains, or is secretly two domains' different ideas wearing
+one field name," and only `cards` had ever tried it. This module is the
+second data point, chosen to be a genuinely different KIND of "how
+concerning is this" on purpose: `cards.tag_risk_level` projects RESOURCE
+EXHAUSTION (how much of the room left to spend a price would use); a
+household shopping list has no money in it at all, so `project_urgency`
+projects TIME PRESSURE instead (how close a `NeededBy` deadline is,
+linear across a 7-day horizon) -- and feeds `Risk`/`RiskTolerance`/
+`flag_too_risky`, imported UNMODIFIED, never re-implemented (pinned by
+`tests/test_examples_shopping.py::
+test_shopping_imports_the_judges_vocabulary_rather_than_reinventing_it`,
+the mirror image of `judge.py`'s own import-purity pin).
+
+It held, and it held onto something the going-in worry did not expect:
+`flag_too_risky` only ever exposes a boolean, and urgency plausibly
+wanted RANKING too ("which of several overdue items is most pressing"
+is not a yes/no question) -- but thresholding never consumes or hides
+the underlying `Risk.level`, so a caller that wants a ranking already
+has one, for free, by reading the same float the judge compared against
+its own tolerance (`test_several_urgent_items_can_still_be_ranked_by_
+the_same_risk_level_the_judge_thresholds`). No second, `ranked`-style
+judge was needed on top of the threshold one.
+
+A second, unplanned finding came out of running `loopingrules.analyze`'s
+own `check_watches` audit against the new domain, the same way `cards`
+was audited when `analyze.py` first landed: `cards.hear_status` and
+`shopping.hear_status` both read several types purely to build a report,
+gated entirely on `Said`, and both were already unwatched-but-safe for a
+THIRD reason `analyze.py`'s existing tests had never named -- distinct
+from an install-time `stable=` singleton and from `decide_buy`/
+`add_to_list`'s "downstream of an already-watched type" -- because
+nothing about reporting status is triggered by any of those reads
+changing on their own, only by someone asking. Not fixable by `stable=`,
+and not a bug; pinned in `tests/test_analyze.py::
+test_check_watches_flags_a_report_rule_too_but_for_a_third_reason`
+against both domains at once, since it was a coincidence of neither
+one.
+
+What this does not settle: one deliberately-different second domain is
+evidence the shape generalizes, not proof it always will -- and `Risk`
+still lives in `examples/`, not `loopingrules/`, pending the same
+promotion bar every other candidate here has had to clear. `NeededBy`
+has no command to clear it once set, a deliberate gap in the shape of
+`cards.py`'s own "selling," not an oversight.
+
+20 new tests (17 in `tests/test_examples_shopping.py`, 3 in
+`tests/test_analyze.py`). 283 -> 303 passing.
+
 **The three `reply_*` rules: the simplest shape yet, a real bug caught
 by a unit test, and a genuine cost of composing reductions together,
 2026-09-06 (later still).** `reply_bad_command`/`reply_bought`/
