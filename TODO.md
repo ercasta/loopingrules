@@ -148,3 +148,13 @@ core"), named so they are not lost rather than scheduled.
   rule declare (unverified) reads. Worth doing only once something
   downstream actually wants a non-`Opaque` answer for a `Call`-bearing
   spec -- `component_map()`-style tooling, say -- nothing does yet.
+- **A YAML surface plus an examples-driven evolution search over a base
+  rule set, with author-frozen rules held fixed.** Designed, not built --
+  see `DECISION_PATTERNS.md`'s 2026-09-10 entry for the YAML mapping onto
+  `circuits.py`'s closed catalog, the `frozen:` contract, and the
+  add/modify/delete search's scoring (reusing this file's own
+  `ruled_out`/`ranked`/Forced/Ambiguous/Unresolved vocabulary rather than
+  inventing a new one). Picks up both this repo's own deferred YAML
+  loader (see the `circuits.Call` bullet above) and the 2026-09-07
+  "examples in, spec out" thread, generalized from one synthesized spec
+  to a whole set.
