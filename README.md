@@ -93,17 +93,19 @@ History, "arbitrate, a shared chokepoint" and "help gets a census."
 **`analyze.py` is the other generic mechanism here, and it is a reader,
 not a vocabulary.** Given a rule — a plain function of one `World` —
 `analyze()` derives which component types it reads and writes by walking
-its own AST, so `Loop.rule(watches=...)` can be checked against what a
-rule actually does instead of trusted by convention; `component_map()`
-builds the `{component: {rules}}` index the same walk produces across
-several rules at once. It knows nothing about any domain's own
-components — only the eleven methods `World`/`Entity` already expose,
-plus `propose`/`reply` by identity (see its own docstring, "Two named
-exceptions," for why those two specifically). A rule that uses its world
-parameter outside the dialect `analyze.py`'s own docstring names is
-never guessed at — it raises `Opaque`, by name and reason, the same
-refuse-rather-than-guess discipline every parse boundary in this
-codebase already applies. See History, "analyze.py."
+its own AST; `Loop.rule` calls it at registration time and uses its
+reads directly as a rule's dormancy gate, in place of a `watches=` a
+person used to have to declare and could get wrong (see History, "no
+more hand-written `watches=`"); `component_map()` builds the
+`{component: {rules}}` index the same walk produces across several
+rules at once. It knows nothing about any domain's own components —
+only the eleven methods `World`/`Entity` already expose, plus
+`propose`/`reply`/`arbitrate`/`census` by identity (see its own
+docstring, "Four named exceptions," for why those specifically). A rule
+that uses its world parameter outside the dialect `analyze.py`'s own
+docstring names is never guessed at — it raises `Opaque`, by name and
+reason, the same refuse-rather-than-guess discipline every parse
+boundary in this codebase already applies. See History, "analyze.py."
 
 **`circuits.py` is a third generic mechanism, and the only one built by
 restating rules rather than by a domain needing to interoperate with
@@ -223,6 +225,75 @@ Nothing here touches the actual `pystrider` checkout — see History,
 "a generic Part tag."
 
 ## History
+
+**No more hand-written `watches=` -- `Loop.rule` derives a rule's
+dormancy gate from `analyze()` itself, and a real soundness gap in that
+derivation was caught by the existing suite, not designed around in
+advance, 2026-09-12.** A conversation about whether `each()`'s own
+rarest-bucket-first join (`world.py`: "a query is as cheap as its most
+specific term, not as its widest") already mitigated brute-force
+re-evaluation turned to the OTHER half of that question -- the per-rule
+sleep/wake gate, `watches=`, was always a person's hand-written guess at
+a rule's own reads, defended only by `check_watches`, an opt-in auditor
+nobody was forced to run. `PRINCIPLES.md` already named the exact risk
+in writing ("declare `watches` too narrow... there is no way to catch
+this from here") without fixing it. The fix was not a stronger audit --
+it was removing the second declaration entirely: `analyze()` already
+derives a rule's exact reads, soundly, from its own AST; `Loop.rule` now
+calls it at registration time and uses the result AS the gate. A rule
+`analyze()` cannot resolve (`Opaque`) or that resolves with no reads at
+all falls back to "called every tick," exactly the old `watches=None`
+default, reached automatically instead of chosen.
+
+Two real gaps surfaced doing this, neither anticipated going in.
+First: `loopingrules.help.arbitrate_help`/`close_census` call
+`arbitrate`/`census`, and neither was special-cased by identity the way
+`reply`/`propose` already were -- so both resolved `Opaque` under the
+new mechanism, silently losing their gate (still correct, just always
+called, the same safe fallback every `Opaque` rule gets, but not the
+win this change was for). Fixed by extending `analyze.py`'s "two named
+exceptions" to four: `arbitrate(w, occasion_type)`/`census(w,
+occasion_type)` now attribute `occasion_type` and `Proposal` as reads,
+`Proposal` as a write, and set `destroys=True`, the same way `reply`/
+`propose` already attribute `Reply`/`Proposal`. Second, and sharper: the
+full suite caught a genuine soundness bug the design missed --
+`tests/test_engine.py`'s own `pong` (`if not w.each(Ping): w.spawn(
+Ping())`) reacts to `Ping`'s ABSENCE, not its presence, and gating it on
+`Ping` skips it exactly when `Ping` is gone, the one moment it needs to
+run. `test_settle_reports_a_runaway_pair_and_their_names` failed
+immediately, for exactly that reason, the first time the full suite ran
+against the new gate. Fixed with `Analysis.negated_reads`: a type
+tested for absence (`not`, `is None`, `== []`, `len(...) == 0`, found by
+walking each resolved read's own parent node) is excluded from the gate
+`Loop.rule` builds, even where the SAME type is also read positively
+elsewhere in the one rule -- conservative on purpose, since this module
+cannot tell from source alone whether the two occurrences are
+independent or entangled, and a rule wrongly gated dormant is worse than
+one that stayed always-called.
+
+What this does not settle: the gate is still per-rule and existence-only
+(`world.populated`), not the incremental, delta-based rematching a real
+Rete network would do -- an awake rule still rescans its own query from
+scratch every tick, exactly `PRINCIPLES.md`'s already-named "no caching
+until a rule's own cost is empirically the bottleneck it names."
+`negated_reads`'s own detection is pattern-matched, not a general
+data-flow analysis -- a read stashed in a variable and tested for
+absence three lines later, or wrapped in `bool(...)`, is not recognized
+and would (safely, only over-cautiously) either stay gated wrong or, if
+`analyze()` cannot follow the variable at all, raise `Opaque` and fall
+back to always-called; nothing here tries to cover every syntactic
+spelling of "empty," only the ones this codebase's own rules (and the
+one test that found the gap) actually use.
+
+One failure surfaced immediately (`test_settle_reports_a_runaway_pair_
+and_their_names`, `pong`'s dormancy bug) and was fixed before anything
+else was trusted -- not glossed over. 6 new tests (`tests/test_analyze.
+py`'s `negated_reads` and `arbitrate`/`census` cases, `tests/test_loop.
+py`'s absence-reacting-rule case), all of `check_watches`'s own tests
+removed along with the function they audited (nothing left for them to
+check), every `watches=` call site across `loopingrules/help.py`,
+`examples/cards.py`, `examples/shopping.py`, and the test suite updated
+to the auto-derived gate. 306 -> 312 passing.
 
 **`circuits.Call`: a rule can now dispatch to trusted Python by name --
 the closed catalog's incidental sandbox, used on purpose for the first

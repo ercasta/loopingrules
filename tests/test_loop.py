@@ -183,11 +183,17 @@ def test_install_hands_the_loop_to_a_domain(loop):
     assert [name for name, _ in loop.rules] == ["noop"]
 
 
-def test_a_rule_with_watches_is_not_even_called_while_dormant(loop):
+def test_a_rule_gated_by_its_own_reads_is_not_even_called_while_dormant(loop):
+    """No `watches=` to declare any more -- `analyze()` derives a rule's
+    reads from its own body (here, `w.each(Step)`) and `Loop.rule` uses
+    them as the gate itself. See `loop.py`'s own module note, "A rule
+    wakes only when something it reads exists.\""""
     calls = []
 
-    @loop.rule(watches=(Step,))
+    @loop.rule
     def counts_calls(w):
+        for _entity, _step in w.each(Step):
+            pass
         calls.append(None)
 
     loop.tick()
@@ -201,26 +207,63 @@ def test_a_rule_with_watches_is_not_even_called_while_dormant(loop):
     assert len(calls) == 2, "populated now, so it runs every tick again"
 
 
-def test_watches_accepts_a_single_type_or_several(loop):
+def test_a_rule_reading_several_types_wakes_on_any_one_of_them(loop):
+    """The gate is an OR over every type `analyze()` found -- reading
+    `Step` in one `each()` call and `Ping` in another still wakes the
+    rule the moment either exists, not only once both do."""
     seen = []
-    loop.rule(lambda w: seen.append("one"), name="one", watches=Step)
-    loop.rule(lambda w: seen.append("either"), name="either",
-               watches=(Step, Ping))
+
+    @loop.rule
+    def either(w):
+        for _entity, _step in w.each(Step):
+            pass
+        for _entity, _ping in w.each(Ping):
+            pass
+        seen.append("either")
 
     loop.tick()
     assert seen == []
 
     loop.world.spawn(Ping())
     loop.tick()
-    assert seen == ["either"], "Ping alone wakes the OR-watcher, not the Step one"
+    assert seen == ["either"], "Ping alone wakes it -- Step was never populated"
 
 
-def test_a_rule_with_no_watches_runs_every_tick_regardless(loop):
+def test_a_rule_reacting_to_absence_is_never_gated_dormant(loop):
+    """`w.each(Step)` tested for absence, not presence -- gating this on
+    `Step` would skip it exactly when `Step` is gone, the one moment it
+    needs to run. See `loopingrules.analyze.Analysis.negated_reads`."""
+    calls = []
+
+    @loop.rule
+    def replenish(w):
+        if not w.each(Step):
+            w.spawn(Step(0))
+        calls.append(None)
+
+    loop.tick()
+    assert len(calls) == 1, "Step has never existed -- still called, and it fired"
+    assert loop.world.each(Step) != []
+    loop.tick()
+    assert len(calls) == 2, "Step exists now, but this is not gated on it either"
+
+
+def test_a_rule_that_reads_nothing_runs_every_tick_regardless(loop):
+    """A rule whose world parameter is never used analyzes cleanly to
+    empty reads -- nothing to gate on, so it falls back to "called every
+    tick," the same fallback an `Opaque` rule (see `test_analyze.py`,
+    and the lambda-based rules elsewhere in this file -- `inspect.
+    getsource` on a lambda never yields a plain function, so every one of
+    them is Opaque too) also gets."""
     seen = []
-    loop.rule(lambda w: seen.append(None), name="always")
+
+    @loop.rule
+    def always(w):
+        seen.append(None)
+
     loop.tick()
     loop.tick()
-    assert len(seen) == 2, "the default: called whether or not anything exists"
+    assert len(seen) == 2, "the fallback: called whether or not anything exists"
 
 
 # --- priority: the one deliberate override of registration order --------
@@ -268,13 +311,19 @@ def test_a_late_registered_high_priority_rule_still_runs_first(loop):
     assert order == ["installed-later-but-important", "first-installed"]
 
 
-def test_a_rule_watching_SEVERAL_kinds_still_fires_ONCE_per_tick(loop):
+def test_a_rule_reading_SEVERAL_kinds_still_fires_ONCE_per_tick(loop):
     calls = []
-    loop.rule(lambda w: calls.append(None), name="watcher",
-               watches=(Step, Ping, Pong))
+
+    @loop.rule
+    def watcher(w):
+        w.each(Step)
+        w.each(Ping)
+        w.each(Pong)
+        calls.append(None)
+
     loop.world.spawn(Step(0))
     loop.world.spawn(Ping())
-    loop.world.spawn(Pong())               # all three watched kinds exist
+    loop.world.spawn(Pong())               # all three read kinds exist
     loop.tick()
     assert len(calls) == 1, "one entry in self.rules, called once, full stop"
 

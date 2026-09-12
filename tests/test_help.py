@@ -36,10 +36,8 @@ def test_a_bare_help_lists_every_registered_topic_sorted_and_joined():
                 propose(w, occasion, help_.HelpTopicName(name))
         return rule
 
-    loop.rule(offer("python"), name="offer-python",
-             watches=(help_.HelpCommandCensus,))
-    loop.rule(offer("files"), name="offer-files",
-             watches=(help_.HelpCommandCensus,))
+    loop.rule(offer("python"), name="offer-python")
+    loop.rule(offer("files"), name="offer-files")
     assert say(loop, "help") == ["try: help files, help python"]
 
 

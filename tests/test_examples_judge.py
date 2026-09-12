@@ -9,7 +9,7 @@ from loopingrules.loop import Loop
 
 
 def install(loop, max_level=0.5):
-    loop.rule(judge.flag_too_risky, watches=(judge.Risk,))
+    loop.rule(judge.flag_too_risky)
     loop.world.spawn(judge.RiskTolerance(max_level))
 
 
@@ -46,7 +46,7 @@ def test_unflags_once_the_same_entitys_risk_drops_back_down():
 def test_abstains_with_no_risk_tolerance_seeded():
     lp = Loop()
     w = lp.world
-    lp.rule(judge.flag_too_risky, watches=(judge.Risk,))
+    lp.rule(judge.flag_too_risky)
     entity = w.spawn(judge.Risk(1.0, "maximally risky"))
     lp.tick()
     assert not w.has(entity, judge.TooRisky)

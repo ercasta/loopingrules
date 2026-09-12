@@ -130,16 +130,24 @@ table that refuses by NAME, not a comment that refuses by intention. Any
 new rule that can be uncertain must be able to produce nothing, structurally
 — not "try to guess and hope."
 
-**`watches=` correctness should be tested, not just reviewed.**
-`loopingrules/loop.py`'s own docstring names the exact risk: declare
-`watches` too narrow and "the rule goes dormant while something it depended
-on sits unnoticed on a type it never declared... not too much firing, but a
-rule that should have fired and silently didn't. There is no way to catch
-this from here." That is a standing invitation to a silent regression.
-Concretely actionable: any rule registered with `watches=` should have a
-test that mutates something *not* obviously in the watched set and confirms
-the rule still eventually fires — testing the over-approximation directly,
-not just the happy path.
+**A dormancy gate derived by hand cannot be trusted to be tested, so
+stop deriving it by hand.** This used to read "`watches=` correctness
+should be tested, not just reviewed," naming the exact risk `loopingrules/
+loop.py`'s own docstring named: declare `watches` too narrow and "the
+rule goes dormant while something it depended on sits unnoticed on a
+type it never declared... There is no way to catch this from here."
+The fix that shipped was not a testing discipline layered on top of the
+hand-written declaration — it was removing the declaration: `Loop.rule`
+now runs `loopingrules.analyze` over a rule at registration time and
+gates it on the reads that come back, so there is no longer a narrower-
+than-reality guess for a test to have to catch. One residual trap
+survived the switch and IS the kind of thing this principle is about —
+a rule reacting to a type's ABSENCE (`if not w.each(Kind):`) would be
+gated on the one condition guaranteeing it has nothing to do; `analyze.
+Analysis.negated_reads` excludes exactly that, and `tests/test_analyze.
+py`'s own `negated_reads` tests plus `tests/test_loop.py::
+test_a_rule_reacting_to_absence_is_never_gated_dormant` pin it directly,
+not just via the happy path.
 
 **Guard vocabulary collision with a check, not just a comment.** This
 already exists in one place — `tests/test_spine.py::
@@ -183,21 +191,21 @@ it to raise `Opaque` rather than guess; `circuits.py`'s `reads()` only
 works because every `Via`/`Self`/`TagCircuit.tag` field holding a
 component type is a literal on the spec, never an expression. A rule
 language that let "which component" be computed at runtime would not
-fail loudly the way `Opaque` does — it would silently make every
-`watches=` derived from it wrong in the one direction that matters (too
-narrow), because the true answer to "what can this touch" becomes
-"anything." The generic combinators already here (`Via`, `Children`,
-`Any`/`Forall`) are the right amount of genericity: the same shape works
-for any named type, but it still has to be a named type.
+fail loudly the way `Opaque` does — it would silently make the gate
+`Loop.rule` now derives from `analyze()` wrong in the one direction that
+matters (too narrow), because the true answer to "what can this touch"
+becomes "anything." The generic combinators already here (`Via`,
+`Children`, `Any`/`Forall`) are the right amount of genericity: the same
+shape works for any named type, but it still has to be a named type.
 
 **No caching until a rule's own cost is empirically the bottleneck it
 names.** The "recompute fresh, never cache" discipline (`fold`, `bound_to`,
 `_parent_of`/`_reachable`'s full linear scans) is correct at today's scale
 and is what makes the TMS guarantee (`pystrider/evaluation.py`) cheap to
-earn. It will not stay free forever — `watches=` buys dormancy for rules
-whose subject matter never appears at all, but a rule that IS awake still
-rescans its component type's full current extension every tick, not a delta
-since last tick (no semi-naive evaluation here). The signal to introduce
+earn. It will not stay free forever — `Loop.rule`'s auto-derived gate buys
+dormancy for rules whose subject matter never appears at all, but a rule
+that IS awake still rescans its component type's full current extension
+every tick, not a delta since last tick (no semi-naive evaluation here). The signal to introduce
 real indexing for a specific hot path is that path's own cost becoming
 visible and named, not scale anticipated in advance — the same "do one
 concretely first" instinct this codebase already applies to `Qualname`

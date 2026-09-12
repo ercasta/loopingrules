@@ -7,10 +7,10 @@ import functools
 
 import pytest
 
-from examples import cards, judge, shopping
+from examples import cards, judge
 from examples.cards import Wanted
-from loopingrules import analyze
-from loopingrules.world import Reply, World
+from loopingrules import analyze, help as help_
+from loopingrules.world import Proposal, Reply, World
 
 
 # -- analyze(): the positive cases --------------------------------------
@@ -106,109 +106,97 @@ def test_component_map_records_an_opaque_rule_by_name_and_reason_not_as_empty():
     assert cards.Wanted in report.writes   # the OTHER rule still resolved
 
 
-# -- check_watches(): real value, and an honest limit -------------------
+# -- arbitrate()/census(): the two other special-cased helpers ----------
+#
+# `check_watches()` -- comparing a hand-written `watches=` against
+# `analyze()`'s own reads -- is gone along with the hand-written
+# declaration it was auditing: `Loop.rule` calls `analyze()` itself now
+# and uses its reads AS the gate, so there is nothing left for a second
+# declaration to drift out of sync with (see `loop.py`'s own module
+# note, "A rule wakes only when something it reads exists"). What is
+# still worth pinning here is the other half of that change: `arbitrate`/
+# `census`, `loopingrules.help`'s own chokepoint, had to join `reply`/
+# `propose` as special-cased-by-identity, or `arbitrate_help`/
+# `close_census` -- the only two rules in this whole codebase that call
+# either -- would resolve `Opaque` and silently lose their gate, called
+# every tick regardless of whether their own occasion type exists.
 
-def test_check_watches_passes_an_exact_declaration():
-    analyze.check_watches(cards.reply_bad_command, watches=(cards.BadCommand,))
-
-
-def test_check_watches_flags_a_real_read_outside_watches_and_stable():
-    with pytest.raises(ValueError):
-        analyze.check_watches(cards.hear_list, watches=(cards.Said,))
-
-
-def test_check_watches_stable_absorbs_install_time_singletons():
-    """Bare (`stable=()`), this flags 12 of `cards.RULES`'s 13 rules --
-    every one a false alarm, because `tag_affordable` &co. read
-    `Purse`/`RiskProfile`, seeded once at `install()` and never removed,
-    which can never be the reason a rule was wrongly dormant. Naming
-    those as `stable=` clears the false alarm for the rules whose ONLY
-    unwatched reads are that kind of permanent background fact."""
-    stable = (cards.CardDef, cards.Purse, cards.RiskProfile,
-              judge.RiskTolerance, cards.Copies)
-    analyze.check_watches(cards.hear_list, watches=(cards.Said,), stable=stable)
-    analyze.check_watches(cards.tag_affordable, watches=(cards.Listing,),
-                           stable=stable)
-    analyze.check_watches(cards.tag_risk_level, watches=(cards.Listing,),
-                           stable=stable)
-    analyze.check_watches(judge.flag_too_risky, watches=(judge.Risk,),
-                           stable=stable)
+def test_arbitrate_is_special_cased_rather_than_left_opaque():
+    """`arbitrate_help`'s own body never mentions `Proposal` at all, yet
+    it must be attributed as a read AND a write, the same as `reply`
+    being attributed to `reply_bought`'s writes even though `Reply`
+    never appears as a literal in that rule's own source."""
+    result = analyze.analyze(help_.arbitrate_help)
+    assert result.reads == {help_.HelpTopic, Proposal}
+    assert result.writes == {Proposal, Reply}
+    assert result.destroys is True
 
 
-def test_check_watches_still_flags_a_downstream_tag_even_with_stable():
-    """The honest limit: `decide_buy` reads `Wanted`/`Affordable`/
-    `FairPriced`/`TooRisky` without watching any of them, and
-    `tests/test_examples_cards.py`'s own `test_watches_decide_buy_wakes_
-    on_listing_then_notices_the_tags_alone` already PROVES that is safe
-    -- those tags only ever land on a `Listing`, which `decide_buy`
-    already watches. That is a SECOND legitimate reason a read needn't
-    be watched (structural coupling to an already-watched type), and it
-    is not the same thing `stable=` names (a permanent, install-seeded
-    background fact) -- telling the two apart in general needs a
-    cross-rule invariant ("X only ever gets attached to something that
-    already has Y") this module cannot see from one rule's own source.
-    `check_watches` still raises here, correctly warning about a rule it
-    cannot itself prove safe. Pinned as a real, named limit -- not a bug
-    to quietly "fix" by loosening the check until it stops noticing
-    anything real."""
-    stable = (cards.CardDef, cards.Purse, cards.RiskProfile,
-              judge.RiskTolerance, cards.Copies)
-    with pytest.raises(ValueError):
-        analyze.check_watches(cards.decide_buy, watches=(cards.Listing,),
-                               stable=stable)
+def test_census_is_special_cased_rather_than_left_opaque():
+    result = analyze.analyze(help_.close_census)
+    assert help_.HelpCommandCensus in result.reads
+    assert Proposal in result.reads
+    assert Proposal in result.writes
+    assert result.destroys is True
 
 
-def test_check_watches_stable_absorbs_shoppings_own_install_time_singleton():
-    """Same category as `test_check_watches_stable_absorbs_install_time_
-    singletons`, on the SECOND domain `examples.judge` has ever fed --
-    `Item`, seeded once at `shopping.install()` and never removed, is
-    exactly the same kind of permanent background fact `CardDef` already
-    was for `cards`."""
-    stable = (shopping.Item, judge.RiskTolerance)
-    analyze.check_watches(shopping.hear_stock, watches=(shopping.Said,),
-                           stable=stable)
-    analyze.check_watches(shopping.hear_needby, watches=(shopping.Said,),
-                           stable=stable)
-    analyze.check_watches(shopping.project_urgency,
-                           watches=(shopping.NeededBy,), stable=stable)
-    analyze.check_watches(judge.flag_too_risky, watches=(shopping.Risk,),
-                           stable=stable)
+def test_component_map_over_help_resolves_with_nothing_opaque():
+    """The case that motivated the special-casing above: before it,
+    `component_map(*help_.RULES)` had two `Opaque` entries, and
+    `Loop.rule` would have installed `arbitrate_help`/`close_census`
+    with no gate at all."""
+    report = analyze.component_map(*help_.RULES)
+    assert report.opaque == {}
 
 
-def test_check_watches_flags_a_report_rule_too_but_for_a_third_reason():
-    """A third category, distinct from both `stable=` and "downstream of
-    an already-watched type" above, and not specific to either domain:
-    `cards.hear_status`/`shopping.hear_status` each read several types
-    (`Wants`/`GoalMet`; `NeededBy`/`OnList`/`Stock`) purely to build a
-    report, gated entirely on `Said` -- none of those reads needs to WAKE
-    the rule, because nothing about reporting status is triggered by any
-    of them changing on their own, only by someone asking. `stable=`
-    cannot express this (none of them is a permanent background fact) and
-    neither can the downstream-tag reasoning (nothing here is downstream
-    of `Said`) -- a third, genuinely different reason a read needn't be
-    watched, surfaced by comparing two independent domains' own "report
-    on demand" rules, not engineered into either one on purpose."""
-    with pytest.raises(ValueError):
-        analyze.check_watches(cards.hear_status, watches=(cards.Said,),
-                               stable=(cards.CardDef, cards.Purse,
-                                       cards.RiskProfile, judge.RiskTolerance,
-                                       cards.Copies))
-    with pytest.raises(ValueError):
-        analyze.check_watches(shopping.hear_status, watches=(shopping.Said,),
-                               stable=(shopping.Item, judge.RiskTolerance))
+# -- negated_reads: a type tested for ABSENCE never gates a rule --------
+#
+# Found by `tests/test_engine.py`'s own `pong` (`if not w.each(Ping):
+# w.spawn(Ping())`): gating that rule on `Ping` would skip it exactly
+# when `Ping` is gone, which is the one moment it needs to run. See
+# `Analysis.negated_reads`'s own docstring.
+
+def _spawns_when_absent(w):
+    if not w.each(Wanted):
+        w.attach(1, Wanted())
 
 
-def test_check_watches_still_flags_shoppings_own_downstream_tag_too():
-    """The same honest limit as `test_check_watches_still_flags_a_
-    downstream_tag_even_with_stable`, one domain over: `add_to_list`
-    reads `TooRisky` without watching it, safe only because `TooRisky`
-    never lands anywhere but an already-watched `Item` -- a second,
-    independent instance of the structural-coupling case `stable=`
-    cannot absorb, not a coincidence specific to `cards.decide_buy`."""
-    stable = (shopping.Item, judge.RiskTolerance)
-    with pytest.raises(ValueError):
-        analyze.check_watches(shopping.add_to_list,
-                               watches=(shopping.Item,), stable=stable)
+def _spawns_when_none(w):
+    if w.first(Wanted) is None:
+        w.attach(1, Wanted())
+
+
+def _spawns_when_empty_by_len(w):
+    if len(w.each(Wanted)) == 0:
+        w.attach(1, Wanted())
+
+
+def _reads_the_same_type_both_ways(w):
+    for _entity, _wanted in w.each(Wanted):
+        pass
+    if not w.each(Wanted):
+        w.attach(1, Wanted())
+
+
+@pytest.mark.parametrize("fn", [
+    _spawns_when_absent, _spawns_when_none, _spawns_when_empty_by_len])
+def test_a_type_tested_for_absence_is_read_but_excluded_from_the_gate(fn):
+    result = analyze.analyze(fn)
+    assert Wanted in result.reads
+    assert Wanted in result.negated_reads
+
+
+def test_a_type_read_both_positively_and_negatively_is_excluded_everywhere():
+    """Conservative on purpose: this module cannot tell, from source
+    alone, whether the two occurrences are independent branches or
+    entangled, so BOTH lose the gate, not just the negated one."""
+    result = analyze.analyze(_reads_the_same_type_both_ways)
+    assert Wanted in result.negated_reads
+
+
+def test_a_positive_read_alone_is_never_marked_negated():
+    result = analyze.analyze(cards.tag_wanted)
+    assert result.negated_reads == set()
 
 
 # -- the dialect itself, pinned against a bare World --------------------

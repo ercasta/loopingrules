@@ -11,11 +11,11 @@ it, and one thread to run a session on.
 * `loopingrules.loop` -- call every rule, in order, until a whole pass changes
   nothing. A rule is a function of one `World` that writes to it directly
   -- `spawn`/`attach`/`replace`/`detach`/`remove`/`destroy` -- and
-  `Loop.tick` is the only thing that ever calls one. A rule may declare
-  `watches=` -- the component types it could possibly do anything with --
-  and stay uncalled on any tick where none of them exist yet; it may also
-  declare `priority=` to run ahead of another rule, regardless of which
-  was registered first.
+  `Loop.tick` is the only thing that ever calls one. Registering a rule
+  runs `loopingrules.analyze` over it and stays uncalled on any tick where
+  none of the component types it reads exist yet; it may also declare
+  `priority=` to run ahead of another rule, regardless of which was
+  registered first.
 * `loopingrules.engine` -- ONE thread that runs the loop, and the channels
   attached to it. `Said(name, "...")` in from whichever channel it
   arrived on; `Reply(user, "...")` out to every channel there is.

@@ -463,9 +463,11 @@ RULES = (hear_list, hear_want, hear_status,
 
 
 def install(loop, cash: int = 100, catalog=DEFAULT_CATALOG) -> None:
-    """Register every rule above, each with its own `watches=` (unlike
-    `fs.py`'s `RULES` loop, which declares none), then seed the catalog,
-    `Purse`, `RiskProfile`, and the judge's own `RiskTolerance`.
+    """Register every rule above (each gated automatically on its own
+    reads -- see `loopingrules.loop`'s own module note, "A rule wakes
+    only when something it reads exists"; there is no `watches=` to pass
+    by hand any more), then seed the catalog, `Purse`, `RiskProfile`,
+    and the judge's own `RiskTolerance`.
 
     `CardDef`/`Copies` are seeded per catalog entry, by NAME -- a name
     already present is never touched (see the module docstring); this is
@@ -479,19 +481,19 @@ def install(loop, cash: int = 100, catalog=DEFAULT_CATALOG) -> None:
     all, and a `Listing` with no `RiskTolerance` yet would leave `judge.
     flag_too_risky` abstaining forever (see that rule's own docstring).
     """
-    loop.rule(hear_list, watches=(Said,))
-    loop.rule(hear_want, watches=(Said,))
-    loop.rule(hear_status, watches=(Said,))
-    loop.rule(tag_wanted, watches=(Listing, Wants))
-    loop.rule(tag_affordable, watches=(Listing,))
-    loop.rule(tag_fair_priced, watches=(Listing,))
-    loop.rule(tag_risk_level, watches=(Listing,))
-    loop.rule(flag_too_risky, watches=(Risk,))
-    loop.rule(decide_buy, watches=(Listing,))
-    loop.rule(check_goal, watches=(Wants,))
-    loop.rule(reply_bought, watches=(Bought,))
-    loop.rule(reply_bad_command, watches=(BadCommand,))
-    loop.rule(reply_goal_met, watches=(GoalMet,))
+    loop.rule(hear_list)
+    loop.rule(hear_want)
+    loop.rule(hear_status)
+    loop.rule(tag_wanted)
+    loop.rule(tag_affordable)
+    loop.rule(tag_fair_priced)
+    loop.rule(tag_risk_level)
+    loop.rule(flag_too_risky)
+    loop.rule(decide_buy)
+    loop.rule(check_goal)
+    loop.rule(reply_bought)
+    loop.rule(reply_bad_command)
+    loop.rule(reply_goal_met)
 
     world = loop.world
     for card_def in catalog:

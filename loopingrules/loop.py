@@ -56,7 +56,7 @@ then counted, register the entry rule before the count rule and it is so.
 `loop.rule(fn, priority=N)` is the one deliberate override: HIGHER runs
 FIRST, ties (including the default, `0`, when nobody sets one) keep
 registration order. This is what settles the case registration order
-cannot express on its own -- two rules `watches`-ing the SAME component
+cannot express on its own -- two rules reading the SAME component
 type, installed by two domains that do not know about each other and so
 cannot agree on which one to register first. Declared once, by whichever
 rule actually needs to run before the other, it is a property of the
@@ -83,32 +83,47 @@ already on the entity did not. That is what settling is measured in, and
 it is why `World.attach` comparing before it stores is load-bearing
 rather than a convenience.
 
-## A rule may declare what would ever wake it
+## A rule wakes only when something it reads exists
 
-`loop.rule(fn, watches=(Kind, ...))` tells the loop the component types a
-rule could possibly have something to do with. A rule that declared
-`watches` is skipped -- its Python body never called at all -- on any tick
-where `world.populated(*watches)` is false, i.e. NOTHING carries any of
-those types yet. `watches=None` (the default) means what it always meant:
-called every tick, no questions asked.
+There used to be a `loop.rule(fn, watches=(Kind, ...))` a rule author
+declared by hand -- what could gate a rule instead is exactly what
+`loopingrules.analyze.analyze()` already derives from its own source,
+soundly, so `Loop.rule` now calls `analyze(fn)` itself at registration
+time rather than asking anyone to say it twice. A rule whose reads
+resolve cleanly is skipped -- its Python body never called at all -- on
+any tick where `world.populated(*reads)` is false, i.e. NOTHING carries
+any type it reads yet. A rule `analyze()` cannot resolve (raises
+`analyze.Opaque` -- an aliased world parameter, a call into an unrelated
+module, anything outside the dialect its own docstring names) or that
+resolves with NO reads at all (nothing to gate on, a timer-shaped rule
+that ignores its `World` parameter entirely) is called every tick, no
+questions asked -- the same fallback the old `watches=None` default was,
+reached automatically instead of chosen.
 
-⚠ `watches` must be an OVER-approximation of what could matter, not the
-exact query -- get it right and a whole class of rules in a large ruleset
-stay silent, entities and all, until their own domain has anything on the
-world at all; get it wrong (name too NARROW a set) and the rule goes
-dormant while something it depended on sits unnoticed on a type it never
-declared, which looks exactly like the old "no inert set" hang except
-inverted: not too much firing, but a rule that should have fired and
-silently didn't. There is no way to catch this from here -- `populated` does
-not know what a rule's own body reads -- so declare a superset when in
-doubt; a rule that watches one type too many merely gets called with
-nothing to do, the same cost `each()` already pays on an empty bucket.
+This closes the gap the hand-written version always carried and named
+honestly rather than fixed (`PRINCIPLES.md`: "declare `watches` too
+narrow... there is no way to catch this from here"): `analyze()`'s own
+reads ARE the exact set a rule's body can possibly act on, not a
+person's guess at a safe superset, so there is no longer a way to name
+one too narrow -- gating a rule wrong now takes rewriting its body
+outside the analyzable dialect, which is exactly the case that already
+falls back to "called every tick" rather than going silently dormant.
+
+⚠ One genuine trap survived the switch, found by a rule reacting to a
+type's ABSENCE (`tests/test_engine.py`'s `pong`: `if not w.each(Ping):
+w.spawn(Ping())`) rather than its presence -- gating that on `Ping`
+would skip it exactly when `Ping` is gone, which is precisely when it
+needs to run. `analyze.Analysis.negated_reads` is the fix: a type a
+rule's own source tests for absence (`not`, `is None`, `== []`, `len(
+...) == 0`) never contributes to the gate, even where the SAME type is
+also read positively elsewhere in the same rule -- see its own
+docstring for why that exclusion is global rather than per-occurrence.
 
 ⚠ A rule is one entry in `self.rules` and `tick()` visits each entry
-exactly once, so watching several types is never a reason to be called
+exactly once, so reading several types is never a reason to be called
 more than once in the same tick -- there is no per-type dispatch loop
 here to accidentally invoke a rule twice for two types that both
-happen to be populated. "Watch three types, run once" is not a rule this
+happen to be populated. "Read three types, run once" is not a rule this
 module enforces; it is a rule this module's SHAPE makes impossible to
 break.
 
@@ -160,6 +175,8 @@ wants to look at less of it clears or slices what it read, the same as
 from __future__ import annotations
 
 import collections
+
+from . import analyze
 
 Settled = collections.namedtuple("Settled", "ticks hot")
 
@@ -219,7 +236,7 @@ class Loop:
 
     # -- registering --------------------------------------------------
 
-    def rule(self, fn=None, *, name=None, watches=None, priority=0):
+    def rule(self, fn=None, *, name=None, priority=0):
         """Register a rule. Bare or called::
 
             @loop.rule
@@ -228,18 +245,20 @@ class Loop:
             @loop.rule(name="flag big")
             def _(w): ...
 
-            @loop.rule(watches=(Request,))
-            def watch(w): ...             # skipped while no Request exists
+            @loop.rule(priority=10)
+            def watch_first(w): ...       # ahead of any priority-0 rule
+                                           # reading the same type, whoever
+                                           # installed it
 
-            @loop.rule(watches=(Request,), priority=10)
-            def watch_first(w): ...       # ahead of any priority-0 watcher
-                                           # of Request, whoever installed it
-
-        `watches`, if given, is a component type or a tuple of them --
-        see the module note on what it promises and what it does not.
         `priority` orders the tick -- higher runs first, ties (the
         default, `0`, included) keep registration order -- see the module
         note on why this is a total order rather than a per-type one.
+
+        There is no `watches=` to pass any more -- see the module note,
+        "A rule wakes only when something it reads exists": `analyze(fn)`
+        is called right here, and its reads (if any resolve) become the
+        gate `tick()` checks, in place of what a person used to have to
+        declare and could get wrong.
 
         The name -- `name` if given, `module.function` (see `_name_of`)
         otherwise -- must be unique on THIS loop: registering a second
@@ -256,11 +275,14 @@ class Loop:
         would make that trajectory ambiguous, not just `/rules`' listing.
         """
         if fn is None:
-            return lambda f: self.rule(f, name=name, watches=watches,
-                                         priority=priority)
-        if watches is not None:
-            fn._loopingrules_watches = ((watches,) if isinstance(watches, type)
-                               else tuple(watches))
+            return lambda f: self.rule(f, name=name, priority=priority)
+        try:
+            analysis = analyze.analyze(fn)
+            reads = analysis.reads - analysis.negated_reads
+        except analyze.Opaque:
+            reads = None
+        if reads:
+            fn._loopingrules_watches = tuple(reads)
         fn._loopingrules_priority = priority
         rule_name = name or _name_of(fn)
         if any(existing == rule_name for existing, _ in self.rules):

@@ -749,11 +749,12 @@ class World:
         types -- an existence check, not a query: `O(len(kinds))` dict
         lookups, no intersection, no walk of a bucket.
 
-        This is what lets a rule declare itself dormant (`Loop.rule`'s
-        `watches=`) rather than merely fast: `each()` on an empty bucket
-        already returns quickly, but it still calls the rule's own
-        Python body to find that out. A rule that watches a type nobody
-        has ever attached is skipped before it runs at all.
+        This is what lets a rule go dormant rather than merely fast:
+        `each()` on an empty bucket already returns quickly, but it
+        still calls the rule's own Python body to find that out.
+        `Loop.rule` calls this against the reads `loopingrules.analyze`
+        derives from a rule's own source, so a rule none of whose reads
+        exist yet is skipped before it runs at all.
         """
         return any(self._by_type.get(k) for k in kinds)
 

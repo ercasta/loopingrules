@@ -144,8 +144,9 @@ core"), named so they are not lost rather than scheduled.
   component types (`stat` only ever touches `Size`/`Modified`/`Failed`)
   gets the same total refusal as one that could touch anything --
   `circuits.py` has no way for a tool's REGISTRATION to declare what it
-  reads/writes the way `Loop.rule`'s own `watches=` lets a hand-written
-  rule declare (unverified) reads. Worth doing only once something
+  reads/writes the way `loopingrules.analyze` derives a hand-written
+  rule's reads (and `Loop.rule` gates it on them) automatically. Worth
+  doing only once something
   downstream actually wants a non-`Opaque` answer for a `Call`-bearing
   spec -- `component_map()`-style tooling, say -- nothing does yet.
 - **A YAML surface plus an examples-driven evolution search over a base

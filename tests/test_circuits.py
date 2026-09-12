@@ -780,9 +780,9 @@ def _expression_tree():
 def test_recursive_fold_flattens_into_propagation_with_no_new_primitives():
     w, top, add1, add2 = _expression_tree()
     lp = Loop()
-    lp.rule(circuits.compile_circuit(fold_lit), name="fold_lit", watches=(Lit,))
-    lp.rule(circuits.compile_circuit(fold_add), name="fold_add", watches=(BinOp,))
-    lp.rule(circuits.compile_circuit(fold_mul), name="fold_mul", watches=(BinOp,))
+    lp.rule(circuits.compile_circuit(fold_lit), name="fold_lit")
+    lp.rule(circuits.compile_circuit(fold_add), name="fold_add")
+    lp.rule(circuits.compile_circuit(fold_mul), name="fold_mul")
     lp.world = w
     settled = lp.run()
     assert settled.hot == []
@@ -798,9 +798,9 @@ def test_fold_propagation_settles_regardless_of_registration_order():
     productive tick); CORRECTNESS does not."""
     w, top, _add1, _add2 = _expression_tree()
     lp = Loop()
-    lp.rule(circuits.compile_circuit(fold_mul), name="fold_mul", watches=(BinOp,))
-    lp.rule(circuits.compile_circuit(fold_add), name="fold_add", watches=(BinOp,))
-    lp.rule(circuits.compile_circuit(fold_lit), name="fold_lit", watches=(Lit,))
+    lp.rule(circuits.compile_circuit(fold_mul), name="fold_mul")
+    lp.rule(circuits.compile_circuit(fold_add), name="fold_add")
+    lp.rule(circuits.compile_circuit(fold_lit), name="fold_lit")
     lp.world = w
     settled = lp.run()
     assert w.get(top, Folded) == Folded(45)
@@ -1003,8 +1003,7 @@ def _hear_list_circuit_loop(cash=100):
     cards.install(lp, cash=cash)
     lp.rules = [(n, f) for n, f in lp.rules if f is not cards.hear_list]
     for i, spec in enumerate(HEAR_LIST_SPECS):
-        lp.rule(circuits.compile_circuit(spec), name="hear_list_circuit.%d" % i,
-                watches=(Said,))
+        lp.rule(circuits.compile_circuit(spec), name="hear_list_circuit.%d" % i)
     return lp
 
 
@@ -1232,8 +1231,7 @@ def _hear_want_circuit_loop(cash=100):
     cards.install(lp, cash=cash)
     lp.rules = [(n, f) for n, f in lp.rules if f is not cards.hear_want]
     for i, spec in enumerate(HEAR_WANT_SPECS):
-        lp.rule(circuits.compile_circuit(spec), name="hear_want_circuit.%d" % i,
-                watches=(Said,))
+        lp.rule(circuits.compile_circuit(spec), name="hear_want_circuit.%d" % i)
     return lp
 
 
@@ -1376,8 +1374,7 @@ def _hear_status_circuit_loop(cash=100):
     cards.install(lp, cash=cash)
     lp.rules = [(n, f) for n, f in lp.rules if f is not cards.hear_status]
     for i, spec in enumerate(HEAR_STATUS_SPECS):
-        lp.rule(circuits.compile_circuit(spec), name="hear_status_circuit.%d" % i,
-                watches=(Said,))
+        lp.rule(circuits.compile_circuit(spec), name="hear_status_circuit.%d" % i)
     return lp
 
 

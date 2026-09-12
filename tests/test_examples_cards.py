@@ -287,20 +287,23 @@ def test_settling_leaves_nothing_transient_behind_but_keeps_goal_met(loop):
     assert w.each(cards.Announced) != []
 
 
-# -- watches= correctness (PRINCIPLES.md: mutate something NOT watched) ---
+# -- the auto-derived gate: reads, not a hand-written watches= -----------
 #
-# Each of these registers exactly the one rule under test on a bare Loop,
-# so nothing else installed alongside it could be why the rule fired --
-# only its own `watches=` declaration and its own body could be.
+# `Loop.rule` now runs `loopingrules.analyze` over a rule at registration
+# time and gates it on the reads that come back -- see `loop.py`'s own
+# module note, "A rule wakes only when something it reads exists." Each
+# of these registers exactly the one rule under test on a bare Loop, so
+# nothing else installed alongside it could be why the rule fired --
+# only its own analyzed reads and its own body could be.
 
-def test_watches_tag_affordable_wakes_on_listing_then_notices_a_purse_only_change():
+def test_tag_affordable_wakes_on_listing_then_notices_a_purse_only_change():
     lp = Loop()
     w = lp.world
     w.spawn(cards.Purse(10))
     w.spawn(cards.RiskProfile(max_spend_per_trade=50, min_cash_reserve=0,
                                max_premium=0.25))
     entity = w.spawn(cards.Listing(1, 40))
-    lp.rule(cards.tag_affordable, watches=(cards.Listing,))
+    lp.rule(cards.tag_affordable)
     lp.tick()
     assert not w.has(entity, cards.Affordable)
     purse_entity, _p = w.first(cards.Purse)
@@ -309,12 +312,12 @@ def test_watches_tag_affordable_wakes_on_listing_then_notices_a_purse_only_chang
     assert w.has(entity, cards.Affordable)
 
 
-def test_watches_check_goal_wakes_on_wants_then_notices_a_copies_only_change():
+def test_check_goal_wakes_on_wants_then_notices_a_copies_only_change():
     lp = Loop()
     w = lp.world
     dragon = w.spawn(cards.CardDef("dragon", "rare", 40), cards.Copies(0),
                       cards.Wants(1))
-    lp.rule(cards.check_goal, watches=(cards.Wants,))
+    lp.rule(cards.check_goal)
     lp.tick()
     assert w.the(cards.GoalMet) is None
     w.replace(dragon, cards.Copies(1))          # Copies, not Wants
@@ -322,7 +325,7 @@ def test_watches_check_goal_wakes_on_wants_then_notices_a_copies_only_change():
     assert w.the(cards.GoalMet) is not None
 
 
-def test_watches_decide_buy_wakes_on_listing_then_notices_the_tags_alone():
+def test_decide_buy_wakes_on_listing_then_notices_the_tags_alone():
     lp = Loop()
     w = lp.world
     dragon = w.spawn(cards.CardDef("dragon", "rare", 40), cards.Copies(0),
@@ -331,7 +334,7 @@ def test_watches_decide_buy_wakes_on_listing_then_notices_the_tags_alone():
     w.spawn(cards.RiskProfile(max_spend_per_trade=50, min_cash_reserve=0,
                                max_premium=0.25))
     listing = w.spawn(cards.Listing(dragon, 40))
-    lp.rule(cards.decide_buy, watches=(cards.Listing,))
+    lp.rule(cards.decide_buy)
     lp.tick()
     assert w.each(cards.Bought) == []           # tags never attached yet
     w.attach(listing, cards.Wanted(), cards.Affordable(), cards.FairPriced())

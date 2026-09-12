@@ -2,7 +2,11 @@
 writes -- derived from its own source, not declared by hand. This is the
 answer to two things at once: `PRINCIPLES.md`'s named, previously
 unsolved gap ("declare `watches` too narrow... there is no way to catch
-this from here") and a "map" of which rules touch which components,
+this from here") -- solved now by removing the hand-written declaration
+rather than checking it, since `Loop.rule` calls `analyze()` itself at
+registration time and uses the result AS a rule's gate (see
+`loopingrules.loop`'s own module note, "A rule wakes only when something
+it reads exists") -- and a "map" of which rules touch which components,
 without inventing a language to get one.
 
 ## Why AST analysis of plain Python, not a new DSL
@@ -44,18 +48,34 @@ nothing here claims to know which types an entity it destroys was
 carrying. `Analysis.destroys` records only that the rule CAN destroy
 entities -- a real limit on the map, not a silent one.
 
-## Two named exceptions: `reply` and `propose`
+## Four named exceptions: `reply`, `propose`, `arbitrate`, `census`
 
-`loopingrules.world.reply`/`propose` are cross-module by construction --
-every domain's own `reply_*`/`propose_*` rule calls them from
-`loopingrules.world`, never from its own module, so the "same module
-only" rule above would make every one of them `Opaque` for no reason
-that matters: unlike an arbitrary imported helper, what these two write
-is exactly what the README already promises never changes quietly
-(`reply` spawns a `Reply`; `propose` spawns a `Proposal(occasion)` plus
-whatever components it was given). They are special-cased below by
-identity, not by name -- a domain's own function that happens to be
+`loopingrules.world.reply`/`propose`/`arbitrate`/`census` are cross-module
+by construction -- every domain's own `reply_*`/`propose_*` rule calls
+`reply`/`propose` from `loopingrules.world`, never from its own module,
+and `arbitrate`/`census` are the shared chokepoint a rule reaches for
+instead of writing its own resolution loop (`loopingrules.help.
+arbitrate_help`/`close_census`, the first and so far only callers) -- so
+the "same module only" rule above would make every one of them `Opaque`
+for no reason that matters: unlike an arbitrary imported helper, what
+these four read or write is exactly what the README already promises
+never changes quietly (`reply` spawns a `Reply`; `propose` spawns a
+`Proposal(occasion)` plus whatever components it was given; `arbitrate`/
+`census` both resolve every entity of the `occasion_type` passed in,
+reading it and `Proposal`, and may destroy entities or detach `Proposal`
+-- see their own docstrings in `world.py`). They are special-cased below
+by identity, not by name -- a domain's own function that happens to be
 called `reply` is not this one and is analyzed like any other helper.
+
+Getting this right matters more than it used to: `arbitrate`/`census`
+resolving to `Opaque` no longer just costs a false alarm from a checker
+nobody has to run -- it costs the calling rule its gate, and it goes
+back to being called every tick regardless of whether its own occasion
+type exists, exactly the "always call" fallback every genuinely Opaque
+rule gets (see `loopingrules.loop`'s own module note). `hear_help`/
+`open_census`/`reply_help_answer` never call either, so this only
+mattered for `arbitrate_help`/`close_census` -- the case that motivated
+adding it.
 """
 
 from __future__ import annotations
@@ -65,7 +85,9 @@ import inspect
 import textwrap
 from typing import Dict, Set
 
-from .world import Proposal, Reply, propose as _CORE_PROPOSE, reply as _CORE_REPLY
+from .world import (Proposal, Reply, arbitrate as _CORE_ARBITRATE,
+                    census as _CORE_CENSUS, propose as _CORE_PROPOSE,
+                    reply as _CORE_REPLY)
 
 
 READS = {"each", "get", "all", "the", "first"}
@@ -84,24 +106,41 @@ class Opaque(Exception):
 
 
 class Analysis:
-    """One rule's own reads and writes, derived, not declared."""
+    """One rule's own reads and writes, derived, not declared.
+
+    `negated_reads` is a subset of `reads`: every type this rule's own
+    source tests for ABSENCE (`if not w.each(Kind):`, `w.first(Kind) is
+    None`, `len(w.each(Kind)) == 0`, ...) rather than presence. `Loop.
+    rule` gates a rule on `reads - negated_reads`, never on `reads`
+    itself -- a rule reacting to a type NOT existing (`test_engine.py`'s
+    own `pong`, spawning a fresh `Ping` exactly when none is left, is
+    the case that found this) would otherwise be gated on the one
+    condition that guarantees it has nothing to do, going structurally
+    dormant precisely when it most needs to run. A type appearing BOTH
+    ways (iterated somewhere, tested for absence somewhere else) is
+    still excluded everywhere, conservatively -- this module cannot
+    tell, from one rule's source, whether the two uses are independent
+    branches or entangled, so it refuses to gate on it at all rather
+    than guess which occurrence is safe."""
 
     def __init__(self) -> None:
         self.reads: Set[type] = set()
+        self.negated_reads: Set[type] = set()
         self.writes: Set[type] = set()
         self.destroys: bool = False
 
     def __repr__(self) -> str:
-        return "Analysis(reads=%r, writes=%r, destroys=%r)" % (
+        return "Analysis(reads=%r, negated_reads=%r, writes=%r, destroys=%r)" % (
             sorted(k.__name__ for k in self.reads),
+            sorted(k.__name__ for k in self.negated_reads),
             sorted(k.__name__ for k in self.writes),
             self.destroys)
 
     def __eq__(self, other) -> bool:
         if not isinstance(other, Analysis):
             return NotImplemented
-        return (self.reads, self.writes, self.destroys) == (
-            other.reads, other.writes, other.destroys)
+        return (self.reads, self.negated_reads, self.writes, self.destroys) == (
+            other.reads, other.negated_reads, other.writes, other.destroys)
 
 
 def _qualname(fn) -> str:
@@ -121,45 +160,6 @@ def analyze(fn) -> Analysis:
     analysis = Analysis()
     _walk_function(fn, module, analysis, set())
     return analysis
-
-
-def check_watches(fn, watches, stable=()) -> None:
-    """Raise `ValueError` if `analyze(fn)` reads a component type that is
-    named in neither `watches` nor `stable`.
-
-    `watches` takes the same shape `Loop.rule(watches=...)` does. `stable`
-    is the escape hatch a strict "reads subset of watches" check needs to
-    be usable at all: run bare (`stable=()`) against `examples.cards`'s
-    own thirteen rules and TWELVE of them raise, every one a false
-    alarm -- `tag_affordable` reads `Purse`/`RiskProfile` without
-    watching either, and `tests/test_examples_cards.py`'s own
-    `test_watches_tag_affordable_wakes_on_listing_then_notices_a_purse_
-    only_change` already PROVES that is safe, on purpose: both are
-    singletons `install()` seeds once, before any tick runs, and never
-    removed after, so they can never be the reason a rule was wrongly
-    asleep -- only a type that could be ABSENT and then APPEAR later can
-    cause that failure, and `watches` only ever needs to name the ones
-    that gate whether the rule has anything to do at all (see
-    `loopingrules.loop`'s own module note on `watches`). This module has
-    no way to know, from a rule's source alone, which of its reads are
-    that kind of permanent background fact and which are a real gap --
-    that is exactly the "there is no way to catch this from here" this
-    check exists to help with, not resolve unaided, so it asks the
-    caller to say which types are stable the same way a rule author
-    already says which types wake the rule up. Pass the domain's own
-    install-time singletons (and anything else proven never absent once
-    seeded) as `stable=`, and this check is precise rather than merely
-    loud.
-    """
-    declared = (watches,) if isinstance(watches, type) else tuple(watches)
-    known = (stable,) if isinstance(stable, type) else tuple(stable)
-    missing = analyze(fn).reads - set(declared) - set(known)
-    if missing:
-        raise ValueError(
-            "%s reads %s but watches=%r (stable=%r) does not name it -- "
-            "the rule may go dormant while that is the only thing that "
-            "changed" % (_qualname(fn), sorted(k.__name__ for k in missing),
-                         declared, known))
 
 
 class Report:
@@ -233,6 +233,37 @@ def _walk_function(fn, module, analysis: Analysis, seen: set,
         world_name = params[0]
 
     handled_names: "set[int]" = set()   # id() of Name nodes already accounted for
+    parents = {id(child): node for node in ast.walk(tree)
+              for child in ast.iter_child_nodes(node)}
+
+    def _is_negated(call) -> bool:
+        """Whether `call` -- a world-read this walk just resolved -- is
+        tested for ABSENCE rather than presence: `not call`, `call is
+        None`/`call == None`, `call == []`, or `len(call) == 0`. See
+        `Analysis.negated_reads`' own docstring for why this matters."""
+        parent = parents.get(id(call))
+        if isinstance(parent, ast.UnaryOp) and isinstance(parent.op, ast.Not):
+            return True
+        if isinstance(parent, ast.Compare) and len(parent.ops) == 1:
+            op = parent.ops[0]
+            other = (parent.comparators[0] if parent.left is call
+                    else parent.left)
+            if isinstance(op, (ast.Is, ast.Eq)):
+                if isinstance(other, ast.Constant) and other.value is None:
+                    return True
+                if isinstance(other, (ast.List, ast.Tuple)) and not other.elts:
+                    return True
+        if (isinstance(parent, ast.Call) and isinstance(parent.func, ast.Name)
+                and parent.func.id == "len"):
+            grandparent = parents.get(id(parent))
+            if isinstance(grandparent, ast.Compare) and len(grandparent.ops) == 1:
+                op = grandparent.ops[0]
+                other = (grandparent.comparators[0] if grandparent.left is parent
+                        else grandparent.left)
+                if (isinstance(op, ast.Eq) and isinstance(other, ast.Constant)
+                        and other.value == 0):
+                    return True
+        return False
 
     def resolve_class(node):
         if isinstance(node, ast.Name) and isinstance(
@@ -270,6 +301,7 @@ def _walk_function(fn, module, analysis: Analysis, seen: set,
                          "cannot enumerate its component types" % method)
         if method in READS:
             start = 1 if method == "get" else 0
+            kinds = []
             for a in args[start:]:
                 kind = resolve_class(a)
                 if kind is None:
@@ -277,11 +309,15 @@ def _walk_function(fn, module, analysis: Analysis, seen: set,
                                  "%s(...) argument is not a literal "
                                  "component type: %r" % (method, ast.unparse(a)))
                 analysis.reads.add(kind)
+                kinds.append(kind)
             for kw in call.keywords:
                 if kw.arg == "without":
                     analysis.reads.update(resolve_kind_list(kw.value))
+            if kinds and _is_negated(call):
+                analysis.negated_reads.update(kinds)
         elif method in EXISTENCE_READS:
             start = 1 if method in ("get_all", "has") else 0
+            kinds = []
             for a in args[start:]:
                 kind = resolve_class(a)
                 if kind is None:
@@ -289,6 +325,9 @@ def _walk_function(fn, module, analysis: Analysis, seen: set,
                                  "%s(...) argument is not a literal "
                                  "component type: %r" % (method, ast.unparse(a)))
                 analysis.reads.add(kind)
+                kinds.append(kind)
+            if kinds and _is_negated(call):
+                analysis.negated_reads.update(kinds)
         elif method in WRITES_INSTANCE:
             start = 1 if method in ("attach", "replace") else 0
             for a in args[start:]:
@@ -360,6 +399,31 @@ def _walk_function(fn, module, analysis: Analysis, seen: set,
                                  "freshly-built component (`Kind(...)`): "
                                  "%r" % ast.unparse(a))
                 analysis.writes.add(kind)
+            mark_world_args(call)
+            return
+        if callee is _CORE_ARBITRATE or callee is _CORE_CENSUS:
+            # arbitrate(w, occasion_type) / census(w, occasion_type) --
+            # both resolve every `occasion_type` entity against `Proposal`
+            # (see `world.py`'s own `_resolved`), so `occasion_type`
+            # itself must be a literal type for either read to be
+            # attributed at all -- the same requirement `each(Kind)`
+            # already has. Both may destroy an occasion or a losing
+            # candidate (`analysis.destroys`) and both detach the winning
+            # `Proposal` once resolved, so `Proposal` is a write too, not
+            # only a read.
+            if len(call.args) < 2:
+                raise Opaque(_qualname(fn),
+                             "%s(...) missing its occasion type" %
+                             callee.__name__)
+            kind = resolve_class(call.args[1])
+            if kind is None:
+                raise Opaque(_qualname(fn),
+                             "%s(...) argument is not a literal "
+                             "component type: %r" %
+                             (callee.__name__, ast.unparse(call.args[1])))
+            analysis.reads.update({kind, Proposal})
+            analysis.writes.add(Proposal)
+            analysis.destroys = True
             mark_world_args(call)
             return
         if not inspect.isfunction(callee) or callee.__module__ != module.__name__:

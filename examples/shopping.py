@@ -257,16 +257,18 @@ RULES = (hear_stock, hear_needby, hear_status,
 
 
 def install(loop, tolerance: float = 0.6, catalog=DEFAULT_ITEMS) -> None:
-    """Register every rule above, each with its own `watches=`, then seed
-    the catalog and the judge's own `RiskTolerance` -- same BigFloor-style
-    "only if not already there" policy as `cards.install`."""
-    loop.rule(hear_stock, watches=(Said,))
-    loop.rule(hear_needby, watches=(Said,))
-    loop.rule(hear_status, watches=(Said,))
-    loop.rule(project_urgency, watches=(NeededBy,))
-    loop.rule(flag_too_risky, watches=(Risk,))
-    loop.rule(add_to_list, watches=(Item,))
-    loop.rule(reply_bad_command, watches=(BadCommand,))
+    """Register every rule above (each gated automatically on its own
+    reads -- there is no `watches=` to pass by hand any more, see
+    `loopingrules.loop`'s own module note), then seed the catalog and the
+    judge's own `RiskTolerance` -- same BigFloor-style "only if not
+    already there" policy as `cards.install`."""
+    loop.rule(hear_stock)
+    loop.rule(hear_needby)
+    loop.rule(hear_status)
+    loop.rule(project_urgency)
+    loop.rule(flag_too_risky)
+    loop.rule(add_to_list)
+    loop.rule(reply_bad_command)
 
     world = loop.world
     for item in catalog:

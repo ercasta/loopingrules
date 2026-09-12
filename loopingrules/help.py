@@ -254,9 +254,9 @@ def install(loop) -> None:
     within the same tick, which `hear_help`'s own priority already
     guarantees regardless of where in `RULES` `open_census` sits.
     """
-    loop.rule(hear_help, priority=50, watches=(Said,))
-    loop.rule(open_census, watches=(HelpTopic,))
-    loop.rule(close_census, watches=(HelpCommandCensus,))
-    loop.rule(arbitrate_help, watches=(HelpTopic,))
-    loop.rule(reply_help_answer, watches=(HelpAnswer,))
+    loop.rule(hear_help, priority=50)
+    loop.rule(open_census)
+    loop.rule(close_census)
+    loop.rule(arbitrate_help)
+    loop.rule(reply_help_answer)
     loop.world.learn("help")
