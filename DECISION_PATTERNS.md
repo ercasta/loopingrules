@@ -101,37 +101,28 @@ example: not chosen by override, just never eliminated once everything ahead of 
 - **Pending** - a `needs` request is still open when the world settles. Not a hang (`Loop.run` reports a
   clean settle either way) and not the same as Unresolved: *someone might still answer this.*
 
-## Observability comes from the substrate, not the language
+## Observability comes from the substrate
 
-There is no CNL in this plan. CNL's actual value was letting a non-programmer swap `business.cnl`
-without touching Python - a property about *who can author a rule*, not about whether its conclusion is
-visible. Every relation above is deposited with the same plain `World` writes this repo already ships -
+Every relation above is deposited with the same plain `World` writes this repo already ships -
 `w.attach`/`w.replace` - the way `pystrider.patterns`/`pystrider.repair` already write onto a
 `loopingrules.world.World` directly, with no fact/state layer in between (see `pystrider`'s own
 `pyproject.toml` note, "`ugm` IS GONE"). Nothing in `World` lets a rule hide a conclusion in a local
 variable - `attach`/`replace` write onto an entity, not into a return value. So the trace of a decision -
 which candidates existed, what ruled each one out, who won - is just `w.each(Candidate)` /
 `w.each(RuledOut)` / `w.the(Winner)`, the same generic `each`/`the`/`show` reads `world.py` already
-exposes for anything else, regardless of which rule wrote them. That's a *better* fit for a contested,
-multi-candidate decision than `pystrider.cnl`'s own `explain()` ever was - its own docstring admits it
-re-derives symbolically and can't say which of several concluding rules actually fired. `winner(occasion,
-option)` says exactly that, for this run.
+exposes for anything else, regardless of which rule wrote them. 
 
 ## Non-goals
 
 - No SLD-resolution-style backward search, no unification, no choice-point/backtracking stack. A
   "goal" here is not a first-class thing the engine manages - it's an ordinary fact a judge's ordinary
   guard is checking for, the same as every other fact.
-- No CNL authoring surface for any of this. It's Python, on purpose, per the section above.
 - No score that swallows a categorical veto and a soft preference into one number.
 
 ## What building it settled, and what it did not
 
-**Settled, by a module that no longer exists.** `arbitration.py` lived in this package for one day
-(2026-08-28) under its previous name, `ugm`, and was deleted the next (see this repo's own `README.md`
-History, "Facts/arbitration/request removed") - so the citation below is to that record, not to a path
-on disk. *What is an occasion, generically?* - **anything the caller mints, and the module does not
-care.** Its `commit` iterated `world.each(Candidate)`, so an occasion was just whatever entity a
+*What is an occasion, generically?* - **anything the caller mints, and the module does not
+care.** In a previous version, `commit` iterated `world.each(Candidate)`, so an occasion was just whatever entity a
 `candidate` was deposited on: a `node()`, an interned `word("decision:screen")`, a `reify()`d
 proposition. No registry of decision points, and nothing to generalize past.
 
@@ -140,7 +131,7 @@ asserts an ordinary fact and some unrelated rule answers it; `commit` needs no c
 because unblocking is "the guard read false, now it reads true," the same as every rule, always.
 The `Pending` verdict argued for below was not built, for the same reason.
 
-## 2026-08-30 - not built: chart parsing, where the winner is a whole interpretation
+## Not built: chart parsing, where the winner is a whole interpretation
 
 Everything above (`arbitrate`, `census`) resolves ONE occasion at a time:
 either exactly one candidate wins outright, or every candidate stands,
