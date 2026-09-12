@@ -252,3 +252,98 @@ synthesizer, no `Loop`-level step to install what one finds. Flagged because `ci
 already named this as the reason its catalog is closed ("a closed catalog is the thing a FUTURE search or
 learning process over rules would need to be tractable at all... No search or learning is built yet") -
 this is that thread, picked up in conversation and not yet in code.
+
+## 2026-09-10 — designed, not built: evolving a whole rule SET against examples, frozen rules held fixed
+
+Picks the 2026-09-07 thread back up, from a different angle: not "derive one spec from scratch" but "a rule
+author already has a BASE set of `circuits.py` specs (some of them declared off-limits), hands over
+input/output examples, and wants the system to propose additions, edits, and deletions to the REST that
+make the set match." Two things the 2026-09-07 entry deferred are exactly what this needs and neither is
+built yet: an actual human/LLM-typeable surface for a spec (the YAML loader `README.md`'s History and
+`TODO.md` both name as "discussed and deliberately deferred... until a real authoring workflow needs one"),
+and any per-rule way to say "do not touch this one," which has never come up before now because nothing has
+tried to mutate a SET of specs at all, only ever author one by hand or synthesize one from nothing.
+
+**What's genuinely new relative to 2026-09-07, not a restatement of it.** That entry's synthesizer answers
+one occasion at a time — one spec, from examples, ranked against rivals by simplicity. A SET raises a
+question a single spec never has to: an example's expected outcome is the composed effect of every rule in
+the set running to a fixpoint together, so a candidate edit to rule B can only be scored by re-running the
+WHOLE set (base, unchanged frozen rules, and every other candidate edit under consideration) against every
+example, never by checking B in isolation. This is the same "no rule calls another, the only channel is the
+shared `World`" substrate `PRINCIPLES.md` already describes — nothing new is being asked of the runtime,
+only of the search that proposes edits to it.
+
+**The YAML surface is a literal, structural restatement of the closed catalog — no new expressiveness.**
+Every node in `circuits.py`'s catalog gets exactly one YAML shape, tagged by an explicit `op`/`shape` key
+(YAML has no dataclass-type tag of its own); a component or tag TYPE (`CardDef`, `Wants`, the `into` of a
+`ValueCircuit`) is written the same `module:ClassName` string `loopingrules/save.py` already resolves a
+component class from, per 2026-09-07's own instruction not to invent a second reference format:
+
+| catalog shape | YAML shape (sketch) |
+|---|---|
+| `Self(component, field)` | `{op: self, component: cards:CardDef, field: wanted}` |
+| `Via(base, fk, component, field)` | `{op: via, base: ..., fk_field: listing, component: cards:Listing, field: price}` |
+| `Const(value)` | `{op: const, value: 5}` |
+| `Le(a, b)` / `And(*terms)` | `{op: le, a: ..., b: ...}` / `{op: and, terms: [...]}` |
+| `TagCircuit(for_each, condition, tag)` | `{shape: tag, for_each: cards:CardDef, condition: {...}, tag: cards:Wanted}` |
+| `ValueCircuit(for_each, into, fields, condition, monotonic)` | `{shape: value, for_each: ..., into: ..., fields: [...], monotonic: false}` |
+| `ActionCircuit(require, without, condition, effects)` | `{shape: action, require: [...], effects: [{op: replace_at, at: ..., component: ..., fields: [...]}, {op: destroy}]}` |
+
+A rule entry also carries `name` (matching `loop.rule`'s own naming, `TODO.md`'s "a name must be unique
+now") and `frozen: false` by default. `Call`'s `tool` field stays a literal string, exactly as it is in
+Python — the loader changes WHO can type a spec, never what a spec can name; a tool the caller of
+`compile_circuit` did not register still fails at compile time, same as today. Building the loader AND a
+dumper together (dataclass tree → YAML, not just the reverse) is deliberate: the evolution search below
+needs to hand a rule author back a readable, diffable rule set, not just consume one.
+
+**The frozen contract.** `frozen: true` marks one rule INSTANCE in a set, not a type — a sibling idea to
+`@transient` marking a component CLASS disposable to `save.py`, but scoped to a value in a YAML file rather
+than a Python class, because "do not evolve this" is a fact about one author's rule, not about every rule
+of that shape everywhere. A frozen rule is never an add/modify/delete candidate; it fully PARTICIPATES in
+every replay of every example, unchanged, the same as any other rule in the set — freezing it exempts it
+from the search, not from running. If a frozen rule's own behavior already contradicts an example no matter
+what the unfrozen rules do, that is not the search's problem to paper over by mutating something else
+nearby; it is a distinct outcome, named below.
+
+**The search stays inside vocabulary this file already has, rather than inventing a fifth.** The catalog
+being closed is what keeps "add a rule," "edit a rule," and "delete a rule" enumerable moves rather than
+general program synthesis, the same argument `circuits.py`'s own docstring already makes for a single spec:
+an add is a new `TagCircuit`/`ValueCircuit`/`ActionCircuit` built from the same closed node set to a bounded
+depth; a modify is a structural edit to one unfrozen rule's tree (swap a comparison operator, change a
+`Const` literal, widen or narrow a `for_each` type, add or remove a `Not`) — an enumerable list of edits,
+not free-form rewriting; a delete removes one whole unfrozen rule. Commit reuses this file's own
+2026-09-07 verdicts rather than a new scoring scheme: a candidate SET that produces a wrong world on any
+single example is `ruled_out`, full stop — consistency is not a score to trade off, it is `PRINCIPLES.md`'s
+one non-negotiable ("a wrong conclusion is worse than a missing one") applied to a derived rule set instead
+of a derived fact. Among sets that survive every example, `ranked` by simplicity (fewest edits, smallest
+trees). Forced is exactly one simplest survivor; Ambiguous is a tie, refused rather than silently broken by
+picking the first; Unresolved is no survivor at all under the enumerated edit space with frozen rules held
+fixed — which is also the outcome that surfaces "the frozen rules themselves already disagree with an
+example," rather than that case being silently absorbed into a worse edit elsewhere. Every accumulated
+example is re-scored against `base` fresh each time a new example arrives, never patched incrementally onto
+the last derived set, the same "recompute fresh, never cache" discipline `PRINCIPLES.md` already states —
+otherwise the same two examples given in a different order could derive two different rule sets.
+
+**Non-goals, named rather than left to look like a gap nobody noticed.** No gradient or statistical fitting
+— this is discrete structural search over a small closed grammar, consistent with `PRINCIPLES.md`'s own
+non-goal ("not the kind of emergence that wants surprise... a genetic-search substrate instead" is a
+DIFFERENT tool, not this one dressed up). `Call`-bearing rules are out of scope for both mutation and fresh
+synthesis: a tool is trusted Python chosen by whoever installs the spec, not something an examples-driven
+search should get to introduce, and `Opaque`'s own refusal means the search cannot reason about what a
+`Call`-bearing rule touches when planning an edit around it anyway — it may appear in `base`, frozen or
+not, but the search treats it as opaque, never as a template to vary. No cross-example weighting: every
+example is an equally hard constraint, not a soft loss; "mostly right" is a different question than this
+design answers.
+
+⚠ Nothing here is implemented: no YAML loader/dumper, no edit enumeration, no scorer, no commit step. Still
+open:
+- What counts as "the same rule" across an edit, so the dumper's YAML diff shows one changed field rather
+  than a full rewrite of the entry.
+- How deep/wide the enumerable edit space for "modify" can go before it stops being tractable — needs a
+  bound picked against a real base set and real examples, not decided here in the abstract; starting with
+  edits scoped to shapes `base` already uses, rather than the full catalog, is the likely tractable default,
+  per this file's own "grow it only where it collides" discipline.
+- Whether Ambiguous should ever surface PARTIAL agreement across a tied set ("every tied candidate agrees on
+  rules A and C, disagrees only on B") rather than the whole tied set opaquely — the same open question this
+  file's own `ranked`/`ruled_out` section leaves open for the unrelated arbitration vocabulary, now asked
+  again here.
