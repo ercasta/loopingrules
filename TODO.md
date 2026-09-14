@@ -173,3 +173,29 @@ core"), named so they are not lost rather than scheduled.
   loader (see the `circuits.Call` bullet above) and the 2026-09-07
   "examples in, spec out" thread, generalized from one synthesized spec
   to a whole set.
+- **`loopingrules.memory` (`Focus`/`Memory`/`MemoryEntry`) overlaps with
+  `harneskills.examples.context`'s own `Turn`/`Topic` trail, and the two
+  are not reconciled.** Both track a trail to disambiguate a reference
+  later -- one by which ENTITY was attended to, one by which DOMAIN
+  resolved a turn, with no shared vocabulary or code between them.
+  Whether `context.py` should be rebuilt on `loopingrules.memory`
+  (losing its own confidence-decay-by-turn-count, which `memory.py` has
+  no equivalent of), or the two stay genuinely different tools for
+  different questions, is not decided by either one existing -- see
+  `loopingrules/memory.py`'s own docstring.
+- **`hear_it`-shaped rules (calling `loopingrules.memory.most_recent`/
+  `most_intense` from another module) are `Opaque` to `loopingrules.
+  analyze`, same as `compile_answerer`'s rule already is for a
+  different reason.** `analyze.py`'s "four named exceptions" (`reply`/
+  `propose`/`arbitrate`/`census`) could grow to five and six -- what
+  either helper reads is exactly what `memory.py`'s own docstring
+  promises never changes quietly, the same argument that justified the
+  first four -- but nothing forces it yet; `examples/deixis.py`'s
+  `hear_it` just runs ungated instead, correctly, at the cost of the
+  free optimization `look_at` gets from analyzing cleanly.
+- **`track_focus` only records a `MemoryEntry` on a GAIN of `Focus`,
+  never on `intensity` changing while `Focus` stays continuously
+  attached.** A domain that wants "the same entity, but attention grew"
+  in the trail has to detach-then-reattach `Focus` itself to get a new
+  entry -- named in `_FocusSeen`'s own docstring, not silently missed,
+  but nothing here decides whether that is the right default.

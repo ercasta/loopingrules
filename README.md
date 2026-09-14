@@ -20,6 +20,7 @@ loopingrules/
   save.py         the world as JSONL: entities are ints, components are values
   analyze.py      what a rule reads and writes, derived from its own AST
   circuits.py     a closed catalog of shapes a rule can be DATA in
+  memory.py       Focus/Memory/MemoryEntry: a trail deictic resolution reads
 tests/
   test_world.py        identity, values, and the intersection of the two
   test_loop.py         order, settling, the budget, a rule that raises
@@ -27,6 +28,7 @@ tests/
   test_save.py         the same world, ids and all, next time
   test_analyze.py      a rule's reads/writes, and where analysis refuses to guess
   test_circuits.py     the catalog, proven against real rules from two domains
+  test_memory.py       Focus/Memory/MemoryEntry, and a genuine regain vs a no-op reattach
 DECISION_PATTERNS.md   a design note this package no longer ships the code
                           for -- see History, "Facts/arbitration/request
                           removed"
@@ -225,6 +227,42 @@ Nothing here touches the actual `pystrider` checkout — see History,
 "a generic Part tag."
 
 ## History
+
+**`loopingrules.memory`: `Focus`/`Memory`/`MemoryEntry`, a trail of attention a rule can resolve deictic
+references against, proven with a worked `examples/deixis.py`, 2026-09-14.** A new, small module, not a
+change to an existing one: `Focus(intensity=None)` is a claim, attached/detached by a domain's own rules,
+that one entity is currently salient; `Memory()`, a singleton a domain spawns to opt in at all; `MemoryEntry
+(entity, intensity, seq)`, its own entity per genuine gain of `Focus`, never mutated or destroyed, so
+`w.each(MemoryEntry)` is always the whole history -- the same "the trail IS the point" idiom `harneskills.
+examples.context.Turn` already proved for conversation turns, restated here for focus instead. `track_focus`,
+the one rule, records a fresh entry only on a GENUINE gain (a detach-then-reattach, even to an identical
+value, is a second gain, not silently deduped) -- caught directly, not assumed, by a test that revisits the
+same entity with something else focused in between and checks the trail has two separate entries for it, not
+one. `trail`/`most_recent`/`most_intense` read it back; `most_intense` excludes any entry whose `intensity`
+was never given rather than treating a missing value as the lowest score, the same refuse-rather-than-guess
+`most_intense`'s own docstring names.
+
+`examples/deixis.py` is the worked proof this generalizes past a direct call to `track_focus`: `"look at
+<name>"` sets focus (one entity at a time), `"it"`/`"that"`/`"this"` resolves against `most_recent` -- and
+the one behavior that actually needs a TRAIL rather than a single "current topic" flag is pinned directly:
+`look at a`, `look at b`, `look at a` again, then `"it"`, resolves to the SECOND visit to `a`, not the first,
+because the trail has three entries (`a`, `b`, `a`) where a flag would only ever have had one. `hear_it`
+(the rule that calls `most_recent`) is honestly `Opaque` to `loopingrules.analyze` -- it calls an imported
+function, not a same-module helper, and `most_recent`/`most_intense` are not among `analyze.py`'s own "four
+named exceptions" (`reply`/`propose`/`arbitrate`/`census`) -- so it runs every tick, ungated, rather than
+only when `Said` exists; `look_at` and `track_focus` both analyze cleanly and keep their gate. Extending
+`analyze.py`'s exception list to cover `loopingrules.memory`'s own helpers is a real, separate decision, not
+made here.
+
+Deliberately not attempted: reconciling this with `harneskills.examples.context`'s own `Turn`/`Topic` trail,
+which already does a not-dissimilar job (tracking turns, not focused entities, to disambiguate `"the
+<qualifier> one"` by confidence decay) -- named as an open overlap in `loopingrules/memory.py`'s own
+docstring, not resolved by building either one, the same posture the `Call`/`ToolRequest` entry above already
+took for a different cross-repo question. Also not attempted: recording a new `MemoryEntry` when `intensity`
+changes while `Focus` stays continuously attached (a domain's own `w.replace`) -- `track_focus` only watches
+for a GAIN, not a change, named in `_FocusSeen`'s own docstring rather than silently missed.
+
+`315 -> 329` passing (`tests/test_memory.py`, 9 tests, new; `tests/test_examples_deixis.py`, 5 tests, new).
 
 **`Call` deposits a `ToolRequest` instead of invoking a tool in place, and `reads()`/`writes()` become
 sound for it as a result, 2026-09-14.** Built from `DECISION_PATTERNS.md`'s own 2026-09-13 entry, which
