@@ -467,9 +467,13 @@ domain, the same split `arbitrate`/`census` already draw for "what makes a good 
 so it flips the SAME flag. `Intake(text)` is the one entity per utterance every `Span`/`Interpretation` this
 entry's own components carry a reference to; `Active()`, attached to it by ANY participating rule (parsing
 OR judging) that did something this tick, consumed the moment `settle()` (the one countdown rule, LOW
-priority, installed last) sees it; `Countdown(remaining)`, seeded at `BASE=2` the first tick anything is
-`Active`, decremented by 1 every tick nothing is — `ready(w, intake)` is `remaining <= -1`, "two genuinely
-idle ticks passed," mechanically the same shape the entry's own author described in words. `mark_active(w,
+priority, installed last) sees it; `Countdown(remaining)`, reset to `BASE=1` the tick anything is `Active`,
+decremented by 1 every tick nothing is — `ready(w, intake)` is `remaining <= -1`, reached exactly two
+DECREMENTS after a reset (`1 -> 0`, not yet; `0 -> -1`, ready), "two genuinely idle ticks passed," mechanically
+the same shape the entry's own author described in words. Caught, and fixed, only while implementing this:
+an earlier version of this paragraph said `BASE=2`, which is three idle ticks from a reset to `-1`, not two —
+arithmetic this note got wrong stating it, corrected against the running code rather than left standing.
+`mark_active(w,
 intake)` is the one call a participating rule adds alongside whatever `Span`/`Interpretation` write it
 already makes — named for the verb, `propose`'s own shape.
 
@@ -515,9 +519,10 @@ exactly as domain-agnostic as "does every veto answer no" already is for `arbitr
   handful of tokens, a handful of readings); a domain with long utterances or many rival readings per span
   would need a real algorithm (dynamic programming over spans, the classical chart-parser's own answer) that
   this entry does not design. Worth revisiting once a real utterance is slow, not before.
-- **Whether `Countdown`'s `BASE=2` is a good default, a per-domain knob, or should live on `Intake` itself**
-  (one conversation's lines settle faster than another's) is not decided — `2` is the number the entry's own
-  author gave, kept as a literal constant until something needs it to vary.
+- **Whether `Countdown`'s `BASE=1` ("two genuinely idle ticks," see the arithmetic correction above) is a
+  good default, a per-domain knob, or should live on `Intake` itself** (one conversation's lines settle
+  faster than another's) is not decided — `1` is what "two ticks" the entry's own author described in words
+  actually requires, kept as a literal constant until something needs it to vary.
 - **Whether `harneskills.examples.fs`'s `propose_stale` swarm (`tokenize`/`mark_keyword`/`mark_number`/
   `after_threshold`/`located`) migrates onto this, replacing `AfterThreshold`/`Located` with `Interpretation`
   — co-attached `Span` plus each rule's own meaning component — and gets a real `select`-driven winner
@@ -528,3 +533,14 @@ exactly as domain-agnostic as "does every veto answer no" already is for `arbitr
   several live at once** (two conversations, two `World`s, or two utterances mid-processing in the same
   `World`) — untested against more than one `Intake` existing at a time until the worked example (or the
   `fs.py` migration) actually needs it.
+
+Found only while implementing, not anticipated by this design:
+- **`select`'s covering-set search has no notion of two interpretations CONFLICTING, only of them
+  coexisting.** Overlap is unconditionally free, so a non-negative-scored reading is never excluded from the
+  winning combination — two genuinely rival readings of the same span (`"stale after 3 days"` vs. `"stale
+  after 5 days"`) both win together unless a judge gives at least one a NEGATIVE score. Whether that is
+  simply a domain judge's own job (down-weight what it disfavors below zero) or a real gap `select` itself
+  should eventually close (some notion of "these two occupy the same slot, pick one") is not decided — see
+  `loopingrules/chart.py`'s own `_best_covering` docstring for where this is checked, not just asserted
+  (`tests/test_chart.py::test_overlapping_interpretations_may_both_win_if_the_combination_scores_highest`
+  pins the surprising case directly, rather than leaving it to be discovered by a real domain later).

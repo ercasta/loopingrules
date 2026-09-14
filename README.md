@@ -21,6 +21,7 @@ loopingrules/
   analyze.py      what a rule reads and writes, derived from its own AST
   circuits.py     a closed catalog of shapes a rule can be DATA in
   memory.py       Focus/Memory/MemoryEntry: a trail deictic resolution reads
+  chart.py        Span/Interpretation/Intake: a quiescence signal and a covering-set winner
 tests/
   test_world.py        identity, values, and the intersection of the two
   test_loop.py         order, settling, the budget, a rule that raises
@@ -29,6 +30,7 @@ tests/
   test_analyze.py      a rule's reads/writes, and where analysis refuses to guess
   test_circuits.py     the catalog, proven against real rules from two domains
   test_memory.py       Focus/Memory/MemoryEntry, and a genuine regain vs a no-op reattach
+  test_chart.py        two idle ticks, exactly, and a covering combination over rival scores
 DECISION_PATTERNS.md   a design note this package no longer ships the code
                           for -- see History, "Facts/arbitration/request
                           removed"
@@ -227,6 +229,35 @@ Nothing here touches the actual `pystrider` checkout — see History,
 "a generic Part tag."
 
 ## History
+
+**`loopingrules.chart`: `Span`/`Interpretation`/`Intake`, built from `DECISION_PATTERNS.md`'s 2026-09-14
+entry, 2026-09-14.** The mechanical half of that entry: a domain spawns `Intake(text, length)` per utterance,
+attaches `Span`/`Interpretation` (plus its own meaning component, `Proposal`'s own "marker plus whichever
+component would make it real" shape) as rules recognize and compose readings, and calls `mark_active(w,
+intake)` every time one of those rules does something -- the SAME flag whether the rule is composing or
+(once quiet) judging, the design entry's own "quiescence is ONE signal, not two" correction. `settle`, one
+rule, resets a `Countdown` to `1` the tick anything is `Active`, decrements it otherwise; `ready` is `remaining
+<= -1`. `select` picks the highest-total-score combination of an `Intake`'s own `Interpretation`s whose
+`Span`s union-cover every word (overlap allowed, `Ignorable` fills gaps without scoring), marking the winners
+`Definitive` -- the third verb the 2026-08-31 chart-parsing note left open, resolved.
+
+One real arithmetic bug caught only by writing the code, not by re-reading the prose: the entry as pushed
+said `Countdown` resets to `2`; running the numbers through `settle` shows that is THREE idle ticks from `-1`,
+not two (`2 -> 1 -> 0 -> -1`) -- `BASE_COUNTDOWN` is `1` (`1 -> 0 -> -1`, two decrements), and
+`DECISION_PATTERNS.md`'s own entry was corrected in place to match, named rather than quietly fixed. A second
+real consequence, not anticipated, surfaced the same way: because overlap is unconditionally free, a
+non-negative-scored reading is NEVER excluded from the winning combination, so two genuinely rival readings
+of the same span both win together unless a judge scores at least one negative -- `select` has no notion of
+two interpretations CONFLICTING, only of coexisting. Pinned directly (`tests/test_chart.py::
+test_overlapping_interpretations_may_both_win_if_the_combination_scores_highest`), not smoothed over, and
+left as a named, undecided gap in `DECISION_PATTERNS.md`.
+
+What this entry does NOT do, on purpose: migrate `harneskills.examples.fs`'s own `tokenize`/`mark_keyword`/
+`after_threshold`/`located` swarm onto it. That is real, separate work against a real, tested domain in a
+different repo -- this entry only builds and proves the generic mechanism a worked example inside
+`loopingrules` itself does not yet exist for either; `harneskills` is where it gets proven for real, next.
+
+329 -> 343 passing (`tests/test_chart.py`, 14 tests, new).
 
 **`loopingrules.memory`: `Focus`/`Memory`/`MemoryEntry`, a trail of attention a rule can resolve deictic
 references against, proven with a worked `examples/deixis.py`, 2026-09-14.** A new, small module, not a
