@@ -230,6 +230,25 @@ Nothing here touches the actual `pystrider` checkout — see History,
 
 ## History
 
+**`loopingrules.chart` proven against `harneskills`'s real `propose_stale`, not just a worked example,
+2026-09-14.** `harneskills/examples/fs.py`'s own token-composition swarm (`tokenize`/`mark_keyword`/
+`after_threshold`/`located`) is the domain `chart.py`'s own design entry was written against; this migrated
+`propose_stale` onto it for real, in `harneskills`, not here. The swarm stays unchanged; `compose_stale_
+reading` wraps whatever it composed into ONE whole-line `chart.Interpretation` (this domain has never had
+rival readings to actually score, so the migration proves the MECHANISM composes with an independently-
+authored domain, the same bar `Call` was held to against `examples/files.py`, not that this rule needed
+scoring); `arbitrate_parse` gets the one necessary exception to its own same-tick invariant, gated on `chart.
+ready`, and every OTHER line shape is untouched. A real, structural bug surfaced only by writing a test that
+checked TICK-BY-TICK state instead of trusting `loop.run()`'s settled end state: `flag_stale`'s own `without=
+Proposal` gate assumed `StaleHunt` never exists without `Proposal`, an invariant the original `propose_stale`
+upheld for free (one atomic `w.spawn`) that a naive two-layer split broke silently, letting `flag_stale`
+claim a reading before arbitration ever ran and skip the whole two-idle-tick wait -- while every EXISTING
+test kept passing regardless, since none of them checked WHEN resolution happened. Fixed with `PendingStale
+Hunt`, held until `propose_stale` attaches the real `StaleHunt`/`Proposal` together again. See `DECISION_
+PATTERNS.md`'s own "Left open" list, now struck through, and `harneskills`'s own commit ("fs.py: propose_
+stale migrated onto loopingrules.chart") for the full account -- `harneskills`'s own suite: `176 -> 183`
+passing.
+
 **`loopingrules.chart`: `Span`/`Interpretation`/`Intake`, built from `DECISION_PATTERNS.md`'s 2026-09-14
 entry, 2026-09-14.** The mechanical half of that entry: a domain spawns `Intake(text, length)` per utterance,
 attaches `Span`/`Interpretation` (plus its own meaning component, `Proposal`'s own "marker plus whichever

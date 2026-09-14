@@ -523,16 +523,23 @@ exactly as domain-agnostic as "does every veto answer no" already is for `arbitr
   good default, a per-domain knob, or should live on `Intake` itself** (one conversation's lines settle
   faster than another's) is not decided — `1` is what "two ticks" the entry's own author described in words
   actually requires, kept as a literal constant until something needs it to vary.
-- **Whether `harneskills.examples.fs`'s `propose_stale` swarm (`tokenize`/`mark_keyword`/`mark_number`/
-  `after_threshold`/`located`) migrates onto this, replacing `AfterThreshold`/`Located` with `Interpretation`
-  — co-attached `Span` plus each rule's own meaning component — and gets a real `select`-driven winner
-  instead of `propose_stale` reading `AfterThreshold`/`Located` by hand, is the whole point of designing this
-  in `loopingrules` rather than `harneskills` directly, but is a SEPARATE, larger piece of work from this
-  entry: it touches `harneskills`'s real, tested domain, not just a new module and a worked example.
+- ~~Whether `harneskills.examples.fs`'s `propose_stale` swarm migrates onto this.~~ Done (2026-09-14,
+  `harneskills` commit "fs.py: propose_stale migrated onto loopingrules.chart"): `compose_stale_reading`
+  wraps `AfterThreshold`/`Located` into ONE whole-line `Interpretation` (this domain never had rival readings
+  to actually score — the migration proved the MECHANISM composes with a real domain, the same bar `Call`
+  was held to against `examples/files.py`, not that this rule needed scoring). Surfaced a real, structural
+  bug in the process, not anticipated here: `fs.flag_stale`'s `without=Proposal` gate assumed `StaleHunt`
+  never exists without `Proposal`, an invariant the ORIGINAL `propose_stale` upheld for free by spawning both
+  atomically — a naively two-layered version broke that silently, letting `flag_stale` claim a reading before
+  arbitration ever ran, skipping the whole two-idle-tick wait while every EXISTING test kept passing anyway
+  (none checked WHEN resolution happened, only what it eventually produced). Caught only by a test that
+  checked tick-by-tick state rather than trusting `loop.run()`'s settled end state — see `harneskills`'s own
+  `PendingStaleHunt` for the fix, and `tests/test_fs_chart.py::
+  test_compose_stale_reading_never_spawns_a_real_stalehunt` for where it is pinned.
 - **`Interpretation.utterance`, a plain id, is how a reading is scoped to one `Intake` among possibly
   several live at once** (two conversations, two `World`s, or two utterances mid-processing in the same
-  `World`) — untested against more than one `Intake` existing at a time until the worked example (or the
-  `fs.py` migration) actually needs it.
+  `World`) — proven against exactly one live `Intake` at a time by both the worked example and the `fs.py`
+  migration; still untested with two or more genuinely concurrent.
 
 Found only while implementing, not anticipated by this design:
 - **`select`'s covering-set search has no notion of two interpretations CONFLICTING, only of them
