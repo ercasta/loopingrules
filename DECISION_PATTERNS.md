@@ -429,3 +429,102 @@ components exist, no answerer-generating machinery exists. Still open:
 - How `confirm=True` itself resolves an outstanding request — whether it is itself another `ask`/`answer`
   hop (a `ConfirmRequest` a human or a rule answers) or something else entirely; this entry names WHERE the
   chokepoint is, not HOW a pending confirmation gets from "asked" to "answered."
+
+## 2026-09-14 — designed, not built: judges, closing "Not built: chart parsing" above
+
+The 2026-08-31 note above ("in parsing, nothing 'wins'; interpretations fade out") left two things
+unresolved: whether composing a whole interpretation out of smaller ones needs a third verb, and separately
+— the harder half — what tells a domain the CHART has stopped changing and it is safe to pick a winner at
+all. `harneskills.examples.fs`'s own `tokenize`/`mark_keyword`/`mark_number`/`after_threshold`/`located`
+swarm (built since that note, migrated under exactly one of five `propose_*` rules so far) is real evidence
+this shape is needed for real, not a hypothetical: `AfterThreshold`/`Located` are already "the winner is a
+whole interpretation, composed from adjacent `Token`s," by hand, with no generic `Span`, no score, no
+notion of "has this line stopped producing new readings," and no check that a winning reading covers the
+WHOLE line rather than just the part one rule happened to recognize.
+
+**Grounding, checked before designing against it, not remembered:** `pystrider/spans.py`'s `Span(start,
+end)` is the one proven precedent for a plain span primitive (line numbers there, word-token indices here).
+`world.py`'s private `_Ripe` (`world.py:301-307`) already does "survived one full tick" for `arbitrate`/
+`census`, but is single-tick, single-occasion, and not exported — too narrow to reuse directly. `context.py`'s
+`record_intake`/`hear_qualified` already use `priority=` to guarantee same-tick ordering across independent
+rules, and `harneskills`'s own `_Recorded`/`loopingrules.memory`'s own `_FocusSeen` are the exact "mark it
+seen, clear the mark the moment the thing that earned it is gone" idiom this entry's own quiescence
+bookkeeping reuses rather than invents a fourth time.
+
+### The shape: `loopingrules/chart.py`, a fourth vocabulary alongside `Proposal`/`request`/`Call`
+
+**`Span(start, end)`** — inclusive 0-based word-token indices, a plain fact some rule observed (one token)
+or derived by composing smaller `Span`s (`AfterThreshold`'s own two-token span, restated). **`Interpretation
+(utterance, score=0.0)`** — attached ALONGSIDE `Span` on the SAME fresh entity, the domain's own meaning
+riding as a separate component next to it (`AfterThreshold`, `Located`, ...) — exactly `Proposal`'s own
+"a marker plus whichever component would make it real" shape, restated for a span instead of an occasion.
+`score` is the one field a JUDGE may later `replace` — what makes a good interpretation is left to the
+domain, the same split `arbitrate`/`census` already draw for "what makes a good candidate."
+
+**Quiescence is ONE signal, not two.** A first draft of this entry gated "stop composing, start judging" and
+"stop judging, start selecting" as two separate countdowns — wrong: a domain-authored judge rule that
+`replace`s a score IS a participating rule by the same test a `tokenize`/`after_threshold` rule already is,
+so it flips the SAME flag. `Intake(text)` is the one entity per utterance every `Span`/`Interpretation` this
+entry's own components carry a reference to; `Active()`, attached to it by ANY participating rule (parsing
+OR judging) that did something this tick, consumed the moment `settle()` (the one countdown rule, LOW
+priority, installed last) sees it; `Countdown(remaining)`, seeded at `BASE=2` the first tick anything is
+`Active`, decremented by 1 every tick nothing is — `ready(w, intake)` is `remaining <= -1`, "two genuinely
+idle ticks passed," mechanically the same shape the entry's own author described in words. `mark_active(w,
+intake)` is the one call a participating rule adds alongside whatever `Span`/`Interpretation` write it
+already makes — named for the verb, `propose`'s own shape.
+
+`settle()`'s own read phase (both queries — who is `Active`, who is not — issued BEFORE either write)
+matters the same way `ActionCircuit`'s read-then-write phase does: writing `Countdown` during the first loop
+must not change which entities the second loop's `w.each(Intake, without=Active)` matches, or an intake
+freshly marked active this tick would ALSO get decremented in the same call. Named here because it is the
+one place this design is easy to get wrong silently, not because it is subtle to state correctly once seen.
+
+**`select(w)`, the third verb `arbitrate`/`census` never needed:** the generic step, gated on `ready` and
+"not yet resolved" (so it never re-fires once it has), that reads every `Interpretation` an `Intake` carries
+and picks the highest-total-score COMBINATION whose `Span`s' union covers every word index of the utterance
+— overlap permitted, no tiling requirement — marking every member of the winning combination `Definitive
+()`. A word covered only by an `Ignorable()`-marked interpretation (a domain's own rule, for filler words —
+"please", "um" — co-attached the same way `AfterThreshold` is) still counts toward coverage; `Ignorable`
+members win or lose as part of the SAME combination as everything else, carrying no score of their own, not
+specially exempted downstream. No combination covers the whole utterance -> no `Definitive` at all for that
+`Intake` — said by whatever downstream rule reads absence, never guessed at. `select` does NOT call `mark_
+active` itself: its own write is the terminal act, not a "keep going" signal, so it does not re-open a
+window it just closed.
+
+**Isolating tentative interpretations is the gate the entry's own author proposed, unmodified:** every rule
+downstream of judging keys on `Interpretation` PLUS `Definitive`, never bare `Interpretation` — the same
+`without=NeedsApproval` shape `do_rename` already uses, renamed rather than reinvented. Composing rules
+(`after_threshold`/`located`-shaped) key on raw `Span`/`Interpretation` and must NOT see `Definitive` at all,
+or a tentative reading could compose further after judging has already closed the window on it.
+
+### What is genuinely new here, restated plainly
+
+`select` is the third verb the 2026-08-31 note speculated about, resolved: not `compose` (nothing here
+builds a BIGGER interpretation out of smaller ones automatically — domain rules like `after_threshold`
+still do that composing by hand, the same as today), but a covering-SET winner search over an already-built
+chart, the "falls out of `census` plus a domain-authored rule" branch that note itself named as the version
+to try first — except the covering-set search is generic enough to live in `loopingrules.chart` itself, not
+left to each domain to reinvent, because "does this combination's spans cover the whole utterance" is
+exactly as domain-agnostic as "does every veto answer no" already is for `arbitrate`.
+
+### Left open, named rather than guessed at — blocks implementing, not designing
+
+- **The covering-set search is a real, unaddressed complexity question.** As designed, `select` searches
+  subsets of one `Intake`'s own `Interpretation`s for the best-covering combination — exponential in the
+  number of candidate interpretations in the worst case. Fine at the scale `fs.py`'s own lines run at (a
+  handful of tokens, a handful of readings); a domain with long utterances or many rival readings per span
+  would need a real algorithm (dynamic programming over spans, the classical chart-parser's own answer) that
+  this entry does not design. Worth revisiting once a real utterance is slow, not before.
+- **Whether `Countdown`'s `BASE=2` is a good default, a per-domain knob, or should live on `Intake` itself**
+  (one conversation's lines settle faster than another's) is not decided — `2` is the number the entry's own
+  author gave, kept as a literal constant until something needs it to vary.
+- **Whether `harneskills.examples.fs`'s `propose_stale` swarm (`tokenize`/`mark_keyword`/`mark_number`/
+  `after_threshold`/`located`) migrates onto this, replacing `AfterThreshold`/`Located` with `Interpretation`
+  — co-attached `Span` plus each rule's own meaning component — and gets a real `select`-driven winner
+  instead of `propose_stale` reading `AfterThreshold`/`Located` by hand, is the whole point of designing this
+  in `loopingrules` rather than `harneskills` directly, but is a SEPARATE, larger piece of work from this
+  entry: it touches `harneskills`'s real, tested domain, not just a new module and a worked example.
+- **`Interpretation.utterance`, a plain id, is how a reading is scoped to one `Intake` among possibly
+  several live at once** (two conversations, two `World`s, or two utterances mid-processing in the same
+  `World`) — untested against more than one `Intake` existing at a time until the worked example (or the
+  `fs.py` migration) actually needs it.
