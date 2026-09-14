@@ -347,3 +347,85 @@ open:
   rules A and C, disagrees only on B") rather than the whole tied set opaquely — the same open question this
   file's own `ranked`/`ruled_out` section leaves open for the unrelated arbitration vocabulary, now asked
   again here.
+
+## 2026-09-13 — designed, not built: `Call` deposits a request instead of invoking a tool in place
+
+`circuits.py`'s `ActionCircuit` commits its effects inside one atomic write phase — "refuse the WHOLE
+action, not half of it" is the module's own comment at both `MISSING` checks in that phase (`circuits.py:988`,
+`:992`) — and `Call` sits inside that same phase today, called synchronously: `tools[effect.tool](w, *values)`
+(`circuits.py:1002`), the tool running to completion, in place, before the tick that fired it ends. That is
+exactly right for a tool whose answer is knowable the same tick it is asked (`fs_tools.stat`, a disk read).
+It stops being right the moment a tool's real answer can only come later — a `rename` that first needs a
+human or another rule to confirm it. The only way to keep `ActionCircuit`'s atomic contract under THAT
+tool is to build resumption machinery inside `circuits.py` itself: call it, discover nothing usable came
+back, refire the same action next tick, and now invent some way to tell "already asked, still waiting" from
+"never asked" so the refire does not ask twice. `circuits.py` has no such machinery and was never meant to —
+its own docstring's `Call` section (`circuits.py:698-717`) only ever described same-tick tools.
+
+**The fix is not a new pattern — it is the one this file already names as proven.** `pystrider/repair.py`'s
+`ask`/`answer`/`checked` (`Already proven`, above) does exactly this, concretely: `ask` (`repair.py:247`)
+attaches `Evaluate(case)` to the subject; `answer` (`repair.py:262`) reads every `Evaluate`, and DEPOSITS
+either `Evaluated(case, value)` or `CouldNotEvaluate(case, refused)` back onto the same subject — never
+silence, never a bare failure to attach anything; `checked` (`repair.py:283`) reads `Evaluated` back and
+concludes. None of the three call each other; the loop's "run everyone, every tick, until nothing changes"
+IS the dispatch. Mapped onto `Call`:
+
+- **ask** — an ordinary `Spawn`, not a new effect: `Spawn(ToolRequest, (tool, *args))` puts a fresh entity
+  carrying `ToolRequest(tool: str, args: tuple)` into the `World` — plain data, exactly as constrained as
+  `Call`'s own `tool`/`args` are today, so this is a completely ordinary, soundly-analyzable write. No code
+  runs when a rule deposits one.
+- **answer** — a rule the COMPILING CALLER installs (the same party that supplies `tools=` today), watching
+  `w.each(ToolRequest, without=(ToolResult, Rejected))`. This is the one and only place `tools[tool](w,
+  *args)` is ever actually called — still name-checked, still plain-data-in, still trusted Python, but now
+  an ordinary loop rule running in its own tick, not code wedged into `ActionCircuit`'s write phase.
+- **the result is deposited, not returned** — the same rule attaches `ToolResult(...)` onto the request
+  entity, or, matching `repair.answer`'s own "deposit the refusal, never stay silent" discipline, a named
+  `Rejected`/`Failed` instead.
+- **checked** — a downstream rule simply does not match yet, because `ToolResult` is not there. Nothing to
+  build for "waiting": the fixpoint does it, the same way this file's own "Settled, by deletion" entry
+  already argues `needs` requires no code at all.
+
+**Why this is strictly better than resumption machinery, not just a style preference.** `ActionCircuit`'s
+atomicity constraint never bites under this shape, because depositing a request no longer stands in for the
+tool's answer — it IS the whole action, and it commits cleanly in one tick like any other `Spawn`. There is
+no "call it, see nothing happened, refire" logic to invent inside `circuits.py` at all; `answer` and
+`checked` are ordinary rules OUTSIDE the closed catalog, which is exactly where open-ended waiting already
+belongs per this file's own vocabulary.
+
+**Approval (`rename`'s confirmation) falls out of this for free, and more uniformly than a hand-rolled
+check would.** The answerer is the one chokepoint every `ToolRequest` passes through no matter who deposited
+it — a human-typed command and an automation's own proposal are both, by the time the answerer sees them,
+just an entity carrying `ToolRequest("rename", ...)`. Marking `rename` `confirm=True` in the answerer's own
+tool table gets every request for it asked, unconditionally, without any proposer having to remember to tag
+itself as needing confirmation.
+
+**A consequence worth flagging here, not decided by this entry.** `Call`'s own special-cased `Opaque` in
+`reads()`/`writes()` (`circuits.py:1080-1091`) exists ONLY because invoking `tools[tool]` used to happen
+inside the analyzable catalog itself. Once `Call` is "spawn a `ToolRequest`," that effect is a `Spawn` of
+plain data like any other and is soundly analyzable again — the opacity does not disappear, it MOVES to the
+answerer rule, which lives outside `circuits.py`'s catalog and is already covered by `loopingrules.analyze`'s
+own `Opaque`, exactly the distinction this file's "Already proven" section already draws between the two
+(a closed catalog that knows where its own knowledge ends, versus an AST walk that cannot resolve an
+indirection). So `circuits.py` can drop its own `_refuse_calls`/`Opaque` special case for `Call` entirely —
+the generic `analyze.py` `Opaque`, applied to the hand-written answerer rule, already does the job. This is
+a real change to `circuits.py`'s contract, and — separately — to `harneskills`'s rename path, which does not
+go through `Call` at all today; adopting this there is a decision for whoever owns that path, not implied by
+writing it down here.
+
+⚠ Nothing here is implemented: `Call` is unchanged in `circuits.py`, no `ToolRequest`/`ToolResult`/`Rejected`
+components exist, no answerer-generating machinery exists. Still open:
+- Whether `Call` survives as a node authors still write (compiled, under the hood, into `Spawn(ToolRequest,
+  ...)`) or is retired outright in favor of authors writing that `Spawn` directly — "an ordinary `Spawn`, not
+  a new kind of effect" argues for the latter, but nothing here decides it.
+- Whether `compile_circuit`'s existing `tools=` parameter keeps meaning what it means today (a lookup table
+  `Call` dispatches through inline) or becomes the table an AUTO-GENERATED answerer rule is built from, so
+  every caller that already passes `tools=` gets ask/answer/checked for free rather than having to hand-write
+  an answerer.
+- Whether `ToolRequest`/`ToolResult`/`Rejected` are permanent, like `repair.py`'s `Evaluate`/`Evaluated`
+  (kept as a durable record even once answered, `attach`ed rather than `replace`d), or consumed/destroyed
+  once read — `repair.py` picks the former for exactly the reason its own module note gives (evidence a
+  repair worked should not be erasable), and nothing here has checked whether `Call`'s occasions want the
+  same permanence or would rather not accumulate.
+- How `confirm=True` itself resolves an outstanding request — whether it is itself another `ask`/`answer`
+  hop (a `ConfirmRequest` a human or a rule answers) or something else entirely; this entry names WHERE the
+  chokepoint is, not HOW a pending confirmation gets from "asked" to "answered."
