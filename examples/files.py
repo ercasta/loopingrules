@@ -30,14 +30,19 @@ proving; this module is the worked example, not the argument.
 
 `do_stat_spec` never mentions the Python function `stat` at all -- only
 the STRING `"stat"`. `install()`, below, is the only place the string
-and the real, trusted callable ever meet:
-`compile_circuit(do_stat_spec, tools={"stat": stat})`. A spec naming
-any other tool -- or compiled with no registry at all -- fails at THAT
-call, before ever touching a `World`; `tests/test_examples_files.py`
-pins exactly this. An untrusted spec author (a person, or an LLM
-generating `do_stat_spec`-shaped data) can choose to request a stat, and
-of which entry -- never choose to run arbitrary code, and never reach
-any capability `install()` did not already choose to register.
+and the real, trusted callable ever meet: once, in the one `tools`
+dict passed to BOTH `compile_circuit(do_stat_spec, tools=tools)` (which
+only ever checks the name is registered, eagerly, and never calls
+`stat` itself any more -- see `loopingrules.circuits`'s own docstring,
+"`Call`: a request, deposited, not a tool invoked in place") and
+`compile_answerer(tools)` (the rule that actually does). A spec naming
+any other tool -- or compiled with no registry at all -- fails at
+`compile_circuit`'s own call, before ever touching a `World`; `tests/
+test_examples_files.py` pins exactly this. An untrusted spec author (a
+person, or an LLM generating `do_stat_spec`-shaped data) can choose to
+request a stat, and of which entry -- never choose to run arbitrary
+code, and never reach any capability `install()` did not already
+choose to register.
 """
 
 from __future__ import annotations
@@ -122,19 +127,26 @@ do_stat_spec = circuits.ActionCircuit(
         circuits.Destroy(),
     ),
 )
-"""Claim a `StatRequest`, `Call` the registered `"stat"` tool with the
-entry it names, destroy the request -- the same "claim a fact, destroy
-it" idiom `loopingrules.circuits`'s three `reply_*` restatements
-already use, whether the stat itself succeeded or not: a failed stat
-is a fact too (`Failed`, spawned by the tool), not a reason to leave
-the request standing for something to retry blindly."""
+"""Claim a `StatRequest`, deposit a `ToolRequest("stat", (entry,))` (`Call`
+-- the actual `stat` call happens later, on whichever tick `do_stat_
+answers` sees it, not this one), destroy the `StatRequest` -- the same
+"claim a fact, destroy it" idiom `loopingrules.circuits`'s three
+`reply_*` restatements already use. Destroying the request does not
+wait for the stat to run: nothing downstream needs `StatRequest`
+itself standing once it is claimed, whether the stat that eventually
+runs succeeds or not -- a failed stat is a fact too (`Failed`, spawned
+by the tool), not a reason to leave anything standing for something to
+retry blindly."""
 
 
 def install(loop) -> None:
-    """Register `do_stat_spec`, compiled with the one real tool this
-    module trusts. This is the ONLY line in this module that ever
-    imports the string `"stat"` and the function `stat` into the same
-    scope -- see the module docstring, "The trust boundary this
-    actually draws.\""""
-    loop.rule(circuits.compile_circuit(do_stat_spec, tools={"stat": stat}),
-              name="do_stat")
+    """Register `do_stat_spec`, compiled against the one real tool this
+    module trusts, plus the answerer that is the only place `"stat"`
+    and the function `stat` ever actually meet -- see the module
+    docstring, "The trust boundary this actually draws," and
+    `loopingrules.circuits`'s own docstring, "`Call`: a request,
+    deposited, not a tool invoked in place." `do_stat` only ever spawns
+    a `ToolRequest`; `do_stat_answers` is the rule that runs `stat`."""
+    tools = {"stat": stat}
+    loop.rule(circuits.compile_circuit(do_stat_spec, tools=tools), name="do_stat")
+    loop.rule(circuits.compile_answerer(tools), name="do_stat_answers")

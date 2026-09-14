@@ -138,17 +138,31 @@ core"), named so they are not lost rather than scheduled.
   discussed and deliberately deferred -- see `README.md`'s History,
   the entry that added `Call` -- until a real authoring workflow needs
   one, the same "grow it only at the rule that actually collides"
-  discipline `DECISION_PATTERNS.md` already states.
-- **`reads()`/`writes()` raising `Opaque` for any `Call`-bearing spec is
-  correct but coarse.** A tool that only ever touches one or two known
-  component types (`stat` only ever touches `Size`/`Modified`/`Failed`)
-  gets the same total refusal as one that could touch anything --
-  `circuits.py` has no way for a tool's REGISTRATION to declare what it
-  reads/writes the way `loopingrules.analyze` derives a hand-written
-  rule's reads (and `Loop.rule` gates it on them) automatically. Worth
-  doing only once something
-  downstream actually wants a non-`Opaque` answer for a `Call`-bearing
-  spec -- `component_map()`-style tooling, say -- nothing does yet.
+  discipline `DECISION_PATTERNS.md` already states. ~~`Call` invokes
+  the tool in place, inside `ActionCircuit`'s own atomic write phase.~~
+  Done (2026-09-14) -- `Call` now spawns a `ToolRequest`, and a new
+  `compile_answerer(tools)` is the one rule that actually calls
+  `tools[tool](w, *args)`, on whichever later tick sees the request;
+  see `README.md`'s History, the entry that built
+  `DECISION_PATTERNS.md`'s 2026-09-13 design. Still open from THAT
+  entry: whether `compile_answerer` should be auto-installed by
+  `compile_circuit` itself (every caller that passes `tools=` hand-
+  writes its own `loop.rule(circuits.compile_answerer(tools))` today,
+  `examples/files.py::install` the only example) rather than a second
+  call a caller could forget; and `confirm=True`/approval, entirely
+  unbuilt -- `Rejected` exists for a tool that is unregistered or
+  raises, not for one that is waiting on a human to say yes.
+- **`reads()`/`writes()` no longer raise `Opaque` for a `Call`-bearing
+  spec -- the opacity moved to `compile_answerer`'s own rule, and
+  IT is coarse the same way `circuits.py` used to be.** A tool that
+  only ever touches one or two known component types (`stat` only ever
+  touches `Size`/`Modified`/`Failed`) gets the same total `analyze.
+  Opaque` refusal, from `loopingrules.analyze`, as one that could touch
+  anything -- neither `circuits.py` nor `analyze.py` has a way for a
+  tool's REGISTRATION to declare what it reads/writes. Worth doing only
+  once something downstream actually wants a non-`Opaque` answer for
+  the answerer rule -- `component_map()`-style tooling, say -- nothing
+  does yet.
 - **A YAML surface plus an examples-driven evolution search over a base
   rule set, with author-frozen rules held fixed.** Designed, not built --
   see `DECISION_PATTERNS.md`'s 2026-09-10 entry for the YAML mapping onto

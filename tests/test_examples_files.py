@@ -1,17 +1,20 @@
 """`examples.files` -- `loopingrules.circuits.Call`, proven against real
-disk I/O rather than a synthetic stand-in tool. Three things pinned:
-the tool actually runs and its conclusion (`Size`/`Modified`, or
-`Failed`) lands in the `World`; the compile-time registry is a hard
-gate, not a convention (a spec naming an unregistered tool fails
-loudly, before any `World` is touched); and a tool only ever receives
-plain data, never a live `Entity` -- checked directly, not assumed,
-with a tool that would fail its own assertion if handed one.
+disk I/O rather than a synthetic stand-in tool. Four things pinned:
+the tool actually runs (via the deposited `ToolRequest`/`ToolResult`,
+not in place) and its conclusion (`Size`/`Modified`, or `Failed`) lands
+in the `World`; the compile-time registry is a hard gate, not a
+convention (a spec naming an unregistered tool fails loudly, before any
+`World` is touched); a tool only ever receives plain data, never a live
+`Entity` -- checked directly, not assumed, with a tool that would fail
+its own assertion if handed one; and `reads()`/`writes()` are sound for
+`Call` itself now, with the opacity moved to `compile_answerer`'s own
+rule.
 """
 
 import pytest
 
 from examples import files
-from loopingrules import circuits
+from loopingrules import analyze, circuits
 from loopingrules.loop import Loop
 
 
@@ -79,16 +82,61 @@ def test_call_hands_the_tool_a_plain_int_never_a_live_entity(tmp_path):
     w = lp.world
     entry = w.spawn(files.Entry(str(tmp_path / "irrelevant.txt")))
     w.spawn(files.StatRequest(entry.id))
-    lp.rule(circuits.compile_circuit(files.do_stat_spec, tools={"stat": spy}))
+    tools = {"stat": spy}
+    lp.rule(circuits.compile_circuit(files.do_stat_spec, tools=tools))
+    lp.rule(circuits.compile_answerer(tools))
     lp.run()
     assert received == [entry.id]
 
 
-def test_reads_raises_opaque_naming_the_tool():
-    with pytest.raises(circuits.Opaque, match="stat"):
-        circuits.reads(files.do_stat_spec)
+def test_call_deposits_a_toolrequest_instead_of_running_the_tool_in_place():
+    """`Call` spawns a `ToolRequest` in the SAME tick, not a `stat`
+    call -- the tool only runs once `compile_answerer`'s own rule (not
+    installed here) sees it, so the request stands, unanswered,
+    forever."""
+    lp = Loop()
+    w = lp.world
+    entry = w.spawn(files.Entry("irrelevant.txt"))
+    w.spawn(files.StatRequest(entry.id))
+    lp.rule(circuits.compile_circuit(files.do_stat_spec, tools={"stat": files.stat}))
+    lp.run()
+    request = w.first(circuits.ToolRequest)
+    assert request is not None
+    assert request[1] == circuits.ToolRequest("stat", (entry.id,))
+    assert w.get(entry, files.Size) is None    # stat never ran: no answerer installed
 
 
-def test_writes_raises_opaque_naming_the_tool():
-    with pytest.raises(circuits.Opaque, match="stat"):
-        circuits.writes(files.do_stat_spec)
+def test_compile_answerer_deposits_rejected_when_the_tool_raises():
+    def boom(w, entry_id):
+        raise ValueError("disk on fire")
+
+    lp = Loop()
+    w = lp.world
+    entry = w.spawn(files.Entry("irrelevant.txt"))
+    w.spawn(files.StatRequest(entry.id))
+    tools = {"stat": boom}
+    lp.rule(circuits.compile_circuit(files.do_stat_spec, tools=tools))
+    lp.rule(circuits.compile_answerer(tools))
+    lp.run()
+    request = w.first(circuits.ToolRequest)
+    assert request is not None
+    rejected = w.get(request[0], circuits.Rejected)
+    assert rejected is not None
+    assert "disk on fire" in rejected.reason
+
+
+def test_reads_is_sound_for_a_call_effect_naming_what_its_args_read():
+    assert circuits.reads(files.do_stat_spec) == {files.StatRequest}
+
+
+def test_writes_includes_toolrequest_for_a_call_effect():
+    assert circuits.writes(files.do_stat_spec) == {circuits.ToolRequest}
+
+
+def test_the_answerer_rule_is_where_the_opacity_now_lives():
+    """The claim `loopingrules.circuits`'s own docstring makes -- opacity
+    MOVES to `compile_answerer`'s rule, it does not disappear -- checked
+    against `loopingrules.analyze`, the module that already refuses to
+    guess about a dynamic dispatch it cannot resolve."""
+    with pytest.raises(analyze.Opaque):
+        analyze.analyze(circuits.compile_answerer({"stat": files.stat}))

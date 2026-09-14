@@ -226,6 +226,45 @@ Nothing here touches the actual `pystrider` checkout — see History,
 
 ## History
 
+**`Call` deposits a `ToolRequest` instead of invoking a tool in place, and `reads()`/`writes()` become
+sound for it as a result, 2026-09-14.** Built from `DECISION_PATTERNS.md`'s own 2026-09-13 entry, which
+named the problem `Call`'s original, synchronous `tools[tool](w, *values)` had: it ran to completion inside
+`ActionCircuit`'s atomic write phase, which was only ever right for a tool whose answer is knowable the same
+tick it is asked, and had no way to represent one that isn't (a `rename` needing confirmation) without
+resumption machinery nobody wanted to build. The design that entry landed on -- `pystrider/repair.py`'s
+`ask`/`answer`/`checked` restated for tools -- is now what runs: `Call`'s write phase spawns a `ToolRequest
+(tool, args)`, plain data, and a new `compile_answerer(tools)` builds the one rule that ever actually calls
+`tools[tool](w, *args)`, watching for a `ToolRequest` still lacking a `ToolResult`/`Rejected` and depositing
+one or the other -- never silence, `repair.answer`'s own discipline for `CouldNotEvaluate`. Depositing a
+request no longer stands in for the tool's answer; it commits in one tick like any other `Spawn`, and
+`ActionCircuit`'s atomicity stops being a problem for a `Call` effect at all.
+
+The consequence the design entry flagged, not decided, turned out to be real once built: `reads()`/`writes()`
+no longer raise `Opaque` for a `Call` effect -- `ToolRequest` is an ordinary write and `args` are ordinary
+reads, exactly as sound as any other effect. `circuits.Opaque` itself is gone; nothing in this module raises
+it any more. The opacity did not disappear, it moved to `compile_answerer`'s own rule, which lives outside
+this module's closed catalog and is `loopingrules.analyze.Opaque` territory now -- checked directly (`tests/
+test_examples_files.py::test_the_answerer_rule_is_where_the_opacity_now_lives`), not just asserted. `examples.
+files.install()` now registers two rules where it registered one (`do_stat`, unchanged in shape, plus `do_
+stat_answers`), and the tool itself runs one rule-call later than it used to -- invisible to `lp.run()`'s own
+fixpoint (still settles), but a real change for anyone reading a trace by tick number.
+
+Left alone on purpose, the same three items the design entry named as blocking nothing it had to decide:
+whether `Call` survives as a node authors write versus being retired in favor of authoring the `Spawn`
+directly (kept, here, as sugar -- retiring it would have broken `examples/files.py`'s existing spec for no
+new capability); whether `ToolRequest`/`ToolResult`/`Rejected` are permanent records or consumed once read
+(kept permanent, `attach`ed, the same call `repair.py` made for `Evaluated` and for the same reason -- a
+tool's own conclusion should not need to survive being erasable evidence that it ran); and `confirm=True`'s
+approval mechanism, entirely unbuilt -- `Rejected` exists now (a tool that was never registered, or that
+raised, deposits it instead of `ToolResult`, caught PER REQUEST so one bad request cannot spam the same
+exception every tick or starve every other request sharing the answerer), but nothing here resolves an
+outstanding request that is waiting on a human, which is a different, still-open question.
+
+Evidence: `312 -> 315` passing (`tests/test_examples_files.py` grew from 7 to 10 tests -- the two `Opaque`-on-
+`Call` tests rewritten into `reads()`/`writes()`'s new soundness, since that claim is no longer true, plus
+three added: the deposit itself, `Rejected` on a raising tool, and the opacity's move to the answerer), full
+suite green.
+
 **No more hand-written `watches=` -- `Loop.rule` derives a rule's
 dormancy gate from `analyze()` itself, and a real soundness gap in that
 derivation was caught by the existing suite, not designed around in

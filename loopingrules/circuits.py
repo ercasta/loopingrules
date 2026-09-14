@@ -202,7 +202,7 @@ BY CONSTRUCTION, not merely checked after the fact -- see
 `tests/test_circuits.py`'s own cross-check against
 `loopingrules.analyze.analyze()` run on the hand-written original.
 
-## `Call`: the one way a spec reaches outside the World, by name only
+## `Call`: a request, deposited, not a tool invoked in place
 
 Every effect above only ever writes to the `World` -- which is exactly
 what makes a spec SAFE to author without trusting the author with
@@ -213,27 +213,49 @@ different motivation than the rest of this catalog (see `README.md`'s
 History, "circuits.py: a closed shape catalog" for the ORIGINAL
 motivation -- future learnability -- and the entry that added `Call`
 for why safety is a second, independent reason the same closure pays
-for): `tool` is a literal string, resolved against a `tools={name:
+for): `tool` is a literal string, checked against a `tools={name:
 callable}` registry the CALLER of `compile_circuit` supplies -- never
 a callable the spec itself carries, and never resolved by importing
-anything the spec names. `args` are ordinary expressions, evaluated
-missing-safe in the same read phase every other effect's fields are,
-so a tool only ever receives plain data (`int`/`float`/`str`/`bool`/
-`None`/`list`/`dict`) -- never a live `Entity`, never a callable,
-never the spec itself. The tool function it dispatches to is ordinary,
-TRUSTED Python (`fn(w, *data_args)`, the exact shape `harneskills.
-examples.fs_tools.rename`/`stat`/`ls` already have) -- pre-registered
-by whoever compiles the spec, not by whoever wrote it. An untrusted
-spec can pick WHICH pre-approved capability runs and WHAT DATA it
-gets; it can never pick what code runs.
+anything the spec names.
 
-This is also the one place `reads()`/`writes()` stop being sound: a
-`Call`-registered tool may read or write anything at all (the same as
-`fs_tools.rename` does, freely, to `Entry`/`Contents`), and nothing in
-the spec says what. Rather than guess, `reads()`/`writes()` raise
-`Opaque` (below) the moment a spec contains one, naming which tool --
-the same refuse-rather-than-guess discipline `loopingrules.analyze`'s
-own `Opaque` already applies to an AST it cannot resolve.
+**`Call` does not invoke the tool.** It used to -- `tools[tool](w,
+*values)`, called synchronously, in place, inside `ActionCircuit`'s own
+atomic write phase -- and that was only ever right for a tool whose
+answer is knowable the same tick it is asked. See `DECISION_PATTERNS.md`,
+the 2026-09-13 entry, for why that broke the moment a tool's real
+answer can only come later (a `rename` needing human confirmation) and
+why the fix is not new resumption machinery but the `ask`/`answer`/
+`checked` shape `pystrider/repair.py` already proved: `Call`'s write
+phase now spawns a `ToolRequest(tool, args)` -- `args` already
+evaluated, missing-safe, in the same read phase every other effect's
+fields are, so a tool only ever receives plain data (`int`/`float`/
+`str`/`bool`/`None`/`list`/`dict`) -- never a live `Entity`, never a
+callable, never the spec itself. Depositing the request no longer
+stands in for the tool's answer; it IS the whole action, and it commits
+in one tick like any other `Spawn`.
+
+`compile_answerer(tools)` builds the ONE rule that ever actually calls
+`tools[tool](w, *args)` -- ordinary, TRUSTED Python (`fn(w, *data_args)`,
+the exact shape `harneskills.examples.fs_tools.rename`/`stat`/`ls`
+already have), watching every `ToolRequest` still lacking a `ToolResult`
+or `Rejected`, and depositing one or the other back onto the same
+entity -- never silence, the same "deposit the refusal, never stay
+silent" discipline `repair.answer` already uses for `CouldNotEvaluate`.
+Installed once by the compiling caller, alongside every `compile_circuit`
+d rule sharing that `tools` registry -- not once per spec, or two
+`Call`-bearing specs sharing a registry could answer the same request
+twice. An untrusted spec can pick WHICH pre-approved capability runs
+and WHAT DATA it gets; it can never pick what code runs, and it can
+never make that code run before the answerer's own tick.
+
+`reads()`/`writes()` stay sound for a `Call` effect itself now --
+`ToolRequest` is an ordinary `Spawn` target, and `args` are ordinary
+expressions, walked the same as any other effect's fields. The opacity
+does not disappear, it MOVES to `compile_answerer`'s own rule: a
+registered tool may read or write anything at all (the same as
+`fs_tools.rename` does, freely, to `Entry`/`Contents`), and that rule
+lives outside this module's closed catalog, so it is `loopingrules.
+analyze`'s own `Opaque` that answers for it, not this module's.
 """
 
 from __future__ import annotations
@@ -243,18 +265,6 @@ from typing import Set
 
 
 MISSING = object()
-
-
-class Opaque(Exception):
-    """Raised by `reads()`/`writes()` when asked about a spec containing
-    a `Call` effect: a pre-registered Python tool this module cannot see
-    into (see `Call`'s own docstring, above) may touch anything, so
-    claiming a sound set here would be exactly the guess this module's
-    own docstring promises never to make. Named after, but NOT the same
-    class as, `loopingrules.analyze.Opaque` -- this module has no import
-    on `analyze.py`, and the two raise for structurally different
-    reasons (an AST walk that cannot resolve an indirection, versus a
-    closed catalog that knows precisely where its own knowledge ends)."""
 
 
 # -- reads ---------------------------------------------------------------
@@ -696,27 +706,61 @@ class Spawn:
 
 @dataclasses.dataclass(frozen=True)
 class Call:
-    """Invoke a pre-registered Python tool by NAME, with already-evaluated
-    data arguments -- the one effect that reaches outside the `World` at
-    all. See this module's own docstring, "`Call`: the one way a spec
-    reaches outside the World, by name only," for the full argument;
-    this is the mechanical half of it.
+    """Request a pre-registered Python tool by NAME, with already-
+    evaluated data arguments -- the one effect that reaches outside the
+    `World` at all, but no longer the one that RUNS the tool itself. See
+    this module's own docstring, "`Call`: a request, deposited, not a
+    tool invoked in place," for the full argument; this is the
+    mechanical half of it.
 
-    `tool` is a literal string, resolved against a `tools={name:
+    `tool` is a literal string, checked against a `tools={name:
     callable}` mapping passed to `compile_circuit` -- checked (and
     raised on, by name, if missing) at COMPILE time, not on first tick,
     the same eager-refusal discipline `analyze.py`'s own parse
     boundaries already apply. `args` are expressions, positional --
     evaluated missing-safe in the read phase like every other effect's
-    `fields`, then splatted into the call: `tools[tool](w, *values)`,
-    the exact `fn(w, *data)` shape `harneskills.examples.fs_tools.
-    rename`/`stat`/`ls` already have. The tool receives the live `w`
-    and may write to it freely -- it is TRUSTED code, registered by
-    whoever compiled the spec, not carried by the spec itself; only
-    WHICH tool runs and WHAT DATA it gets come from the (possibly
-    untrusted) spec."""
+    `fields` -- then bundled, as already-evaluated data, into a fresh
+    `ToolRequest(tool, values)` the write phase spawns, exactly the
+    `w.spawn(component, ...)` shape `Spawn` already has. `compile_
+    answerer`'s own rule is the one and only place that data ever
+    reaches `tools[tool](w, *values)`, the exact `fn(w, *data)` shape
+    `harneskills.examples.fs_tools.rename`/`stat`/`ls` already have --
+    not this effect, and not the tick that deposited the request.
+    Only WHICH tool runs and WHAT DATA it gets come from the (possibly
+    untrusted) spec; the answerer decides WHEN, and is the only place
+    TRUSTED code actually runs."""
     tool: str
     args: tuple = ()
+
+
+@dataclasses.dataclass(frozen=True)
+class ToolRequest:
+    """What a `Call` effect actually spawns -- plain data, carrying a
+    tool NAME (not a callable) and its already-evaluated `args`, exactly
+    as constrained as `Call`'s own fields. Watched by the rule `compile_
+    answerer` builds; nothing about spawning one runs any code."""
+    tool: str
+    args: tuple
+
+
+@dataclasses.dataclass(frozen=True)
+class ToolResult:
+    """Deposited onto a `ToolRequest`'s own entity, by `compile_
+    answerer`'s rule, once `tools[tool](w, *args)` has returned without
+    raising -- marks the request answered so it is not run again next
+    tick. Carries nothing but that fact: what the tool concluded is
+    whatever it wrote to the `World` itself (`examples.files.stat`'s own
+    `Size`/`Modified`/`Failed`), the same as before this entry -- this
+    is "the request was answered," not "here is what it returned.\""""
+
+
+@dataclasses.dataclass(frozen=True)
+class Rejected:
+    """Deposited instead of `ToolResult` when the tool could not be run
+    at all -- an unregistered name, or the tool itself raising. Named,
+    not silent, the same "deposit the refusal, never stay silent"
+    discipline `pystrider.repair.answer` already uses for `CouldNotEvaluate`."""
+    reason: str
 
 
 @dataclasses.dataclass(frozen=True)
@@ -737,9 +781,10 @@ class ActionCircuit:
     `effects`, in order, are the only four things an action may do:
     `ReplaceAt` (write a freshly computed value onto an entity an
     expression names), `Destroy` (the match itself), `Spawn` (a new
-    entity), `Call` (dispatch to a pre-registered tool -- see `Call`'s
-    own docstring; the only one of the four that is not a plain World
-    write). Every effect's
+    entity), `Call` (spawn a `ToolRequest` naming a pre-registered tool
+    -- see `Call`'s own docstring; a plain `World` write like the other
+    three now, not a tool invoked in place -- `compile_answerer`'s own
+    rule is where that later happens). Every effect's
     OWN fields are evaluated against the matched entity BEFORE any
     effect commits -- a read phase, then a write phase, never
     interleaved -- so no effect can see another effect's write from the
@@ -935,10 +980,13 @@ def compile_circuit(spec, tools=None):
     spec rather than a `def`.
 
     `tools` is the `{name: fn(w, *data)}` registry any `Call` effect in
-    `spec` resolves against -- see `Call`'s own docstring. Checked HERE,
-    eagerly, for every `Call` the spec contains, so a spec naming a tool
-    that was never registered fails loudly at compile time, by name --
-    not silently on whichever tick first tries to run it."""
+    `spec` will eventually be answered against -- see `Call`'s own
+    docstring. Checked HERE, eagerly, for every `Call` the spec
+    contains, so a spec naming a tool that was never registered fails
+    loudly at compile time, by name -- not silently on whichever tick
+    first tries to run it. The compiled rule itself never calls into
+    `tools` -- it only spawns `ToolRequest`s; pass this SAME `tools`
+    mapping to `compile_answerer` to get the rule that actually does."""
     if isinstance(spec, ActionCircuit):
         for effect in spec.effects:
             if isinstance(effect, Call) and (tools is None or effect.tool not in tools):
@@ -999,9 +1047,50 @@ def compile_circuit(spec, tools=None):
                 elif isinstance(effect, Spawn):
                     w.spawn(effect.component(*values))
                 elif isinstance(effect, Call):
-                    tools[effect.tool](w, *values)
+                    w.spawn(ToolRequest(effect.tool, tuple(values)))
         return rule
     raise TypeError("not a circuit spec: %r" % (spec,))
+
+
+def compile_answerer(tools):
+    """The rule that answers every `ToolRequest` a `Call` effect ever
+    deposits -- the one and only place `tools[tool](w, *args)` actually
+    runs. See this module's own docstring, "`Call`: a request, deposited,
+    not a tool invoked in place," for the design; this is the mechanical
+    half of it, `pystrider.repair.answer` restated for `ToolRequest`/
+    `ToolResult`/`Rejected` in place of `Evaluate`/`Evaluated`/
+    `CouldNotEvaluate`.
+
+    Install ONCE per `tools` registry, alongside every `compile_circuit`
+    d rule that shares it -- not once per spec: two `Call`-bearing specs
+    sharing one registry must not each get their own answerer, or the
+    same request could be answered twice (`ToolResult`/`Rejected`,
+    once attached, keep it from being tried again either way, but two
+    answerers racing to be first is not a race this module invites).
+
+    Watches every `ToolRequest` still lacking a `ToolResult`/`Rejected`
+    -- a downstream rule simply does not match yet while a request is
+    outstanding; the loop's own fixpoint is the wait, nothing here
+    builds retry logic. A tool that raises does not take the whole
+    answerer down with it, and does not sit there raising the same
+    exception every tick a naive `Loop.tick`-level catch would leave it
+    to: the exception is caught PER REQUEST and deposited as `Rejected
+    (reason)` instead -- "deposit the refusal, never stay silent," the
+    same discipline `repair.answer` already uses for `CouldNotEvaluate`.
+    """
+    def answer(w):
+        for entity, request in list(w.each(ToolRequest, without=(ToolResult, Rejected))):
+            tool = tools.get(request.tool)
+            if tool is None:
+                w.attach(entity, Rejected("no tool named %r registered" % request.tool))
+                continue
+            try:
+                tool(w, *request.args)
+            except Exception as e:  # noqa: BLE001 -- deposit the refusal, never stay silent
+                w.attach(entity, Rejected("%s: %s" % (request.tool, e)))
+                continue
+            w.attach(entity, ToolResult())
+    return answer
 
 
 # -- reads/writes, from the spec's own shape, no analysis needed ----------
@@ -1018,12 +1107,12 @@ def reads(spec) -> Set[type]:
     IS the read -- there is nothing here to get wrong the way a general
     analyzer could.
 
-    Raises `Opaque`, by tool name, if `spec` contains a `Call` effect --
-    see this module's own docstring, "`Call`: the one way a spec reaches
-    outside the World, by name only": a registered tool may read
-    anything at all, so this walk cannot claim to be sound the moment
-    one is present."""
-    _refuse_calls(spec, "reads")
+    Sound for a `Call` effect too, now: `Call.args` is walked like any
+    other effect's expressions, the same as everything else here -- see
+    this module's own docstring, "`Call`: a request, deposited, not a
+    tool invoked in place," for why the opacity a registered tool's own
+    reads/writes carry no longer taints THIS walk; it lives with
+    `compile_answerer`'s rule instead, outside this module entirely."""
     if isinstance(spec, ActionCircuit):
         kinds: Set[type] = set(spec.require) | set(spec.without)
     else:
@@ -1062,33 +1151,21 @@ def writes(spec) -> Set[type]:
     carry -- see `destroys()` for the flag that records only that the
     action CAN destroy, not what it destroys.
 
-    Raises `Opaque`, by tool name, for the same reason `reads()` does --
-    a registered `Call` tool may write anything at all."""
-    _refuse_calls(spec, "writes")
+    `Call` writes `ToolRequest` -- what it actually spawns now, not
+    whatever the tool it names might eventually touch (that opacity
+    lives with `compile_answerer`'s rule -- see `reads()`'s own
+    docstring)."""
     if isinstance(spec, TagCircuit):
         return {spec.tag}
     if isinstance(spec, ValueCircuit):
         return {spec.into}
     return {effect.component for effect in spec.effects
-            if isinstance(effect, (ReplaceAt, Spawn))}
+            if isinstance(effect, (ReplaceAt, Spawn))} | (
+        {ToolRequest} if any(isinstance(effect, Call) for effect in spec.effects) else set())
 
 
 def destroys(spec: ActionCircuit) -> bool:
     return any(isinstance(effect, Destroy) for effect in spec.effects)
-
-
-def _refuse_calls(spec, caller: str) -> None:
-    """Shared by `reads()`/`writes()`, above: raise `Opaque`, naming
-    every tool involved, if `spec` is an `ActionCircuit` carrying one or
-    more `Call` effects -- see `Call`'s own docstring for why neither
-    function can stay sound once one is present."""
-    if not isinstance(spec, ActionCircuit):
-        return
-    tools = [effect.tool for effect in spec.effects if isinstance(effect, Call)]
-    if tools:
-        raise Opaque(
-            "%s(): opaque -- this ActionCircuit calls tool(s) %s, which "
-            "may touch anything; not guessed at" % (caller, ", ".join(sorted(tools))))
 
 
 def _leaves(spec):
