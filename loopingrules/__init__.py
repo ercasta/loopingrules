@@ -20,6 +20,11 @@ it, and one thread to run a session on.
   attached to it. `Said(name, "...")` in from whichever channel it
   arrived on; `Reply(user, "...")` out to every channel there is.
 * `loopingrules.save` -- the world as JSONL (one record per line), and back.
+* `loopingrules.share` -- a NAMED SUBSET of entities and components, portable
+  between strangers' worlds -- unlike `save`, which only restores into an
+  empty world with every id intact, this remaps ids on import and needs a
+  component field marked `share.ref()` to know which of its values are
+  another entity's id, not an ordinary number.
 
 That is the whole of `loopingrules`: entities and components, nothing else in this
 package's own vocabulary. `harneskills` is the worked door onto it --
@@ -43,12 +48,12 @@ request removed," for the removal itself.
 
 from __future__ import annotations
 
-from . import engine, loop, save, world
+from . import engine, loop, save, share, world
 from .engine import Engine
 from .loop import Loop
 from .world import World
 
 __version__ = "0.1.0"
 
-__all__ = ["Engine", "Loop", "World", "engine", "loop", "save",
+__all__ = ["Engine", "Loop", "World", "engine", "loop", "save", "share",
           "world", "__version__"]
