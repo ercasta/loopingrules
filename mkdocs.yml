@@ -1,0 +1,25 @@
+site_name: LoopingRules Developer Guide
+site_url: https://ercasta.github.io/loopingrules/
+site_description: An entity-component world, a loop of rules over it, and one thread to run a session on.
+docs_dir: docs
+theme:
+  name: readthedocs
+  navigation_depth: 2
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Core concepts: concepts.md
+  - Architecture: architecture.md
+  - Writing rules: writing-rules.md
+  - The engine and channels: engine.md
+  - Persistence and sharing: persistence.md
+  - Rule analysis and circuits: analysis.md
+  - Language layer: language.md
+  - Examples: examples.md
+  - Testing and debugging: testing-debugging.md
+  - Contributing: contributing.md
