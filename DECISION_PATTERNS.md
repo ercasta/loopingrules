@@ -551,3 +551,103 @@ Found only while implementing, not anticipated by this design:
   `loopingrules/chart.py`'s own `_best_covering` docstring for where this is checked, not just asserted
   (`tests/test_chart.py::test_overlapping_interpretations_may_both_win_if_the_combination_scores_highest`
   pins the surprising case directly, rather than leaving it to be discovered by a real domain later).
+
+## 2026-09-20 — designed, not built: waves, vocabulary, and discourse-level reinterpretation, extending `chart.py`
+
+The 2026-09-14 entry designed how a chart of `Span`/`Interpretation`s gets JUDGED and SELECTED from — it
+said nothing about how those `Span`/`Interpretation`s get BUILT out of raw text in the first place, nor
+about an utterance longer than one line, where a later sentence can overturn an earlier one's already-chosen
+reading. `harneskills.examples.fs`'s own `tokenize`/`mark_keyword`/`mark_number`/`after_threshold`/`located`
+swarm — the same one the 2026-09-14 entry cites as its evidence chart parsing was needed for real — already
+does the first half BY HAND, one domain at a time, with no shared shape a second domain could reuse; this
+entry gives that shape a name and asks whether the existing chart mechanism already covers the second half
+(a longer discourse) once generalized one level up, rather than needing a second kind of "done."
+
+**Grounding, checked before designing against it:** `examples/trip.py`'s `Stop` entities are the concrete
+case that "registering a vocabulary" need not mean a domain builds a separate lookup table — the entities a
+domain already has ARE the vocabulary once tagged, the same way that module's own `Leg`/`TripRequest`
+already ride `share.ref`-tracked ids rather than a name-keyed dict. `examples.cards.decide_buy`'s "compose a
+tag nobody wrote the composition of" idiom is the precedent for triggered rules needing no new activation
+primitive — a rule reading a marker another rule attached is already an ordinary `w.each` gate, not a new
+kind of dependency. `trip.py`'s `Expanded` tag is the precedent this entry deliberately does NOT reuse for
+discourse completeness (see "what alternatives were rejected," below) — considered and set aside in favor of
+restating this design's own 2026-09-14 correction ("quiescence is one signal, not two") one level up instead
+of introducing a second bookkeeping tag beside it.
+
+### The shape: three additions to `chart.py`, none touching `select`'s own search
+
+**Wave 0/1, tokens and vocabulary.** `Token(utterance, index, text)` — co-attached with `Span(index, index)`,
+spawned by a domain's own splitting rule (whitespace, punctuation-aware, whatever; this entry does not design
+a splitter, the same way `chart.py` itself does not tokenize). `Vocabulary(word)` — co-attached by a domain
+rule onto WHATEVER entity it names, not a separate registry entity: recognizing "milan" as a station is
+`w.attach(stop_entity, Vocabulary("milan"))` run once over `trip.py`'s own `Stop`s, not a new lookup
+structure. One generic rule, `read_vocabulary(w)`, matches un-interpreted `Token`s against attached
+`Vocabulary` components and spawns the `Span`+`Interpretation` pair the same way any other proposing rule
+does.
+
+**Triggered rules need no new primitive.** "Train" being recognized should enable a fuzzier station-name
+check over the OTHER tokens — this is an ordinary rule gated on a marker component (`TravelModeDetected`,
+say) that the keyword rule attaches to the `Intake` itself alongside its own `Interpretation`, the identical
+shape `decide_buy` already uses. A rule "activated by" another rule is just a rule with one more `w.each`
+clause; nothing in `World` or `Loop` needs to change for this.
+
+**`Candidate` vs. `Definitive`, and `promote`.** `select` now attaches `Candidate`, not `Definitive`, to its
+winning combination — `Candidate` carries the identical "isolating tentative interpretations" gate `Definitive`
+had (composing rules must never see it, acting rules key on it), but is explicitly retractable: a
+cross-sentence rule may later `w.detach` it. A new generic rule, `promote(w)`, is the only thing that ever
+attaches `Definitive` — for an `Intake` with no `Discourse`, immediately, once it holds a `Candidate` (nothing
+to wait for); for one that is `SentenceOf` a `Discourse`, only once that `Discourse` is itself `ready` (see
+below). `Definitive` keeps its EXACT existing meaning and existing consumers unmodified — it is `Candidate`
+that is new, sitting one step earlier in the pipeline, not a redefinition of the terminal marker itself.
+
+**`Discourse`/`SentenceOf`, and reinterpretation.** `Discourse(text)` is one per multi-sentence utterance;
+`SentenceOf(discourse, order)` marks which `Discourse` an `Intake` belongs to and in what order, so a
+cross-sentence rule can find "the previous sentence." A `Discourse` gets its own `Active`/`Countdown` —
+literally the same components `Intake` already uses, not a parallel type — and TWO kinds of rule call
+`mark_active` on it: the rule that spawns a new `SentenceOf` `Intake` (a discourse is still "moving" while
+sentences are still being added to it), and any reinterpretation rule that retracts an earlier sentence's
+`Candidate`/`Definitive` because a later sentence contradicted it. Reinterpretation itself is not a new verb
+either: `w.detach(entity, Definitive())` (or `Candidate`), then `mark_active` on BOTH the earlier sentence's
+own `Intake` (reopening ITS countdown, so `select` reconsiders) and the `Discourse` (reopening promotion's
+own wait) — the same detach-and-reopen shape this module already has, called from a different rule.
+
+### What alternatives were rejected for "when has a discourse stopped growing"
+
+Three ways were on the table for telling `promote` a `Discourse` has all the sentences it is going to get,
+not just that the ones it has are quiet:
+
+- An explicit `Discourse.length` (sentence count), mirroring `Intake.length`. Rejected: `Intake.length` is a
+  real geometric constraint `_best_covering` checks against (every word position covered); a discourse has
+  no equivalent per-sentence coverage check, so a count here would exist ONLY to tell `promote` something
+  else could tell it for free — see below.
+- A `Closed` tag, mirroring `trip.py`'s own `Expanded`. Rejected for the same reason: it is a second
+  bookkeeping fact riding beside quiescence rather than being quiescence, the exact shape the 2026-09-14
+  entry already corrected once (`BASE_COUNTDOWN`'s arithmetic note, "quiescence is ONE signal, not two").
+- **Chosen:** spawning a new `SentenceOf` `Intake` is ITSELF activity — the spawning rule calls `mark_active
+  (w, discourse)` the same tick it spawns, so a `Discourse`'s own `ready()` already means "no sentence added,
+  and no candidate retracted, for two ticks," with nothing new to define. A `Discourse` that goes quiet
+  because some sentence never resolves a `Candidate` at all behaves exactly like today's `select` on an
+  uncoverable `Intake`: `promote` never fires for it, silence read as silence by whatever downstream rule
+  looks, never specially detected or reported.
+
+### Left open, named rather than guessed at — blocks implementing, not designing
+
+- **How much a fuzzy/approximate vocabulary match should score relative to an exact one** ("milan" matching
+  `Stop("Milan")` exactly vs. a misspelling matching it approximately) is not designed here — left to the
+  domain's own judge rules, the same split `arbitrate`/`census`/`chart.select` already draw for "what makes a
+  reading good," restated rather than special-cased for approximate matches.
+- **Wave ordering (splitting before vocabulary before triggered rules before composition before judging) is
+  a documentation convention, not an engine-enforced one** — `Loop`'s own `priority=` can express it, the
+  same way `context.record_intake`/`hear_qualified` already rely on same-tick ordering, but nothing stops a
+  misordered rule from reading a `Token` before it exists. Worth a real guard if a second domain gets this
+  wrong in practice; not designed defensively here.
+- **Two or more `Discourse`s live at once, and a `Discourse` nested inside another, are both untested by this
+  design** — `SentenceOf` scopes an `Intake` to one `Discourse` the same bare-id way `Interpretation.utterance`
+  scopes a reading to one `Intake`, a pattern the 2026-09-14 entry already flagged as "proven against exactly
+  one live at a time," not against several concurrent ones; this entry inherits that same open question one
+  level up rather than resolving it.
+- **Nothing here decides how far back a reinterpretation rule is allowed to reach** — a `Discourse` with many
+  sentences could in principle let sentence 50 retract sentence 1's `Definitive`, reopening a window that
+  looked closed long ago. Whether that is the correct behavior (discourse-wide correction, by design) or
+  needs a domain-imposed limit (only the immediately preceding sentence, say) is left to whichever domain
+  writes the first real reinterpretation rule, not decided in the abstract here.
