@@ -21,7 +21,7 @@ loopingrules/
   analyze.py      what a rule reads and writes, derived from its own AST
   circuits.py     a closed catalog of shapes a rule can be DATA in
   memory.py       Focus/Memory/MemoryEntry: a trail deictic resolution reads
-  chart.py        Span/Interpretation/Intake: a quiescence signal and a covering-set winner
+  chart.py        Span/Interpretation/Intake, vocabulary matching, and discourse-level reinterpretation
 tests/
   test_world.py        identity, values, and the intersection of the two
   test_loop.py         order, settling, the budget, a rule that raises
@@ -30,7 +30,7 @@ tests/
   test_analyze.py      a rule's reads/writes, and where analysis refuses to guess
   test_circuits.py     the catalog, proven against real rules from two domains
   test_memory.py       Focus/Memory/MemoryEntry, and a genuine regain vs a no-op reattach
-  test_chart.py        two idle ticks, exactly, and a covering combination over rival scores
+  test_chart.py        two idle ticks, a covering combination over rival scores, promotion, and retraction
 DECISION_PATTERNS.md   a design note this package no longer ships the code
                           for -- see History, "Facts/arbitration/request
                           removed"
@@ -229,6 +229,40 @@ Nothing here touches the actual `pystrider` checkout — see History,
 "a generic Part tag."
 
 ## History
+
+**`loopingrules.chart`: `Candidate`/`promote`/`Discourse`, built from `DECISION_PATTERNS.md`'s 2026-09-20
+entry, 2026-09-20.** `select` now attaches `Candidate`, not `Definitive` -- `promote`, the new rule, is the
+only thing that ever attaches `Definitive`, immediately for a standalone `Intake`, or once its own `Discourse`
+is `ready` for one that is `SentenceOf` one. `Discourse`-level quiescence is not a second concept: `settle`
+took a `kind=` parameter (`Intake` by default, so every existing call site is unaffected) and runs unchanged
+over `Discourse` entities when a caller passes `kind=Discourse` -- the same `Active`/`Countdown` components,
+reset by `attach_sentence` (bundles `SentenceOf` with `mark_active(discourse)`, so a splitting rule cannot add
+a sentence without reopening its discourse's own window) or by `retract` (detaches `Candidate`/`Definitive`
+and reopens both the `Intake`'s own window and, if given, the `Discourse`'s). Also added: `Token`/`Vocabulary`/
+`Matched` and the one generic rule that reads them, `read_vocabulary` -- a domain's splitting rule spawns
+`Token`s, a domain's setup rule attaches `Vocabulary(word)` onto whatever entity it names (`trip.py`'s own
+`Stop`s, unmodified, are already exactly this kind of entity), and `read_vocabulary` matches the two into a
+fresh `Interpretation` + `Matched(target)`.
+
+Found only while testing, not anticipated by the design entry: `retract` alone does not make a new reading
+win over the one it retracted. `retract` detaches the MARKER, not the `Interpretation` entity itself, so an
+old reading left sitting in the world with its original (non-negative) score is still a valid row `_best_
+covering` will happily include ALONGSIDE a new rival -- overlap is free, per the 2026-09-14 entry's own
+already-named gap ("no notion of two interpretations CONFLICTING, only of coexisting"), so a naive
+retract-then-add-a-rival never actually overturns anything; the retracting rule must also down-weight (or
+destroy) the old reading, the same as any judge disfavoring a reading already has to. Not a bug in `retract`
+itself -- it does exactly what its own docstring says -- but a real trap for whichever domain writes the
+first reinterpretation rule, now pinned directly by `tests/test_chart.py::
+test_reinterpretation_lets_a_downweighted_rival_lose_its_second_pass` rather than left to be rediscovered.
+
+What this entry does NOT do, on purpose: ship a worked example (a real multi-sentence discourse, or a real
+domain registering `Vocabulary` over its own entities the way a hypothetical `examples/trip.py`-based parser
+would). `tests/test_chart.py`'s own `test_read_vocabulary_*` tests stand in for that against bare entities;
+proving the mechanism against an independently-authored domain (the same bar the 2026-09-14 `harneskills`
+migration was held to) is real, separate work, not done here.
+
+362 -> 372 passing (`tests/test_chart.py`, 10 new tests: promotion timing, discourse-gated readiness, retract's
+reopened windows, the reinterpretation trap above, and vocabulary matching/normalization).
 
 **`loopingrules.chart` proven against `harneskills`'s real `propose_stale`, not just a worked example,
 2026-09-14.** `harneskills/examples/fs.py`'s own token-composition swarm (`tokenize`/`mark_keyword`/
