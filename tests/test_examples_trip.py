@@ -4,7 +4,7 @@ two forward-only rules -- checked against numbers worked out by hand,
 not just "a plan came back"."""
 
 from loopingrules import Loop
-from examples import trip
+from examples import decide, trip
 
 
 def a_demo_loop():
@@ -45,6 +45,25 @@ def test_no_leg_is_left_pointing_at_a_destroyed_duplicate_stop():
 
 
 # --- the actual planning ------------------------------------------------
+
+def test_the_winning_frontier_carries_the_bridges_own_components():
+    # best_itinerary no longer recomputes a score -- it reads the answer
+    # examples.decide's oblivious pick_winner attached back. This checks
+    # the bridge's round trip directly, not just that SOME answer came
+    # back: the winning Frontier itself was nominated (Option/Score) and
+    # crowned (Winner) by a rule that has never heard of a Frontier.
+    loop, stops = a_demo_loop()
+    front, _legs = request_and_plan(loop, stops, weight_cost=0.9, weight_time=0.1)
+    w = loop.world
+    winner = next(e for e, f, _w in w.each(trip.Frontier, decide.Winner)
+                 if f.request == front.request)
+    assert w.get(winner, decide.Option).occasion == front.request
+    assert w.get(winner, decide.Score).value == -_expected_score(front)
+
+
+def _expected_score(front):
+    return 0.9 * front.cost + 0.1 * (front.time - 530)
+
 
 def test_a_cost_preferring_traveler_takes_the_cheaper_slower_route():
     loop, stops = a_demo_loop()

@@ -230,6 +230,37 @@ Nothing here touches the actual `pystrider` checkout — see History,
 
 ## History
 
+**`examples.decide`: a second domain-oblivious judge, this one picking a SCORED winner among several
+rivals, 2026-09-25.** `judge.py` (see its own History entry, below) already proved one domain projecting a
+single scalar onto a shared component a wholly different domain's rule could read. `decide.py` proves the
+other half `DECISION_PATTERNS.md`'s vocabulary describes but never shipped generically: `Option(occasion)` /
+`Score(value)`, and `pick_winner`, a rule that groups every `Option` by its own `occasion` and attaches
+`Winner` to the unique top scorer, refusing (attaching nothing) on an exact tie rather than breaking it
+arbitrarily -- `PRINCIPLES.md`'s "a wrong conclusion is worse than a missing one," restated as code rather
+than prose. `world.py`'s own `Proposal`/`arbitrate` already resolves several rivals to one winner, but only
+"first registered wins" -- deliberately ignorant of which candidate is BETTER, per this README's own Scope
+section. `decide.py` is the narrower, SCORED sibling of that, built in `examples/` rather than
+`loopingrules/` for the same reason `judge.py` was: this README already argues against shipping a lingua
+franca speculatively (see "A domain-oblivious judge," below), so a second generic reader earns its place by
+being proven against a real domain, not by being designed in the abstract.
+
+`examples.trip` is that domain, and the point of feeding it one is architectural, not scoring: `best_
+itinerary` used to pick the winning `Complete` `Frontier` itself, by hand, with a bare `min(..., key=score)`.
+It now does this by BRIDGE -- a new rule, `nominate_itinerary`, projects each `Complete` `Frontier`'s own
+score onto `decide.Option`/`decide.Score` (negated, since trip minimizes and `decide` maximizes), and
+`decide.pick_winner` -- a rule that has never heard of a `Frontier` or a `TripRequest` -- attaches `decide.
+Winner` back onto the entity that earns it; `best_itinerary` now reads that tag instead of rederiving the
+score. This is the concrete shape a "repair" rule would also take: a domain attaches a component onto one of
+its own entities so a rule from a wholly different domain can compute over it and hand a result back as an
+ordinary attached component, no return value, no direct call between the two rules anywhere. Left alone here,
+named rather than built: a "repair" half that RESPONDS to `pick_winner` finding nothing (relaxing `budget`/
+`max_hops` and re-attempting), and `DECISION_PATTERNS.md`'s fuller `ruled_out`/`needs`/Pending vocabulary --
+this proves only `candidate`/`ranked`/`winner`, the minimum that closes the round trip. `372 -> 378 passing`
+(`tests/test_examples_decide.py`, new, plus one `tests/test_examples_trip.py` addition asserting the winning
+`Frontier` itself carries `decide.Option`/`decide.Score`/`decide.Winner`); every existing `trip.py` numeric
+assertion is unchanged, evidence the bridge reproduces the old hand-rolled scoring exactly rather than merely
+returning "a plan."
+
 **`loopingrules.chart`: `Candidate`/`promote`/`Discourse`, built from `DECISION_PATTERNS.md`'s 2026-09-20
 entry, 2026-09-20.** `select` now attaches `Candidate`, not `Definitive` -- `promote`, the new rule, is the
 only thing that ever attaches `Definitive`, immediately for a standalone `Intake`, or once its own `Discourse`

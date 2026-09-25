@@ -13,10 +13,11 @@ example.** It shows the scenario being driven.
 | `cards.py` | An autonomous trading agent over a virtual card market | **The core idea**: `decide_buy` reads three tags (`Wanted`, `Affordable`, `FairPriced`) attached by three rules that share no code. The best first example |
 | `judge.py` | One domain-oblivious rule (`Risk`, `TooRisky`) usable by any domain | Reuse across domains without a shared vocabulary |
 | `shopping.py` | A household shopping list, the second domain to use `judge.Risk` | `judge` reused for real, with `Said`/`reply` handling |
+| `decide.py` | A second domain-oblivious rule (`Option`, `Score`, `Winner`) that picks a scored winner among several rivals for one occasion | A bridge rule: a domain projects its own rivalry, `pick_winner` computes and attaches the answer back |
 | `deixis.py` | `"look at X"` then `"it"`/`"that"` | `memory.Focus`/`Memory` on a real reference-resolution rule |
 | `files.py` | A `stat` capability reached only through `circuits.Call` | A rule authored as **data** requesting real disk I/O |
 | `parts.py` | A prototype: a generic tag beside every specific part-edge | A generic walker that stays analyzable (needs literal component types) |
-| `trip.py` | A multi-modal trip planner (train, taxi, subway) as forward-only rule expansion, over three merged networks | `share.py` remapping and domain-owned reconciliation on something bigger than a toy |
+| `trip.py` | A multi-modal trip planner (train, taxi, subway) as forward-only rule expansion, over three merged networks; its winning itinerary is read back through `decide.py`'s bridge, not recomputed by hand | `share.py` remapping and domain-owned reconciliation on something bigger than a toy |
 
 ## Shape of a domain
 
@@ -34,9 +35,12 @@ Every example follows the same pattern, which is the pattern to copy:
 1. `tests/test_loop.py`, to see what the loop promises.
 2. `examples/cards.py` and `tests/test_examples_cards.py`.
 3. `examples/judge.py`, then `shopping.py`, to see reuse.
-4. `tests/test_analyze.py`, to see what rule analysis can and cannot do.
-5. `examples/deixis.py` if you work on conversation.
-6. `examples/trip.py` last. It is the largest and uses the most machinery.
+4. `examples/decide.py`, judge's sibling for a SCORED, several-rivals
+   contest rather than a single threshold.
+5. `tests/test_analyze.py`, to see what rule analysis can and cannot do.
+6. `examples/deixis.py` if you work on conversation.
+7. `examples/trip.py` last. It is the largest, uses the most machinery, and
+   is `decide.py`'s own worked domain.
 
 ## Why they are not shipped
 

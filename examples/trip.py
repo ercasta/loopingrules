@@ -52,12 +52,34 @@ represented), no fare rules that vary by demand or time of day, and no
 actual Pareto-frontier maintenance -- a frontier entry that is later
 made obsolete by a better one is only ever pruned going forward
 (future candidates check against it), never retroactively removed.
+
+## The winner is read back through a bridge, not recomputed in place
+
+`best_itinerary`, below, used to pick the winning `Complete` `Frontier`
+itself, by hand, with a bare `min(..., key=score)`. It now does this by
+BRIDGE instead: `nominate_itinerary` projects each `Complete` `Frontier`'s
+own score onto `examples.decide`'s domain-oblivious `Option`/`Score`
+(negated, since this domain minimizes and `decide` maximizes), and
+`decide.pick_winner` -- a rule that has never heard of a `Frontier` or a
+`TripRequest` -- attaches `decide.Winner` back onto the entity that
+earns it. `best_itinerary` reads that tag rather than rederiving the
+score itself; see `examples.decide`'s own docstring for the generic half
+of this and `DECISION_PATTERNS.md`'s `candidate`/`ranked`/`winner`
+vocabulary this narrows.
+
+One real behavior change follows from adopting `decide`'s "refuse rather
+than guess" discipline: an EXACT tie for the best score, which the old
+`min()` broke arbitrarily (first one found wins), now makes
+`best_itinerary` return `None` for that request instead -- nobody is
+crowned winner of a tie nothing here can honestly break. None of this
+module's own worked network ever produces one.
 """
 
 from __future__ import annotations
 
 import dataclasses
 
+from examples import decide
 from loopingrules import share
 from loopingrules.world import Entity, World
 
@@ -241,40 +263,66 @@ def mark_complete(w) -> None:
             w.attach(entity, Complete())
 
 
+def _score(w, front: Frontier) -> float:
+    """`weight_cost * cost + weight_time * elapsed` -- a heuristic
+    trade, not a normalized utility: a `weight_cost`/`weight_time` pair
+    only means what it says when cost (currency) and elapsed (minutes)
+    are read as comparable raw numbers, which they are not, left for
+    whoever builds a `TripRequest` to pick weights that make sense for
+    their own numbers. Shared by `nominate_itinerary`, below -- the ONE
+    place this domain computes a score, so the bridge projects exactly
+    what a hand-rolled `best_itinerary` used to compute directly."""
+    req = w.get(w.entity(front.request), TripRequest)
+    elapsed = front.time - req.start_time
+    return req.weight_cost * front.cost + req.weight_time * elapsed
+
+
+def nominate_itinerary(w) -> None:
+    """The bridge's outbound half: project every `Complete` `Frontier`'s
+    own score onto `examples.decide`'s oblivious `Option`/`Score` --
+    `occasion` is the `Frontier`'s own request, so rival itineraries for
+    DIFFERENT requests are never compared against each other. Negated on
+    the way in, since `decide.pick_winner` wants higher-is-better and
+    this domain's own score is a cost+time trade to MINIMIZE. Idempotent
+    for free (`World.attach`'s own dedup), so no "already projected"
+    guard is needed even though this re-attempts every tick."""
+    for entity, front, _complete in w.each(Frontier, Complete):
+        w.attach(entity, decide.Option(front.request))
+        w.attach(entity, decide.Score(-_score(w, front)))
+
+
 def install(loop) -> None:
-    """Register both rules. Nothing is seeded here -- unlike
-    `examples.cards.install`, there is no fixed catalog this domain
-    ships; a caller builds its own network (see `build_demo_world`,
-    below, for a worked one) and calls `plan_trip` per request."""
+    """Register every rule, including the bridge's two halves --
+    `nominate_itinerary` (this domain's own projection) and
+    `decide.pick_winner` (the oblivious rule that reads it back), see
+    the module docstring, "The winner is read back through a bridge."
+    Nothing is seeded here -- unlike `examples.cards.install`, there is
+    no fixed catalog this domain ships; a caller builds its own network
+    (see `build_demo_world`, below, for a worked one) and calls
+    `plan_trip` per request."""
     loop.rule(expand_frontier)
     loop.rule(mark_complete)
+    loop.rule(nominate_itinerary)
+    loop.rule(decide.pick_winner)
 
 
 # -- reading the answer ----------------------------------------------------
 
 def best_itinerary(w, request: "Entity"):
-    """The `Complete` `Frontier` for this request minimizing
-    `weight_cost * cost + weight_time * elapsed` -- a heuristic trade,
-    not a normalized utility: a `weight_cost`/`weight_time` pair only
-    means what it says when cost (currency) and elapsed (minutes) are
-    read as comparable raw numbers, which they are not, on purpose left
-    for whoever calls this to pick weights that make sense for their
-    own numbers. Returns `(frontier, [Leg, ...])`, legs in travel
-    order, or `None` if nothing reached the destination at all.
+    """The `Complete` `Frontier` for this request that `decide.
+    pick_winner` crowned `decide.Winner` -- see the module docstring,
+    "The winner is read back through a bridge," for why this no longer
+    recomputes a score itself. Returns `(frontier, [Leg, ...])`, legs in
+    travel order, or `None` if nothing reached the destination at all,
+    OR if the best score tied and `decide.pick_winner` refused to guess.
     """
-    req = w.get(request, TripRequest)
-    candidates = [(e, f) for e, f, _ in w.each(Frontier, Complete)
-                 if f.request == request.id]
-    if not candidates:
-        return None
-
-    def score(front: Frontier) -> float:
-        elapsed = front.time - req.start_time
-        return req.weight_cost * front.cost + req.weight_time * elapsed
-
-    _, winner = min(candidates, key=lambda pair: score(pair[1]))
-    legs = [w.get(w.entity(leg_id), Leg) for leg_id in winner.path]
-    return winner, legs
+    for entity, front, _complete, _winner in w.each(
+            Frontier, Complete, decide.Winner):
+        if front.request != request.id:
+            continue
+        legs = [w.get(w.entity(leg_id), Leg) for leg_id in front.path]
+        return front, legs
+    return None
 
 
 # -- a worked, multi-source network, to run this against -------------------
