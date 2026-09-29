@@ -11,6 +11,7 @@ loopingrules/
   share.py      pack of entities <-> another world, ids remapped
   analyze.py    what a rule reads/writes, derived from its own AST
   circuits.py   a closed catalog of rule shapes that are data, not code
+  specs.py      circuit specs <-> JSON, classes resolved only through a caller's registry
   memory.py     Focus / Memory / MemoryEntry: a trail for "it", "that"
   chart.py      Span / Interpretation / Intake: scored readings, one winner
   help.py       the ONE shipped domain: `help TOPIC`, answered by whoever knows

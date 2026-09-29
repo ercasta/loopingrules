@@ -84,11 +84,11 @@ nothing here walks references outward to complete it. A caller that
 wants "this book and everything it points to" computes that set
 itself before calling `dump_pack`.
 
-No circuits (rules-as-data) yet -- `circuits.py`'s specs are a
+No circuits (rules-as-data) -- `circuits.py`'s specs are a
 different shape entirely (a tree of expression dataclasses, several of
 whose fields hold component CLASSES, not component instances) and have
 no entity-id problem at all, since a spec never mentions an entity id.
-They need their own, simpler serializer, not this one.
+`specs.py` is their own, simpler serializer, not this one.
 """
 
 from __future__ import annotations

@@ -86,3 +86,33 @@ entity `#1` was referenced by an `Edge` was imported as ids `3, 4, 5`, and the
 - `PackError` is raised for malformed packs.
 
 `examples/trip.py` merges three independently authored networks this way.
+
+## `specs`: circuit rules as a pack
+
+`share` moves entities and components. A `circuits` spec is neither: it is a
+tree of dataclasses whose leaves include component *classes*
+(`Self(RescanWanted, "folder")`), and `attach` refuses a class as a field. So
+rules-as-data have their own small serializer.
+
+```python
+from loopingrules import specs
+data = specs.dump_specs({"rescan": do_rescan_spec})    # JSON-shaped, with a header
+problems, loaded = specs.load_specs(data, specs.registry_of(RescanWanted))
+rule = circuits.compile_circuit(loaded["rescan"], tools=TOOLS)
+```
+
+- Spec shapes are looked up in a fixed catalog by name; a name outside it
+  (`__import__`, `ToolRequest`) is refused, never resolved.
+- Component classes resolve only through the `registry` you pass, as in
+  `share.load_pack`. A spec naming a class you did not register is skipped and
+  named in `problems`; the other specs in the pack still load.
+- `Const.value` is plain data. A class or a spec node hidden there is refused.
+- A `Call` tool name is data, not authority: `compile_circuit(spec, tools=...)`
+  still raises `KeyError` for a tool you did not register, and that stays the
+  one place that decides what a loaded rule may reach.
+- Nesting deeper than `specs.MAX_DEPTH` is refused.
+
+Verified behaviour: `harneskills.examples.automations.do_rescan_spec` comes
+back equal from JSON, compiles against that module's `TOOLS`, and is refused
+when `RescanWanted` is not in the registry. Every spec in `tests/test_circuits.py`
+and `examples/files.py` round-trips equal.
