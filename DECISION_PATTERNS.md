@@ -746,3 +746,112 @@ matching if a domain remapped them.
   `hear_want` and the product domain) and classify are the three the evidence points at.
 - **Whether slot declarations check field types as well as names.** Names are cheap and structural; types
   would catch more, at the cost of constraining components that today accept loosely typed fields.
+
+## 2026-10-01 (later) — discussed, nothing built or tested: rules that write rules, learned from input/output shapes
+
+This follows the entry above and uses its vocabulary (shapes, templates, slot binding, open names). It
+records a conversation only: no code was written, no scratch script was run, and nothing here has been
+checked against examples. It exists so the design is not lost; treat every "would" as a proposal.
+
+### The idea, as the user stated it
+
+The system is given **input shapes and desired shapes** (entities and components, as in a world snapshot)
+and finds the rules that turn one into the other. Complexity is meant to come from many simple learned rule
+instances over the closed templates, not from complex rule bodies, so the learner's output vocabulary is
+the template catalog and the learner's job is choosing a template, binding its slots and adding a guard.
+
+- **Reuse before writing.** Existing rules run first. The learner writes a rule that moves the input toward
+  a shape the existing rules already carry on, then another from the "almost matching" shape to the
+  desired one. What the system must actually possess are heuristic rules that, given an input shape and a
+  desired shape, decide which computation to trigger.
+- **The desired shape is partial.** Anything not stated is unconstrained. Ambiguity is removed by the
+  author naming the wanted components explicitly, not by the learner guessing.
+- **Components are never invented.** Declaring a new component kind is part of writing the example itself;
+  the learner composes names that already exist.
+- **Existing rules may be changed unless declared frozen**, so a run is always scored against the *whole*
+  set of input/output samples, never one sample at a time. This is the 2026-09-10 contract (`frozen`,
+  every sample a hard constraint, rescored fresh) applied to learned rules.
+
+Sketch of the means-ends reading (mine, not yet agreed): run the existing rules to a fixpoint on the input,
+diff the result against the desired shape, and let the kind of difference suggest a template: a missing
+component suggests Derive or Gate, a missing entity Claim-and-emit or Spawn, an extra one Destroy or a
+retract, a changed value Update, data sitting behind a key Resolve-by-key. A second stage then fills the
+holes from the examples.
+
+### The two-phase proposal (the user's latest message)
+
+1. **Phase 1, relationships.** A fixed set of *relationship rules* is tried blindly against every
+   input/output sample. Those that hold in every positive sample are collected as **must hold**. Matching
+   the same relationships against **negative examples** gives **must not hold**: those that hold only in
+   negatives. A relationship that holds in only some samples, or fails in only some, becomes **generally
+   holds** or **generally does not hold**.
+2. **Phase 2, derivation.** From the must-hold and must-not-hold sets the system derives the rules that
+   actually run.
+
+### Assessment
+
+The shape is **Daikon-style invariant detection** (Ernst et al.): a fixed catalog of invariant templates is
+instantiated over every type-compatible combination of variables, each instance is tested against each
+observation, falsified ones are dropped, and survivors are reported as likely invariants, with a
+statistical filter against coincidence and suppression of implied ones. Daikon has no negative examples,
+so that part is the user's addition. It also resembles version-space learning over a fixed hypothesis
+language, and "applies only in some cases" is decision-tree induction with the relationships as features,
+which is the user's original "rules that build a decision tree" idea.
+
+What it buys, if it works:
+- **Phase 1 is cheap.** Testing a relationship is a per-sample check. The 09-10 search runs a fixpoint per
+  candidate edit, so phase 1 is a much cheaper first filter, and its output (a list of what holds) is
+  declarative and reviewable.
+- **Exclusivity and exhaustiveness can be discovered.** An output-only relation like "`Met` and `Unmet`
+  never co-occur" is an invariant, which is how a `classify` template would get its declared exclusivity
+  without anyone writing it, and the negatives would test it.
+- **It fits the closed-shapes model.** Typed slots prune the relationship space, and the template set is
+  what makes phase 2 tractable.
+
+Risks named in the discussion:
+1. **Two roles for negative examples.** A relationship that holds on all positives *and* on a negative
+   does not discriminate; one that holds only on negatives is a forbidden signature. Whether a negative is
+   a wrong output for an input, or an input on which nothing should fire, is not defined yet. Both could
+   be supported.
+2. **"Generally holds" conflicts with two earlier positions.** `PRINCIPLES.md` says a wrong conclusion is
+   worse than a missing one, and the 09-10 entry lists "no cross-example weighting; every example is a hard
+   constraint" as a non-goal. Proposed reading: a soft relationship is never a silent runtime rule. It is a
+   proposal that needs a guard (another relationship that separates the cases where it holds from where it
+   doesn't, which is the decision-tree step), a human confirmation, or an `Ambiguous` verdict.
+3. **Coincidences on few samples.** Daikon's known failure. Typed slots remove most, a minimum support
+   count is still needed. A threshold such as `Ge(value, 8)` is underdetermined: any constant between the
+   largest negative and the smallest positive fits, so the honest verdict is `Ambiguous` with the range
+   stated and a request for a boundary example.
+4. **Direction and alignment.** Relationships are symmetric, rules have direction; the input/output split
+   supplies it. A relationship over several entities needs alignment through key or reference slots, and a
+   relationship over a set (a count) runs into the correlated-aggregate gap from the entry above.
+5. **Phase 2 is still a search.** Many true relationships are redundant, and runtime rules fire stepwise,
+   not input-to-output in one move. Proposed: keep replaying against all samples as the final gate, so
+   relationships propose and replay disposes.
+
+### What this does not settle
+
+- Phase 1's behavior on realistic data is unknown. Whether the true relationships are recovered and how
+  many spurious ones survive at 2, 5 and 10 samples has not been measured.
+- Phase 2 (relationships to runtime rules) is the unspecified half; this entry has only argued it is a
+  search gated by replay.
+- Nothing here changes `circuits.py`, `specs.py` or `loop.py`. `Loop` still has no rule removal, which a
+  learner that modifies or deletes rules would need.
+
+### Left open, named rather than guessed at
+
+- **What exactly a negative example is** (wrong output for an input, input where nothing should fire, or
+  both), and how a relationship that holds on a negative is treated.
+- **Whether a "generally holds" relationship can ever become a runtime rule**, or only a proposal that is
+  confirmed or guarded first.
+- **Whether the relationship catalog is fixed like the templates, or can grow.** Closed is consistent with
+  this entry's direction; open would put a new decision on the same footing as a new template.
+- **Closed-world scoping:** for which component kinds does "absent from the desired shape" mean "must not
+  be there", versus "unconstrained"? The partial-shape rule says unconstrained by default.
+- **When intermediate kinds are declared**, since components are never invented but a two-stage rule chain
+  may need one that the author did not think to put in an example.
+- **Whether current behavior on seen inputs counts as implicit samples**, so that changing an existing
+  rule is checked against what it already does without anyone writing those samples.
+- **A cheap test before any design hardens:** write about eight relationship templates over declared slots
+  in the product domain, generate positive samples and corrupt outputs for negatives, run phase 1 only, and
+  count recovered versus spurious relationships at 2, 5 and 10 samples.
