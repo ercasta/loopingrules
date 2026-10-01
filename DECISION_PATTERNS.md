@@ -651,3 +651,98 @@ not just that the ones it has are quiet:
   looked closed long ago. Whether that is the correct behavior (discourse-wide correction, by design) or
   needs a domain-imposed limit (only the immediately preceding sentence, say) is left to whichever domain
   writes the first real reinterpretation rule, not decided in the abstract here.
+
+## 2026-10-01 — designed, tested on paper and in scratch code, not built: closed shapes, open vocabulary
+
+Prompted by a review of `circuits.py` that asked for something different from what it had become: not complex
+rules written out of its expression algebra (45 node types by now, grown one hard rule at a time —
+`Split`, `Join`, `Children`, `FindBy`), but complex *compositions* of rules, drawn from a small set of
+parametrizable templates and wired together by attaching and detaching components. Nothing here is
+implemented; four checks were run against the existing specs and one fresh domain, with throwaway scripts
+(not committed), to find out whether the idea survives contact with the corpus before any code is written.
+
+### What is closed and what is not
+
+The first framing was wrong and the correction is the point of this entry. A limited component
+*vocabulary* was proposed; it cannot work, because named components (`Wanted`, `Affordable`, `Risk`,
+`Resolved`) are where a domain's meaning lives, and meaning has to grow without bound. What stays closed is
+the layer above the names:
+
+- **Shapes** — the roles a component can play (occasion, subject, tag, derived value, reference, state,
+  parameter, latch), each a set of named *slots*.
+- **Templates** — the rule patterns that act on those roles (gate, derive, resolve-by-key, claim-and-emit,
+  classify, latch).
+
+A new name is cheap. A new shape, a new template or a new expression node is a decision to justify. This is
+`PRINCIPLES.md`'s "small vocabulary, closed under what rules produce" with the closure moved up one level:
+closed under *shape*, open under *name*.
+
+A second correction followed: "protocol shapes" (fixed field names) and "free-field shapes" are not two
+kinds. Every field name in `circuits.py` is already a literal parameter of a spec, so a fixed name is only a
+template's default. One model covers both: a component *declares* which shape it instantiates and binds
+each slot to a real field (`judgement(Risk, level="level", reason="reason")`), and a template takes the
+component, never the field names. The one real exception is a component read by trusted code outside the
+catalog (`Reply`, `Said`, `ToolRequest`): its slots are pinned, because the engine would silently stop
+matching if a domain remapped them.
+
+### What the four checks found
+
+1. **Pure-parameter reuse is low.** 37 specs (everything module-level in `tests/test_circuits.py` and
+   `examples/files.py`) have 31 distinct structural skeletons with component classes, field names and
+   constants blanked, 28 with comparison and arithmetic operators blanked too. What does repeat is
+   claim-and-emit (11 of 15 `ActionCircuit`s are `Destroy` then `Spawn`) and the `hear_list`/`hear_want`
+   twin pairs. A `TagCircuit`'s condition is its content, so a template named "tag if comparison" would
+   carry almost nothing; templates have to be coarser than that, or the condition language has to count as
+   part of what a template is parameterized by. Not decided.
+2. **A component has no lifecycle of its own; its entity does.** 14 entity archetypes are consumed whole by
+   a `Destroy` (a `Said` with its tags and parse results, a `Listing` with `Wanted`/`Affordable`/
+   `FairPriced`, a `Bought`). `cards.Listing` is an occasion, not a subject, which an earlier draft of this
+   table got wrong. A tag comes in two kinds (recomputed both ways every tick by a `TagCircuit`, versus
+   latched once like `Announced`), and state that actions replace (`Purse`, `Copies`, `Wants`) is a different
+   shape from a read-only parameter (`RiskProfile`). `Listing`'s three tags are conjunctive; `Said`'s nine
+   fall into exclusive families (list, want, status) that nothing in the specs says are exclusive, so
+   exclusivity has to be *declared*, which is the argument for `classify` as a template and not three loose
+   `TagCircuit`s.
+3. **A fresh domain (a product, its features, requirements checked against them) needed no new shape.**
+   About a dozen names, all fitting the roles above, run end to end on the existing catalog. It also
+   exposed two gaps in what the shapes guarantee, neither predicted beforehand:
+   - **A correlated aggregate cannot be written, and the failure is silent.** Inside `Count`/`Forall`,
+     self is rebound to the matched entity, so "how many requirements point at *this* product" has no
+     expression: the naive attempt returned `0` where the answer was `3`, with no error. Reviewing one
+     product at a time through a singleton works, at the price of outside code swapping the singleton.
+   - **`ValueCircuit` never retracts.** When a source it derived from disappears, the evaluation skips the
+     tick and the old output stays. Destroying one feature left its requirement with a stale `Resolved`,
+     `Via` read `MISSING`, every comparison was false, and the requirement ended with no outcome tag at
+     all — not even "unknown", because the stale `Resolved` made it look resolved. Exclusivity held;
+     exhaustiveness did not. A derived value that skips on `MISSING` is not "recomputed fresh every tick".
+     `cards` never hit this; it is existing behavior, unchanged by this entry.
+4. **Renaming is safe through slot binding.** The same domain was built twice from stub templates that read
+   fields only through declared slots: once with the original names, once with every component and field
+   renamed and every dataclass's field order shuffled. Outcome tags and the one reply were identical. A
+   typo'd field, a missing slot and a remap of `Reply` were each refused at declaration time. A
+   deliberately swapped binding (`bound` and `sense`) changed the result, so the check has teeth — and it is
+   the limit: a swapped binding of two numeric slots is *not* caught structurally, only by a behavior
+   test. Slot types would catch some such swaps, not all.
+
+### What this does not settle
+
+- The corpus is mostly `cards` (about 30 of the 37 specs), restated to reproduce rules that already
+  existed, not written for templates. The fresh domain was written by someone who already knew the
+  catalog's limits and the earlier findings, so it is easier than a stranger's would be.
+- Nothing here shows the model helps rule search or learning, which was a motivation of the original
+  catalog. That needs an actual search.
+- The stub declaration layer and templates in check 4 were scratch code. No `declare`, no template functions
+  and no wiring check exist in `loopingrules/`.
+
+### Left open, named rather than guessed at — blocks implementing, not designing
+
+- **Whether `ValueCircuit` should retract its output when a read goes `MISSING`**, or whether a
+  `classify` template should instead carry an explicit exhaustive fallback ("unknown") and leave derived
+  values stale. Changes the meaning of "fresh" for every existing derived value.
+- **Whether to add a reverse-reference scope** (entities whose field names *me*, `Children`'s converse), or
+  to accept one-at-a-time review through a singleton. The first grows the expression algebra, against this
+  entry's own direction; the second leaves the gap and the silent wrong answer in place.
+- **Template granularity and which come first.** Claim-and-emit, resolve-by-key (appeared in `hear_list`,
+  `hear_want` and the product domain) and classify are the three the evidence points at.
+- **Whether slot declarations check field types as well as names.** Names are cheap and structural; types
+  would catch more, at the cost of constraining components that today accept loosely typed fields.
