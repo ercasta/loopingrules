@@ -855,3 +855,102 @@ Risks named in the discussion:
 - **A cheap test before any design hardens:** write about eight relationship templates over declared slots
   in the product domain, generate positive samples and corrupt outputs for negatives, run phase 1 only, and
   count recovered versus spurious relationships at 2, 5 and 10 samples.
+
+## 2026-10-03 — tested in scratch code, not built: a baton, so the computation can be modulated and not only run to a fixpoint
+
+Prompted by the observation that unrelated rules fire side by side with no central control, and "run to
+fixpoint" is then the only thing shaping a computation. The proposal: a *baton* that rules pass to each
+other, or that a regulating rule takes away, so the computation can follow a logical thread. The stated
+goals are both **mutual exclusion** (rivals that do not know each other cannot both act) and
+**preemption** (something central can interrupt work in flight). Nothing here is in `loopingrules/`; two
+throwaway scripts (`/tmp/baton_check.py`, `/tmp/baton_check2.py`, not committed) ran it against a real
+documented problem before any design was fixed.
+
+### The shape, and why it is vocabulary and not engine
+
+Rules are not parallel today. `Loop.tick` runs every rule once per tick in priority order and each write is
+visible to the next rule at once, so "everything whose guard holds fires" is the whole control story. A
+baton is one ordinary component, `Baton(scope, holder)`, on its own entity. A rule that takes part guards on
+it (`holder == "bought"`), passing is a `replace`, taking away is a higher-priority rule that `replace`s it.
+No `Loop` change. This keeps this file's own non-goal ("a goal is an ordinary fact a judge's guard checks")
+and keeps `analyze()` sound, because the baton is an ordinary read. The alternative, a `Loop.rule(...,
+thread=)` gate, would enforce the guard but tie rules to threads and cost the analysis; not taken.
+
+A baton belongs to an occasion or thread, not to a rule, for the reason the rest of this file already gives
+for occasions: rules are shared across threads, entities are not.
+
+`loopingrules.memory.Focus` was checked first as a possible reuse and is not one. `Focus` is a salience claim
+a domain makes about an entity, recorded as a trail, with no holder, no authority and nothing gating on it
+(two entities may both carry it, which is why `most_intense` exists). The one overlap is
+`examples/deixis.py`, which keeps `Focus` single-valued by detaching it from every other entity before
+attaching it: a hand-rolled exclusive baton, exclusive only by convention. A baton would generalize that;
+`Focus` stays a plain claim.
+
+### What the scratch run found
+
+The test case was the one `TODO.md` records: `cards.decide_buy` can produce two `Bought`s in one tick, and a
+reply rule that drains one per tick (the compiled circuit's behavior) lets `reply_goal_met` fire between the
+two replies. Reproduced first: `bought dragon`, `goal met`, `bought griffin`.
+
+1. **A central regulator fixes the order and gives exclusion.** One high-priority rule derives the holder
+   from the world by precedence (a `BadCommand` first, then a pending `Bought`, then an unannounced
+   `GoalMet`, else `idle`) and `replace`s the baton only when it differs; the three reply rules each guard
+   on it. Result: `bought dragon`, `bought griffin`, `goal met`. From the loop trace, at most one reply
+   rule fired in any tick.
+2. **Preemption needs no saved state.** With one `Bought` still pending, a `BadCommand` was spawned. Result:
+   `bought dragon`, `! interrupted`, `bought griffin`, `goal met`, one reply rule per tick throughout. The
+   preempted work resumed by itself because rules hold no stack and every in-flight fact is already a
+   component; the baton only decides who may act next.
+3. **Collaborative passing alone stalls, silently.** When the reply rules pass the baton to each other
+   (`bought` passes to `goal` once the last `Bought` is gone), the case where the goal is met with no
+   purchase at all leaves the baton on `bought` forever: no reply, `hot == []`, a clean settle that looks
+   exactly like "done". This is the exact hazard flagged beforehand and it is real, not theoretical. A
+   regulator that derives the holder from the world closes it.
+4. **A regulator needs a stable resting value.** A first version that flipped the holder between `bought`
+   and `goal` when neither had work changed the world every tick and never settled. An explicit `idle`
+   holder, reached and left only when data changes, fixes it.
+5. **It stays inside the analysis.** `analyze()` follows a same-module helper that takes `w`, so
+   `holds(w, who)` and a compare-and-swap `pass_baton(w, frm, to)` analyze cleanly, and the set of rules
+   whose `writes` include `Baton` came out as exactly the regulator: "central take-away" is a checkable
+   property, not a convention. (A rule that referred to its types as `cards.X` attributes instead of
+   imported names went `Opaque`, and the check then had to treat it as a possible writer; that was the
+   scratch script's own mistake, but it is the same dialect restriction every analyzed rule has.) A
+   compiled `ActionCircuit` can also gate on a baton held on a different entity:
+   `Gt(Count(Baton, Eq(Self(Baton, "holder"), Const("bought"))), Const(0))` as its `condition`, and
+   `circuits.reads` reports `Baton`.
+
+### What it costs
+
+- **Latency.** The central version settled in 6 ticks where the ungated one took 2, because the regulator
+  hands over one tick before the holder acts and again after.
+- **Preemption can lag one tick.** A regulator only sees what was written before it runs in the tick. A
+  `BadCommand` produced later in the same tick preempts a tick late. An earlier run of the preemption case
+  hid exactly this: the `BadCommand` came from a `Said` that had not been parsed yet, so the second purchase
+  reply went out first and the run looked like a failure of preemption when it was the lag. Spawned
+  directly, it preempted correctly.
+- **Advisory.** A rule that forgets the guard still runs. Nothing enforces participation, only the closed
+  `gate` template could add the clause automatically (see the 2026-10-01 entry, where `gate` is one of the
+  named templates); hand-written rules can still forget it.
+
+### Left alone on purpose
+
+- **Concurrent threads.** One baton for one thread was tested. One baton per thread entity, several live,
+  is the same open question `Intake`/`Discourse` already carry ("proven against one at a time").
+- **Other domains.** Only `cards` was used. `pystrider`'s `relax`/`lower` ("correct by luck and wrong as a
+  repair" above) is the obvious second case and has not been tried.
+- **Nesting.** Preemption of a preemptor was not tried. The derived-by-precedence regulator handles any
+  order of arrival by construction, but a domain whose precedence is not a fixed list is untested.
+- **Whether `examples/deixis.py` should move onto a baton.** Not decided; `Focus`'s single-valuedness is
+  currently a convention nothing checks.
+
+⚠ Nothing is implemented: no `Baton` component, no helpers and no `gate` template exist in `loopingrules/`.
+The regulator was written by hand for one domain, so this shows the pattern works there, not that a generic
+regulator can be written.
+
+Still open:
+- Whether the regulator should be one rule per scope that derives the holder (as run here) or whether
+  collaborative passing with a regulator only as a watchdog is worth its extra moving parts. The evidence so
+  far favors derived: the collaborative form needed the regulator anyway to avoid the stall.
+- How a regulator states its precedence so a second domain does not rewrite it. A fixed list of
+  `(condition, holder)` pairs read top to bottom is the obvious candidate and was not built.
+- Whether a baton should be able to say *why* it was taken, the way `ruled_out` carries a named reason.
