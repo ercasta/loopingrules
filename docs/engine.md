@@ -32,7 +32,8 @@ A minimal channel, verified against this codebase:
 ```python
 import threading
 from loopingrules import Engine, Loop
-from loopingrules.world import Said, reply
+from loopingrules.engine import Said
+from loopingrules.world import reply
 
 class Collector:
     name = "test"

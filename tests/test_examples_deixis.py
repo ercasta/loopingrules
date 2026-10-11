@@ -9,7 +9,7 @@ reply, not silence.
 """
 
 from loopingrules.loop import Loop
-from loopingrules.world import Reply, Said
+from loopingrules.engine import Reply, Said
 
 from examples import deixis
 

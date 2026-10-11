@@ -47,7 +47,7 @@ TODO.md                 open threads named so they are not lost, not a
 pip install -e .
 python3 -c "
 from loopingrules import Loop
-from loopingrules.world import Reply, Said
+from loopingrules.engine import Reply, Said
 
 loop = Loop()
 

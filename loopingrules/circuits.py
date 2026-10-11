@@ -805,7 +805,8 @@ class ActionCircuit:
 
     `Destroy()` in `effects` -- consuming the matched entity as PART OF
     acting on it -- is this shape's own answer to "don't fire twice,"
-    the same idiom `loopingrules.world.Said`/`Proposal` already use (a
+    the same idiom `Said` (in `loopingrules.engine`) and
+    `loopingrules.world.Proposal` already use (a
     rule claims and destroys the occasion the moment it acts, so there
     is structurally nothing left to match a second time). This is a
     DIFFERENT idiom from `ValueCircuit.monotonic`'s `without=into` (a

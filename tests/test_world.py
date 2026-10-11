@@ -5,7 +5,8 @@ import dataclasses
 
 import pytest
 
-from loopingrules.world import (Change, Proposal, Reply, Said, World,
+from loopingrules.engine import Reply, Said
+from loopingrules.world import (Change, Proposal, World,
                                 arbitrate, census, is_transient, propose,
                                 reply, transient)
 

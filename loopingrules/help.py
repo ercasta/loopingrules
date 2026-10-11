@@ -117,7 +117,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .world import Proposal, Said, arbitrate, census, propose, reply
+from .engine import Said
+from .world import Proposal, arbitrate, census, propose, reply
 
 
 @dataclass(frozen=True)

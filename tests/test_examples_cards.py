@@ -8,7 +8,7 @@ import pytest
 
 from examples import cards, judge
 from loopingrules.loop import Loop
-from loopingrules.world import Reply, Said
+from loopingrules.engine import Reply, Said
 
 
 def say(loop, line):

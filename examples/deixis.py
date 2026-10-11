@@ -22,7 +22,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from loopingrules.memory import Focus, Memory, most_recent, track_focus
-from loopingrules.world import Said, reply
+from loopingrules.engine import Said
+from loopingrules.world import reply
 
 
 @dataclass(frozen=True)

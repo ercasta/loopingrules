@@ -10,7 +10,8 @@ import pytest
 from examples import cards, judge
 from examples.cards import Wanted
 from loopingrules import analyze, help as help_
-from loopingrules.world import Proposal, Reply, World
+from loopingrules.engine import Reply
+from loopingrules.world import Proposal, World
 
 
 # -- analyze(): the positive cases --------------------------------------

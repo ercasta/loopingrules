@@ -7,8 +7,9 @@ alongside this) is `harneskills`'s own `tests/test_help.py` and
 depend on either."""
 
 from loopingrules import help as help_
+from loopingrules.engine import Reply, Said
 from loopingrules.loop import Loop
-from loopingrules.world import Proposal, Reply, Said, propose
+from loopingrules.world import Proposal, propose
 
 
 def say(loop, line):

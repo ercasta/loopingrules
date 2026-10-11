@@ -22,7 +22,8 @@ from examples.cards import (Affordable, Bought, CardDef, Copies, FairPriced,
 from examples.judge import TooRisky
 from loopingrules import analyze, circuits
 from loopingrules.loop import Loop
-from loopingrules.world import Reply, Said, World
+from loopingrules.engine import Reply, Said
+from loopingrules.world import World
 
 
 # -- the four specs, restating the four real rules ----------------------

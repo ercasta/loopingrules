@@ -74,11 +74,30 @@ asker: carry the channel off the `Said` you consumed.
 
 from __future__ import annotations
 
+import dataclasses
 import queue
 import threading
 
 from . import save
-from .world import Reply, Said
+
+
+@dataclasses.dataclass(frozen=True)
+class Said:
+    """A line arriving on a channel. What a person typed, before anything
+    has decided it means something."""
+
+    channel: str
+    text: str
+
+
+@dataclasses.dataclass(frozen=True)
+class Reply:
+    """Something to say back on a channel. The one thing a prompt prints
+    unasked -- see `harneskills.repl`."""
+
+    channel: str
+    text: str
+
 
 BROADCAST = "user"
 
@@ -173,7 +192,7 @@ class Engine:
                                               "text": reply.text}})
         for name, error in self.loop.errors:
             self.to_all({"error": {"text": "%s: %s: %s"
-                                   % (name, type(error).__name__, error)}})
+                                    % (name, type(error).__name__, error)}})
         self.loop.errors.clear()
         if unheard:
             for entity, heard in world.each(Said):
@@ -191,9 +210,9 @@ class Engine:
         self.drain()
         if hot:
             self.to_all({"error": {"text": "gave up after %d ticks, still firing: %s"
-                                   % (ticks, ", ".join(sorted(set(hot))))}})
+                                    % (ticks, ", ".join(sorted(set(hot))))}})
         self.to_all({"settled": {"revision": self.loop.world.revision,
-                                 "entities": len(self.loop.world)}})
+                                  "entities": len(self.loop.world)}})
         if self.on_settle is not None:
             self.on_settle(self.loop)
 
@@ -215,11 +234,11 @@ class Engine:
         if name == "/show":
             world = self.loop.world
             self.to(channel.name, {"lines": [world.show(e)
-                                             for e in world.entities()]})
+                                              for e in world.entities()]})
             return
         if name == "/rules":
             self.to(channel.name, {"lines": ["%2d. %s" % (i, n) for i, (n, _)
-                                             in enumerate(self.loop.rules, 1)]})
+                                              in enumerate(self.loop.rules, 1)]})
             return
         handler = self.commands.get(name)
         if handler is None:

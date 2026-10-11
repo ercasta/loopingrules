@@ -81,7 +81,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from examples.judge import Risk, RiskTolerance, TooRisky, flag_too_risky
-from loopingrules.world import Said, reply, transient
+from loopingrules.engine import Said
+from loopingrules.world import reply, transient
 
 
 HORIZON_DAYS = 7

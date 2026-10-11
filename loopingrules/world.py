@@ -141,6 +141,7 @@ from __future__ import annotations
 import dataclasses
 from typing import Any, Dict, List
 
+
 _PRIMITIVES = (type(None), bool, int, float, str)
 
 
@@ -249,24 +250,6 @@ def is_transient(kind) -> bool:
 
 
 @dataclasses.dataclass(frozen=True)
-class Said:
-    """A line arriving on a channel. What a person typed, before anything
-    has decided it means something."""
-
-    channel: str
-    text: str
-
-
-@dataclasses.dataclass(frozen=True)
-class Reply:
-    """Something to say back on a channel. The one thing a prompt prints
-    unasked -- see `harneskills.repl`."""
-
-    channel: str
-    text: str
-
-
-@dataclasses.dataclass(frozen=True)
 class Proposal:
     """Tags a candidate entity: one rival reading of an `occasion`, not
     yet real. A candidate carries this PLUS whichever component would
@@ -279,8 +262,8 @@ class Proposal:
     processing.md` in `harneskills`, the domain this shape was first
     worked out in): shared here because two domains cannot recognize
     or skip each other's unresolved candidates without agreeing what
-    the tag means, the same reason `Said`/`Reply` are here and not in
-    a domain's own module.
+    the tag means, the same reason `Said`/`Reply` live in
+    `loopingrules.engine` and not in a domain's own module.
 
     WHICH proposal should win, beyond "first," and what to do about an
     occasion nobody answered, are still not this package's business --
@@ -322,6 +305,7 @@ def reply(w, text: str, channel: str = "user") -> Entity:
     channel -- see `loopingrules.engine`'s own `BROADCAST`) unless told
     otherwise. The one line most domains already hand-write their own
     `_say`/`_reply` helper for."""
+    from .engine import Reply
     return w.spawn(Reply(channel, text))
 
 

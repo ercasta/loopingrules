@@ -19,7 +19,7 @@ package only. `examples/` is source in this repo and is never installed.
 ```python
 import dataclasses
 from loopingrules import Loop
-from loopingrules.world import Reply, Said
+from loopingrules.engine import Reply, Said
 
 loop = Loop()
 

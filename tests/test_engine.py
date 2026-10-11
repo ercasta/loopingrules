@@ -8,9 +8,8 @@ import time
 
 import pytest
 
-from loopingrules.engine import BROADCAST, Engine
+from loopingrules.engine import BROADCAST, Engine, Reply, Said
 from loopingrules.loop import Loop
-from loopingrules.world import Reply, Said
 
 
 @dataclasses.dataclass(frozen=True)

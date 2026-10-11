@@ -85,7 +85,8 @@ import inspect
 import textwrap
 from typing import Dict, Set
 
-from .world import (Proposal, Reply, arbitrate as _CORE_ARBITRATE,
+from .engine import Reply
+from .world import (Proposal, arbitrate as _CORE_ARBITRATE,
                     census as _CORE_CENSUS, propose as _CORE_PROPOSE,
                     reply as _CORE_REPLY)
 
