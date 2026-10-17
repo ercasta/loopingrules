@@ -278,4 +278,3 @@ def install(loop, tolerance: float = 0.6, catalog=DEFAULT_ITEMS) -> None:
             world.attach(entity, Stock(0))
     if world.first(RiskTolerance) is None:
         world.spawn(RiskTolerance(max_level=tolerance))
-    world.learn("stock", "needby", "status", *(i.name for i in catalog))

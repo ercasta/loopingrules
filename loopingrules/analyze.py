@@ -48,14 +48,15 @@ nothing here claims to know which types an entity it destroys was
 carrying. `Analysis.destroys` records only that the rule CAN destroy
 entities -- a real limit on the map, not a silent one.
 
-## Two named exceptions: `reply`, `propose`
+## The cross-module exceptions are gone
 
-`loopingrules.world.reply`/`propose` are cross-module
-by construction -- every domain's own `reply_*`/`propose_*` rule calls
-`reply`/`propose` from `loopingrules.world`, never from its own module,
-
-Note: `propose` was removed from `loopingrules.world` as part of a
-simplification. If needed in the future, it can be re-added.
+`loopingrules.world` used to carry `reply`/`propose` (and `arbitrate`/
+`census`) as cross-module helpers, and this module used to special-case
+them. They were removed from `loopingrules.world` in a simplification, so
+that special case is gone too: a domain spawns its own `Reply` (from
+`loopingrules.engine`) directly, and every call a rule makes into another
+module raises `Opaque` rather than being followed. This module no longer
+imports `Reply` at all.
 """
 
 from __future__ import annotations
@@ -64,8 +65,6 @@ import ast
 import inspect
 import textwrap
 from typing import Dict, Set
-
-from .engine import Reply
 
 
 READS = {"each", "get", "all", "the", "first"}
@@ -126,17 +125,31 @@ def _qualname(fn) -> str:
     return "%s.%s" % (module.rsplit(".", 1)[-1], getattr(fn, "__name__", "?"))
 
 
+_CACHE: "dict" = {}
+
+
 def analyze(fn) -> Analysis:
     """Statically derive what component types `fn` -- a rule, a plain
     function of one `World` -- reads and writes. Raises `Opaque` the
     moment `fn`, or a same-module helper it calls with the world
     parameter, falls outside the dialect the module docstring names.
+
+    Cached BY FUNCTION OBJECT: the derivation depends only on `fn`'s own
+    source, and no caller mutates the returned `Analysis` (callers only
+    read it, or take a set difference of it), so a rule registered on many
+    loops -- as a replay harness does, thousands of times -- is parsed
+    once. A function whose source is unavailable still raises `Opaque` on
+    every call; failures are not cached.
     """
+    cached = _CACHE.get(fn)
+    if cached is not None:
+        return cached
     module = inspect.getmodule(fn)
     if module is None:
         raise Opaque(_qualname(fn), "no module found to resolve names against")
     analysis = Analysis()
     _walk_function(fn, module, analysis, set())
+    _CACHE[fn] = analysis
     return analysis
 
 
@@ -337,7 +350,7 @@ def _walk_function(fn, module, analysis: Analysis, seen: set,
             analysis.writes.add(kind)
         elif method == "destroy":
             analysis.destroys = True
-        elif method in ("entity", "learn", "revision"):
+        elif method in ("entity", "revision"):
             pass
         else:
             raise Opaque(_qualname(fn),
@@ -355,14 +368,11 @@ def _walk_function(fn, module, analysis: Analysis, seen: set,
 
     def handle_helper_call(call):
         callee = module.__dict__.get(call.func.id)
-        # Note: propose, arbitrate, and census were removed from loopingrules.world
-        # as part of a simplification. If needed in the future, they can be re-added.
-        if callee is _CORE_REPLY:
-            # reply(w, text, channel="user") -- always spawns a Reply,
-            # per the README's own promise for this vocabulary.
-            analysis.writes.add(Reply)
-            mark_world_args(call)
-            return
+        # Note: `reply`/`propose`/`arbitrate`/`census` were removed from
+        # `loopingrules.world` as part of a simplification, so the old
+        # `callee is _CORE_REPLY` special case (which marked a `Reply`
+        # write) is gone with them -- any other call is followed only if
+        # it is a plain same-module function, below.
         if not inspect.isfunction(callee) or callee.__module__ != module.__name__:
             raise Opaque(_qualname(fn),
                          "%r is not a plain function defined in this "

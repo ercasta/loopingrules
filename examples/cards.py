@@ -462,4 +462,3 @@ def install(loop, cash: int = 100, catalog=DEFAULT_CATALOG) -> None:
                                  max_premium=0.25))
     if world.first(RiskTolerance) is None:
         world.spawn(RiskTolerance(max_level=0.8))
-    world.learn("list", "want", "status", *(c.name for c in catalog))
