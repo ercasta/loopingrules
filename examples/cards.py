@@ -177,9 +177,7 @@ def _find_card(w, name: str):
 
 
 def _parse_int(text: str):
-    """`int(text)`, or `None` -- the refuse-rather-than-guess discipline
-    `PRINCIPLES.md` asks for at every parse boundary, spelled out once
-    rather than a bare `try/except` at each call site."""
+    """`int(text)`, or `None` """
     try:
         return int(text)
     except ValueError:
@@ -266,7 +264,7 @@ def hear_status(w) -> None:
 
 def tag_wanted(w) -> None:
     """`Wanted` iff this listing's card is still short of its `Wants` --
-    both directions, every tick: see the module docstring's ⚠ on why
+    both directions, every tick: see the module docstring's on why
     `LoopCount`'s monotonic `without=` guard is wrong here."""
     for entity, listing in w.each(Listing):
         wants = w.get(listing.card, Wants)
@@ -342,9 +340,7 @@ def decide_buy(w) -> None:
     has already made stale by an earlier purchase, rather than trusting
     the snapshot. Two listings that are each affordable ALONE but not
     TOGETHER do not both buy in one tick -- see the module's own history
-    for why that matters (`DECISION_PATTERNS.md`'s "composability is a
-    structural test": two candidates writing the same `Purse` do not have
-    disjoint footprints, so nothing may treat them as free to compose).
+    for why that matters.
 
     `without=TooRisky` reads a fourth, independently-produced tag the
     same way it reads the first three -- this rule does not know, or
