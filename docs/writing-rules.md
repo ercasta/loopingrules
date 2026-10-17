@@ -25,7 +25,7 @@ def watch_first(w): ...
   input produces the same output in the same order.
 - **Use `priority` for real pipelining**, such as "parse before interpret", not
   to silently pick a winner between two rules that disagree. Disagreement
-  wants explicit [arbitration](language.md#proposals-and-arbitration).
+  wants an explicit design decision, not a priority tie-break.
 - `loop.install(fn, *args)` hands the loop to a domain's own installer, which
   registers its rules and seeds its entities.
 

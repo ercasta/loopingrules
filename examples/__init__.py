@@ -1,13 +1,15 @@
-"""Worked examples of domains built on `loopingrules`, kept in this repo
-for demonstration -- see `README.md`'s "Scope" section for what that does
-and does not mean. Not part of `packages=` in `pyproject.toml`: `pip
-install -e .` installs `loopingrules` alone, and nothing here is imported
-by it. `examples.cards` is the one domain; `examples.judge` and
-`examples.parts` are not domains at all -- each is a prototype testing
-one question a design conversation raised, neither imports `cards`
-back, and each says which question in its own docstring. `examples.
-circuits` USED to be a third such prototype -- promoted to `loopingrules.
-circuits`, in the package itself, once the question it was testing
-(a closed shape catalog restating real rules as data) had enough
-cross-repo evidence behind it; see that module's own docstring and
-`README.md`'s History for the promotion."""
+"""Worked examples of domains and experiments built on `loopingrules`,
+kept in this repo for demonstration -- see `README.md`'s "Scope" section
+for what that does and does not mean. Not part of `packages=` in
+`pyproject.toml`: `pip install -e .` installs `loopingrules` alone, and
+nothing here is imported by it.
+
+Domains: `cards`, `shopping`, `market`, `quorum`, `trip`. The two
+domain-oblivious bridges they share are `judge` (`Risk`/`RiskTolerance`)
+and `decide` (`Option`/`Score`/`Winner`).
+
+The tuning experiment -- parameters as components the rules read, and a
+search over their values against examples -- lives here too: `tuning` is
+the instrument, `bridge_transfer` is Experiment 1, and `ablation` is
+Experiment 2 plus the structure/ladder probes. See `docs/tuning.md`.
+"""

@@ -26,16 +26,14 @@ On macOS or Linux, use `.venv/bin/python`.
 
 | File | Pins down |
 |---|---|
-| `test_world.py` | identity, values, and the intersection of the two |
-| `test_loop.py` | order, settling, the budget, a rule that raises |
+| `test_loop.py` | order, settling, the budget, a rule that raises, the dormancy gate |
 | `test_engine.py` | one world, several channels, a broadcast reply |
 | `test_save.py` | the same world, ids and all, next time |
-| `test_analyze.py` | a rule's reads/writes, and where analysis refuses to guess |
-| `test_circuits.py` | the catalog, proven against real rules from two domains |
-| `test_memory.py` | `Focus`/`Memory`/`MemoryEntry`, genuine regain vs no-op reattach |
-| `test_chart.py` | two idle ticks, exactly, and a covering combination |
 | `test_share.py` | pack import, id remapping under collision, dangling refs skipped, a registry that never imports a name from the file |
 | `test_examples_*.py` | each example domain, end to end |
+
+`world` itself has no dedicated file; its behaviour is pinned through the
+loop, engine and save tests, which exercise it hardest.
 
 ## A test template
 
@@ -75,28 +73,8 @@ Always assert `loop.errors == []`. A raising rule does not fail the loop.
 `hot` names the rules that were still changing the world when the budget ran
 out. Usual causes: an unguarded spawn, attaching a different value each tick,
 two rules that undo each other, or an in-place mutation followed by
-`changed()`. Turn on tracing to see what they write.
-
-### Tracing: which rule wrote what, on which tick
-
-```python
-loop = Loop(trace=True)          # or loop.tracing = True
-loop.run()
-for entry in loop.trace:         # TraceEntry(tick, rule, changes)
-    print(entry.tick, entry.rule,
-          [(c.action, c.entity, c.kind) for c in entry.changes])
-```
-
-Verified output for a small rule that spawns an entity and attaches to it:
-
-```
-[(1, '__main__.a', ['spawn', 'attach'])]
-```
-
-Each `Change` has `action` (`spawn`, `destroy`, `attach`, `detach`,
-`replace`, `remove`, `changed`), `entity` (an id), `kind` (a type name)
-and `component`. Tracing is off by default because it allocates per write.
-It also attributes writes made by a rule that then raised.
+`changed()`. Step the loop one tick at a time and inspect `world.show` (see
+below) to see what changed.
 
 ### A rule raised
 

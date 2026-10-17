@@ -9,9 +9,8 @@ The package is a **substrate**. Before adding anything, check it against
   in `loopingrules/`.
 - A channel (terminal, socket) belongs in a host such as `harneskills`.
 - Shared vocabulary earns a place in the core only when two independently
-  motivated domains must agree on it and neither can own it. `Said`, `Reply`
-  and `Proposal` are the precedent. `help.py` is the single stated exception
-  and explains itself.
+  motivated domains must agree on it and neither can own it. `Said` and
+  `Reply` are the precedent.
 - `pyproject.toml` lists `packages = ["loopingrules"]`. Examples are never
   added to it.
 
@@ -78,7 +77,7 @@ Recent history is the best template: `git log -5`.
 ## Where design goes
 
 - Open threads: `TODO.md`. Named so they are not lost, not a schedule.
-- Decisions, including ones whose code was removed: `DECISION_PATTERNS.md`.
+- Decisions, including ones whose code was removed: `README.md`'s History.
 - What keeps emergence the *wanted* kind: `PRINCIPLES.md`.
 - How the site is built: edit `docs/` and `mkdocs.yml`, then see below.
 

@@ -4,17 +4,12 @@
 
 ```
 loopingrules/
-  world.py      World, Entity, Said/Reply/Proposal, arbitrate/census, @transient
+  world.py      World, Entity, @transient
   loop.py       Loop: registers rules, ticks them, runs to a fixpoint
-  engine.py     Engine: one thread, one queue, N channels
+  engine.py     Engine: one thread, one queue, N channels; Said/Reply
   save.py       world <-> JSONL, ids preserved, into an empty world
   share.py      pack of entities <-> another world, ids remapped
   analyze.py    what a rule reads/writes, derived from its own AST
-  circuits.py   a closed catalog of rule shapes that are data, not code
-  specs.py      circuit specs <-> JSON, classes resolved only through a caller's registry
-  memory.py     Focus / Memory / MemoryEntry: a trail for "it", "that"
-  chart.py      Span / Interpretation / Intake: scored readings, one winner
-  help.py       the ONE shipped domain: `help TOPIC`, answered by whoever knows
 ```
 
 ## Dependencies between modules
@@ -25,26 +20,20 @@ world  <--  loop  <--  engine
   |          v            v
   |       analyze        save
   |
-  +--- save, share, memory, chart, circuits, help  (all build on world)
+  +--- save, share  (both build on world)
 ```
 
 - `world.py` depends on nothing but the standard library.
 - `loop.py` imports `analyze` (to gate rules) and `World` (as a default).
 - `engine.py` imports `save` (for the `get` message) and `Said`/`Reply`.
-- `analyze`, `circuits`, `memory`, `chart`, `share` and `help` are
-  **optional layers**. Nothing in the core imports them, and a domain that
-  never mentions one pays nothing for it.
+- `share` is an **optional layer**: nothing in the core imports it, and a
+  domain that never moves entities between worlds pays nothing for it.
+  (`analyze` is not optional -- `loop.py` imports it to gate rules.)
 
 ## What "no domain, no channel, no transport" means
 
 `world`, `loop`, `engine` and `save` ship no rules and no components beyond
-`Said`, `Reply` and `Proposal`, and know nothing about files, sockets or
-terminals. `help.py` is the one deliberate exception (it ships rules), and
-its docstring says so and why.
-
-`Proposal` is in the core for the same reason `Said` and `Reply` are: two
-domains cannot skip each other's unresolved candidates without agreeing on
-what the tag means, and that agreement must live where neither owns it.
+`Said` and `Reply`, and know nothing about files, sockets or terminals.
 
 ## One tick, step by step
 
@@ -58,11 +47,9 @@ what the tag means, and that agreement must live where neither owns it.
        called.
     2. Record `world.revision`.
     3. Call `fn(world)` inside `try/except`.
-    4. If tracing is on, drain `world.changes` into `loop.trace`, tagged with
-       the rule's name and the tick.
-    5. If it raised, record `(name, error)` on `loop.errors`, once per
+    4. If it raised, record `(name, error)` on `loop.errors`, once per
        rule and message, and carry on to the next rule.
-    6. If `revision` moved, the rule *fired*.
+    5. If `revision` moved, the rule *fired*.
 3. Return the names of the rules that fired.
 
 `Loop.run()` repeats this until a tick fires nothing (`Settled(tick, [])`)

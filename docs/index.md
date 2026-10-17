@@ -27,8 +27,7 @@ order you would want to learn things in:
 | write rules that behave well | [Writing rules](writing-rules.md) |
 | attach a terminal or socket | [The engine and channels](engine.md) |
 | save a world, or move entities between worlds | [Persistence and sharing](persistence.md) |
-| know what a rule reads and writes | [Rule analysis and circuits](analysis.md) |
-| resolve "it", or score rival readings of a line | [Language layer](language.md) |
+| know what a rule reads and writes | [Rule analysis](analysis.md) |
 | find a worked domain to copy | [Examples](examples.md) |
 | debug a rule that will not settle | [Testing and debugging](testing-debugging.md) |
 | send a change | [Contributing](contributing.md) |
@@ -40,8 +39,8 @@ they are worth reading once the basics are clear:
 
 - `PRINCIPLES.md` covers what keeps a fixpoint over a shared world producing
   the *wanted* kind of emergence, and not the surprising kind.
-- `DECISION_PATTERNS.md` records design decisions, including ones whose code
-  was removed.
+- `README.md`'s History records design decisions, including ones whose code
+  was later removed.
 - `TODO.md` lists open threads.
 - `git log` is unusually informative here: commit messages carry the
   reasoning. See [Contributing](contributing.md).

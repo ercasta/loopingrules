@@ -18,22 +18,18 @@ loopingrules/
   loop.py         every rule, in order, until nothing changes
   engine.py       one thread, the world, and the channels attached to it
   save.py         the world as JSONL: entities are ints, components are values
+  share.py        a named subset of entities, portable between worlds
   analyze.py      what a rule reads and writes, derived from its own AST
-  circuits.py     a closed catalog of shapes a rule can be DATA in
-  memory.py       Focus/Memory/MemoryEntry: a trail deictic resolution reads
-  chart.py        Span/Interpretation/Intake, vocabulary matching, and discourse-level reinterpretation
+examples/
+  cards.py, shopping.py, market.py, quorum.py, trip.py   worked domains
+  judge.py, decide.py                                   domain-oblivious bridges
+  tuning.py, bridge_transfer.py, ablation.py            the tuning experiment
 tests/
-  test_world.py        identity, values, and the intersection of the two
   test_loop.py         order, settling, the budget, a rule that raises
   test_engine.py       one world, several channels, a broadcast reply
   test_save.py         the same world, ids and all, next time
-  test_analyze.py      a rule's reads/writes, and where analysis refuses to guess
-  test_circuits.py     the catalog, proven against real rules from two domains
-  test_memory.py       Focus/Memory/MemoryEntry, and a genuine regain vs a no-op reattach
-  test_chart.py        two idle ticks, a covering combination over rival scores, promotion, and retraction
-DECISION_PATTERNS.md   a design note this package no longer ships the code
-                          for -- see History, "Facts/arbitration/request
-                          removed"
+  test_share.py        pack import, id remapping, dangling refs
+  test_examples_*.py   each example domain, end to end
 PRINCIPLES.md           what keeps rules run to a fixpoint over a shared
                           World producing the wanted kind of emergence,
                           not the surprising kind
@@ -67,32 +63,11 @@ for e, r in loop.world.each(Reply):
 ## Scope
 
 **No domain, no channel, no transport.** `world.py`, `loop.py`,
-`engine.py` and `save.py` ship no rules, no components
-beyond `Said`, `Reply`, and `Proposal` (the shapes `Engine.drain`,
-`Engine._do`, and propose/arbitrate route by), and no knowledge of
-files, sockets, or terminals. `Engine` wants anything with `.name`,
-`.deliver(message)`, and optionally `.start(engine)` / `.close()` — no
-base class, no import required to be one.
-
-`Proposal` is here for the same reason `Said`/`Reply` are: a domain
-cannot skip another domain's unresolved candidate, or recognize its
-own, without agreeing on what the tag means — that agreement has to
-live somewhere neither domain owns. What is deliberately NOT here is
-the arbiter — which candidate wins, and on what grounds. That stays
-exactly where `harneskills.examples.fs`'s `arbitrate_parse` already
-puts it: in the domain whose actual conflict decides what "wins"
-means. See History, "Proposal, a shared tag."
-
-`propose`/`reply` (the one-line spellings of `w.spawn(Proposal(occasion),
-...)` and `w.spawn(Reply(channel, text))`) and `arbitrate`/`census` (the
-two ways an occasion with several `Proposal`s against it can resolve —
-one winner, or every candidate) are the vocabulary that shape gets used
-WITH, not a domain's own rule. Nothing here decides what a rule does
-with a resolved occasion; `arbitrate` and `census` only agree on WHEN
-"everyone who could answer already has" is true — see `arbitrate`'s own
-docstring, and `loopingrules.help.close_census` for a caller that needs
-`census`'s "everyone counts" instead of `arbitrate`'s "one wins." See
-History, "arbitrate, a shared chokepoint" and "help gets a census."
+`engine.py` and `save.py` ship no rules and no components beyond `Said`
+and `Reply` (the shapes `Engine.drain` and `Engine._do` route by), and no
+knowledge of files, sockets, or terminals. `Engine` wants anything with
+`.name`, `.deliver(message)`, and optionally `.start(engine)` /
+`.close()` — no base class, no import required to be one.
 
 **`analyze.py` is the other generic mechanism here, and it is a reader,
 not a vocabulary.** Given a rule — a plain function of one `World` —
@@ -102,55 +77,12 @@ reads directly as a rule's dormancy gate, in place of a `watches=` a
 person used to have to declare and could get wrong (see History, "no
 more hand-written `watches=`"); `component_map()` builds the
 `{component: {rules}}` index the same walk produces across several
-rules at once. It knows nothing about any domain's own components —
-only the eleven methods `World`/`Entity` already expose, plus
-`propose`/`reply`/`arbitrate`/`census` by identity (see its own
-docstring, "Four named exceptions," for why those specifically). A rule
+rules at once. It knows nothing about any domain's own components — only
+the methods `World`/`Entity` already expose. A rule
 that uses its world parameter outside the dialect `analyze.py`'s own
 docstring names is never guessed at — it raises `Opaque`, by name and
 reason, the same refuse-rather-than-guess discipline every parse
 boundary in this codebase already applies. See History, "analyze.py."
-
-**`circuits.py` is a third generic mechanism, and the only one built by
-restating rules rather than by a domain needing to interoperate with
-another.** A closed, minimal catalog of shapes (`TagCircuit`/
-`ValueCircuit`/`ActionCircuit`, plain dataclasses, no loop, no `if`) a
-rule can be DATA in, instead of a hand-written Python body — motivated
-by a closed catalog being what a FUTURE search or learning process over
-rules would need to be tractable, the way genetic programming and
-program synthesis reach for a small typed combinator set rather than
-arbitrary source code. No search or learning is built here yet.
-
-Lived in `examples/circuits.py` — a prototype, not shipped — through
-eight commits of restating real rules against it: seven of `examples.
-cards`'s own thirteen, five of `pystrider.patterns`/`constraints`'s
-entire real vocabulary, every one checked both by replaying the actual
-regression it came from and by comparing its own structurally-derived
-reads/writes against `loopingrules.analyze`'s AST-derived ones for the
-original. Promoted here DELIBERATELY ahead of this repo's own usual bar
-— every other promotion (`Proposal`, `arbitrate`, `census`) waited for
-a second domain to actually depend on the thing at runtime; nothing
-does that for this yet. The cross-repo evidence above was judged
-sufficient on its own, without waiting for a specific consumer — see
-`circuits.py`'s own docstring, `TODO.md` for what is still open, and
-History, "circuits.py promoted to core."
-
-**`help.py` is the one exception to "ships no rules," and it says so
-itself.** `world.py`/`loop.py`/`engine.py`/`save.py` still ship none,
-and that has not changed; `help.py` is installed opt-in, by any domain
-that wants `help`/`help TOPIC` answered, and by nothing automatically.
-It lives here rather than in a domain because it moved OUT of one:
-`pystrider` needed to answer `help python` alongside `harneskills.examples.fs`
-answering `help files`, and depending on `harneskills` — a specific
-harness, not the substrate every domain already depends on — was the
-wrong direction for a domain meant to be host-agnostic. See `help.py`'s
-own docstring and History, "help moves in."
-
-A bare `help` answers through `census`, not a hard-coded hint: any
-domain that wants to be listed registers its own responder against
-`HelpCommandCensus`, and `help.py` itself has no idea, at import time,
-which domains that will turn out to be. See History, "help gets a
-census."
 
 **And no vocabulary above entities and components either, any more.**
 This package used to also ship `facts.py`/`arbitration.py` — a
@@ -158,11 +90,7 @@ This package used to also ship `facts.py`/`arbitration.py` — a
 generic reader arbitrating between rules proposing/vetoing/ranking
 candidates for one contested decision. Removed, not ported, once the
 core above was rewritten — see History, "Facts/arbitration/request
-removed." `DECISION_PATTERNS.md` keeps the argument for why a generic
-arbitration reader beats agency in the base rule (extracted from
-`pystrider`, a domain that measured the alternative's cost first: two
-repair rules firing on one bug, "correct by luck"); it just is not code
-in this package any more. A domain that wants that pattern writes its
+removed." A domain that wants that pattern writes its
 own components and its own generic reader over them, the way
 `harneskills.examples.fs` already writes everything else it needs.
 
@@ -181,8 +109,8 @@ not in `pyproject.toml`'s `packages=`, so `pip install -e .` puts
 It is a worked example the same way `harneskills.examples.fs` and
 `pystrider` are, one repo closer to home: one autonomous trading agent
 reacting to a virtual card market according to a goal and a risk profile,
-with no rivalry anywhere in it (one agent, its own money — no
-`Proposal`/`arbitrate`/`census` needed), demonstrating instead the
+with no rivalry anywhere in it (one agent, its own money),
+demonstrating instead the
 compositional-tag idiom `pystrider.patterns.LoopCount` →
 `pystrider.constraints.TooManyLoops` already proved: independent rules
 tagging one shared entity, and a rule that acts only once several tags
@@ -207,26 +135,6 @@ question this README already answers "no" to for the general case (see
 above, "no vocabulary above entities and components either") — see
 `judge.py`'s own docstring for what this does and does not settle, and
 History, "A domain-oblivious judge."
-
-**`examples/parts.py` is a third module in `examples/`, and the only one
-built to test a question about a SIBLING repo rather than about
-`loopingrules` itself.**
-`pystrider.symbolic._parent_of`/`_reachable` walk a Python-level dict
-(`intake.PARTS.values()`) generically, rather than enumerating specific
-part-edge types — exactly the shape `PRINCIPLES.md` holds up as the
-model, and exactly the shape `loopingrules.analyze` cannot see into
-(there is no literal component type at that call site for a static
-reader to point at). `parts.py` prototypes the fix: a generic `Part`
-component, minted through ONE choke point alongside every specific edge,
-so a generic reader walks `Part` alone — proven, not just argued, to
-keep the actual property that matters (a brand-new edge kind, added
-after the walkers are written, costs them zero changes) while becoming
-fully analyzable. Also proves, honestly, what it does NOT fix: a reader
-parameterized by which ANCESTOR kind to stop at (`pystrider.symbolic.
-_enclosing`) stays opaque regardless, a separate, sibling instance of
-the "kind held in a variable" pattern found elsewhere in `pystrider`.
-Nothing here touches the actual `pystrider` checkout — see History,
-"a generic Part tag."
 
 ## History
 

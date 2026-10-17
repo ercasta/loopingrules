@@ -18,8 +18,7 @@ nav:
   - Writing rules: writing-rules.md
   - The engine and channels: engine.md
   - Persistence and sharing: persistence.md
-  - Rule analysis and circuits: analysis.md
-  - Language layer: language.md
+  - Rule analysis: analysis.md
   - Examples: examples.md
   - Testing and debugging: testing-debugging.md
   - Contributing: contributing.md
