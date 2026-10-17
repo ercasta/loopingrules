@@ -48,34 +48,14 @@ nothing here claims to know which types an entity it destroys was
 carrying. `Analysis.destroys` records only that the rule CAN destroy
 entities -- a real limit on the map, not a silent one.
 
-## Four named exceptions: `reply`, `propose`, `arbitrate`, `census`
+## Two named exceptions: `reply`, `propose`
 
-`loopingrules.world.reply`/`propose`/`arbitrate`/`census` are cross-module
+`loopingrules.world.reply`/`propose` are cross-module
 by construction -- every domain's own `reply_*`/`propose_*` rule calls
 `reply`/`propose` from `loopingrules.world`, never from its own module,
-and `arbitrate`/`census` are the shared chokepoint a rule reaches for
-instead of writing its own resolution loop (`loopingrules.help.
-arbitrate_help`/`close_census`, the first and so far only callers) -- so
-the "same module only" rule above would make every one of them `Opaque`
-for no reason that matters: unlike an arbitrary imported helper, what
-these four read or write is exactly what the README already promises
-never changes quietly (`reply` spawns a `Reply`; `propose` spawns a
-`Proposal(occasion)` plus whatever components it was given; `arbitrate`/
-`census` both resolve every entity of the `occasion_type` passed in,
-reading it and `Proposal`, and may destroy entities or detach `Proposal`
--- see their own docstrings in `world.py`). They are special-cased below
-by identity, not by name -- a domain's own function that happens to be
-called `reply` is not this one and is analyzed like any other helper.
 
-Getting this right matters more than it used to: `arbitrate`/`census`
-resolving to `Opaque` no longer just costs a false alarm from a checker
-nobody has to run -- it costs the calling rule its gate, and it goes
-back to being called every tick regardless of whether its own occasion
-type exists, exactly the "always call" fallback every genuinely Opaque
-rule gets (see `loopingrules.loop`'s own module note). `hear_help`/
-`open_census`/`reply_help_answer` never call either, so this only
-mattered for `arbitrate_help`/`close_census` -- the case that motivated
-adding it.
+Note: `propose` was removed from `loopingrules.world` as part of a
+simplification. If needed in the future, it can be re-added.
 """
 
 from __future__ import annotations
@@ -86,9 +66,6 @@ import textwrap
 from typing import Dict, Set
 
 from .engine import Reply
-from .world import (Proposal, arbitrate as _CORE_ARBITRATE,
-                    census as _CORE_CENSUS, propose as _CORE_PROPOSE,
-                    reply as _CORE_REPLY)
 
 
 READS = {"each", "get", "all", "the", "first"}
@@ -378,53 +355,12 @@ def _walk_function(fn, module, analysis: Analysis, seen: set,
 
     def handle_helper_call(call):
         callee = module.__dict__.get(call.func.id)
+        # Note: propose, arbitrate, and census were removed from loopingrules.world
+        # as part of a simplification. If needed in the future, they can be re-added.
         if callee is _CORE_REPLY:
             # reply(w, text, channel="user") -- always spawns a Reply,
-            # per the README's own promise for this vocabulary. See the
-            # module docstring's "Two named exceptions."
+            # per the README's own promise for this vocabulary.
             analysis.writes.add(Reply)
-            mark_world_args(call)
-            return
-        if callee is _CORE_PROPOSE:
-            # propose(w, occasion, *components) -- always spawns a
-            # Proposal(occasion), plus whatever components it was
-            # handed, each of which must still be a literal `Kind(...)`
-            # to be attributed -- the same discipline `spawn` itself
-            # gets, not a free pass just because it arrived via propose.
-            analysis.writes.add(Proposal)
-            for a in call.args[2:]:
-                kind = resolve_instance_class(a)
-                if kind is None:
-                    raise Opaque(_qualname(fn),
-                                 "propose(...) component is not a "
-                                 "freshly-built component (`Kind(...)`): "
-                                 "%r" % ast.unparse(a))
-                analysis.writes.add(kind)
-            mark_world_args(call)
-            return
-        if callee is _CORE_ARBITRATE or callee is _CORE_CENSUS:
-            # arbitrate(w, occasion_type) / census(w, occasion_type) --
-            # both resolve every `occasion_type` entity against `Proposal`
-            # (see `world.py`'s own `_resolved`), so `occasion_type`
-            # itself must be a literal type for either read to be
-            # attributed at all -- the same requirement `each(Kind)`
-            # already has. Both may destroy an occasion or a losing
-            # candidate (`analysis.destroys`) and both detach the winning
-            # `Proposal` once resolved, so `Proposal` is a write too, not
-            # only a read.
-            if len(call.args) < 2:
-                raise Opaque(_qualname(fn),
-                             "%s(...) missing its occasion type" %
-                             callee.__name__)
-            kind = resolve_class(call.args[1])
-            if kind is None:
-                raise Opaque(_qualname(fn),
-                             "%s(...) argument is not a literal "
-                             "component type: %r" %
-                             (callee.__name__, ast.unparse(call.args[1])))
-            analysis.reads.update({kind, Proposal})
-            analysis.writes.add(Proposal)
-            analysis.destroys = True
             mark_world_args(call)
             return
         if not inspect.isfunction(callee) or callee.__module__ != module.__name__:

@@ -1,140 +1,4 @@
-"""The world model: entities, the components they carry, and nothing else.
-
-An **entity** is an identity and no data -- `#7`. A **component** is a
-plain `@dataclasses.dataclass` -- data and no identity -- `Size(bytes=4300)`.
-A thing in the world is whatever components are currently attached to one
-entity, and it can stop being that kind of thing by losing one::
-
-    @dataclasses.dataclass(frozen=True)
-    class Size:
-        bytes: int
-
-    @dataclasses.dataclass(frozen=True)
-    class Stale:
-        pass
-
-    entry = w.spawn(Entry(folder, "todo.txt"), Size(17), Modified(when))
-    w.attach(entry, Stale())          # now it is also a stale thing
-    w.detach(entry, Stale)            # now it is not
-
-A **rule** -- `loopingrules.loop`'s own name for it -- is a function that asks
-for the entities carrying a set of components, walks them, and WRITES
-directly through the six methods below -- `Loop.tick` calls it once a
-tick and nothing stands between the call and the write::
-
-    def flag_big(w):
-        for entity, hunt in w.each(BigHunt):
-            w.destroy(entity)
-            for e, entry, size in w.each(Entry, Size):
-                if entry.folder == hunt.folder and size.bytes >= hunt.floor:
-                    w.attach(e, Big())
-
-## Why a component and not an attribute
-
-Because a rule asks "everything that is X and Y but not Z" far more often
-than it asks "everything about this one thing". `each(Entry, Stale)` is
-the query the domain actually wants, and it costs a set intersection --
-where a bag of objects with a `stale` flag on them costs a scan and an
-`if`. Being stale is not a property of a file, it is a claim some rule
-made about it, and detaching that claim is how it is unmade.
-
-The approval gate is the sharpest case: a rename waiting for a person is
-the same entity as a rename about to happen, plus one component::
-
-    w.each(RenameWish, NeedsApproval)             # ask about these
-    w.each(RenameWish, without=NeedsApproval)     # do these
-
-`approve` detaches one tag. Nothing is copied from a held queue to a live
-one, and nothing has to be told apart by a flag.
-
-## A component is a plain dataclass, and there is nothing else to it
-
-There is no `Component` base class here to inherit -- a component is
-anything `dataclasses.is_dataclass` says yes to. That is the whole of what
-`attach()` requires, and it buys the boilerplate `@dataclass` was built to
-remove: `Size(17) == Size(17)` and `repr(Size(17)) == 'Size(bytes=17)'` for
-free, no hand-written `__init__`/`__eq__`/`__repr__`. Frozen is a
-convention, not enforced -- see the ⚠ below on why a component should never
-be mutated in place regardless.
-
-`Size(17) == Size(17)` is what makes `attach` idempotent: re-attaching a
-value equal to one already there changes nothing, so a rule that
-recomputes the same answer every tick does not keep the world awake
-forever.
-
-⚠ A component mutated in place is a change nothing can see -- `revision`
-does not move, and the loop will call the world settled. Attach a fresh
-one instead of editing the one already there, and prefer `frozen=True` so
-Python enforces that for you rather than a docstring.
-
-## An entity carries a LIST of each type, not one
-
-`attach(entity, X)` APPENDS `X` to whatever that entity already carries of
-`X`'s type -- deduped against what is already there, so re-deriving the
-same value is still a no-op, but genuinely different values of one type
-coexist. `get(entity, Kind)` refuses to guess between several the same way
-`each()`'s single-valued queries always assumed there was at most one --
-`None` if there are none, the value if there is exactly one, a loud
-`ValueError` if there are several, so a query written against "the" value
-of a naturally-singular kind fails LOUDLY the moment two coexist rather
-than silently taking whichever happened to sort first.
-
-`replace(entity, X)` is the tool for a kind meant to stay singular --
-`Session`, `Contents`, a folder's `Size` -- clearing every existing
-component of `X`'s type on the entity before attaching it, but ONLY an
-actual change: replacing with an equal value is still a no-op, the same
-guarantee `attach` already gives.
-
-`get_all(entity, Kind)` and `all(Kind)` read the plural case: every
-instance on one entity, or every instance anywhere, respectively.
-
-## Entities are ids, and a component may hold one -- as a plain int
-
-`Entry(folder=1, name='todo.txt')` refers to its folder by the folder's
-own entity id, which is how a relationship is spelled here -- no object
-graph, no back references to keep in step. **A component field never holds
-a live `Entity` object** -- only `None`, `bool`, `int`, `float`, `str`, or
-a `list`/`dict`/`tuple` of those, so that a component is always exactly
-what it looks like: data a `json.dumps` could write down, nothing a Python
-object graph is doing behind the scenes. `attach()` enforces this: pass a
-live `Entity` in a field (the ergonomic thing to do -- `Entry(folder,
-name)` where `folder` came straight from a query) and it is lowered to
-`folder.id` on the way in; pass anything else `attach()` cannot make sense
-of as data and it raises, naming the field, rather than storing a
-reference nothing here can serialize or compare by value.
-
-`world.entity(id)` is the other direction -- turn a raw id read out of a
-component field back into a handle, to `.get()`/`.attach()`/... on it.
-
-## A component may be marked TRANSIENT, and skip disk entirely
-
-`@transient` (below) stamps a component class as disposable: `attach`/
-`get`/`each`/... never treat it differently, but `loopingrules.save.dump()`
-skips every instance of it, and `World.purge_transient()` drops them all on
-demand. This is the answer to a question `Entity`, above, raises but does
-not settle: a component may hold another entity's plain id, but an id is
-only ever good within ONE world's lifetime -- a restored world keeps every
-id it had, but a domain that forgets and rereads something (a changed
-file, say) mints brand-new ids for it, same as thinking about a rewritten
-version of something never intake()'d at all mints ids nothing durable
-should have pointed at in the first place. A component durable enough to
-survive either of those refers to another thing by a STABLE KEY the domain
-defines instead (a path, a qualified name, a span -- whatever "the same
-thing, again" means there), resolved to a live id only where the actual
-work happens. `@transient` is where that resolved id, and anything spawned
-on top of it while doing that work, is allowed to live -- see `transient`'s
-own docstring for the fuller argument.
-
-## A world can log its own writes, if asked
-
-`World.tracing`, off by default, and `World.changes`, a list of `Change`
-below: every `spawn`/`destroy`/`attach`/`detach`/`replace`/`remove`/
-`changed` appends one, while it is on. This module still does not know
-what a rule is, or which one is running -- `changes` is a flat log of
-WHAT happened, not WHO caused it; `loopingrules.loop.Loop` is what turns
-this into a trajectory, by draining it around each rule's own turn and
-tagging what it drained with that rule's name and the tick it ran on.
-"""
+"""The world model: entities, the components they carry """
 
 from __future__ import annotations
 
@@ -152,7 +16,7 @@ class Entity:
     same one a component stored earlier, and a component holding `#7` goes
     on meaning `#7` however many times it is looked up.
 
-    ⚠ Never store one of these AS a component field -- see the module note.
+    Important: never store one of these AS a component field -- see the module note.
     Hold its `.id` there instead; this class exists for the API surface a
     rule reads and writes through, not for data at rest.
     """
@@ -208,26 +72,10 @@ class Entity:
 def transient(cls):
     """Mark a component class TRANSIENT: real data, attachable and
     queryable exactly like any other component -- `attach`/`get`/`each`/...
-    don't know or care -- but disposable, and known to be so. Two things
-    read the marker: `loopingrules.save.dump()` skips every instance of a
+    don't know or care -- but disposable, and known to be so. 
+    `loopingrules.save.dump()` skips every instance of a
     transient kind, and `World.purge_transient()` (below) drops them all on
-    demand. Neither a component's fields nor its runtime behaviour changes;
-    only its lifetime promise does.
-
-    This is the floor a durable, stable-keyed fact eventually has to touch
-    to get anything done: a live entity id resolved from that key, and
-    whatever gets spawned on top of it while doing real work (a
-    graph-matching rule's intermediate finding, a generator's scratch
-    entity). None of that means the same thing across a restart, or across
-    whatever a domain's own "forget and reread" is -- `pystrider`'s
-    code-derived entities are the motivating case: the ids from one
-    `intake()` are not the ids from the next, so nothing durable may hold
-    one, and this is where that line is actually drawn, in code a domain
-    writes once rather than a discipline every call site has to remember.
-
-    A decorator, not a base class -- consistent with a component having no
-    base class to inherit at all (see the module docstring). It stamps one
-    class attribute and returns the class unchanged otherwise::
+    demand. 
 
         @transient
         @dataclasses.dataclass(frozen=True)
@@ -247,153 +95,6 @@ def is_transient(kind) -> bool:
     risk any convention-based marker takes; no component in this codebase
     does that today."""
     return bool(getattr(kind, "_transient", False))
-
-
-@dataclasses.dataclass(frozen=True)
-class Proposal:
-    """Tags a candidate entity: one rival reading of an `occasion`, not
-    yet real. A candidate carries this PLUS whichever component would
-    make it real if it wins -- nothing that consumes that component
-    acts on one still carrying this.
-
-    `occasion` is a plain entity id -- any entity a `Proposal` was
-    deposited against IS one, nothing mints it specially. This is the
-    vocabulary half of propose/arbitrate/act (see `docs/intake
-    processing.md` in `harneskills`, the domain this shape was first
-    worked out in): shared here because two domains cannot recognize
-    or skip each other's unresolved candidates without agreeing what
-    the tag means, the same reason `Said`/`Reply` live in
-    `loopingrules.engine` and not in a domain's own module.
-
-    WHICH proposal should win, beyond "first," and what to do about an
-    occasion nobody answered, are still not this package's business --
-    that is behavior, decided by whatever a domain's own conflict
-    actually calls for (see `DECISION_PATTERNS.md`). What IS shared,
-    below (`arbitrate`), is narrower and structural: the one mechanism
-    that tells any caller WHEN "nobody has proposed yet" is safe to
-    read as "nobody ever will" -- a question a single domain's own
-    ordered rule list answers for free (see `harneskills.examples.fs`'s
-    `arbitrate_parse`, which needs none of this) but that has no answer
-    at all once a SECOND, independently-installed domain can propose
-    against the same occasion (see `harneskills.help`)."""
-
-    occasion: int
-
-
-@dataclasses.dataclass(frozen=True)
-class _Ripe:
-    """Private to `arbitrate`/`census`, below -- marks an occasion as
-    having survived one full tick since it was first noticed. No
-    responder ever reads or writes this; it is this module's own
-    bookkeeping, not part of the `Proposal` vocabulary a domain writes
-    against."""
-
-
-def propose(w, occasion, *components) -> Entity:
-    """`w.spawn(Proposal(occasion), *components)` -- the one line every
-    `propose_*` rule already writes by hand, named for the verb it
-    performs. `occasion` may be the live entity or its plain id, same
-    as any other reference a component field accepts -- there is no
-    `.id` to remember here, only the shape: the occasion first, then
-    whatever component(s) would make this candidate real if it wins
-    (`arbitrate`) or count (`census`)."""
-    return w.spawn(Proposal(occasion), *components)
-
-
-def reply(w, text: str, channel: str = "user") -> Entity:
-    """`w.spawn(Reply(channel, text))` -- broadcast (`"user"`, every
-    channel -- see `loopingrules.engine`'s own `BROADCAST`) unless told
-    otherwise. The one line most domains already hand-write their own
-    `_say`/`_reply` helper for."""
-    from .engine import Reply
-    return w.spawn(Reply(channel, text))
-
-
-def _resolved(w, occasion_type) -> "list":
-    """Shared by `arbitrate` and `census`, below: every `occasion_type`
-    entity ripe enough to check THIS call -- `(occasion, component,
-    candidates)`, `candidates` the (possibly empty) list of entities
-    carrying a `Proposal` naming it -- plus the `_Ripe` tagging itself.
-    An occasion is never resolved the tick it is (re)noticed: it is
-    tagged here first and only returned the NEXT time this runs.
-    `Loop.tick` calls every registered rule once a tick regardless of
-    priority, so by an occasion's second sighting every rule that
-    watches `occasion_type` -- at any priority, from any domain,
-    installed in any order, known to this function or not -- has
-    already had its one turn. That is the whole of what this buys over
-    resolving on first sight: a single domain's own ordered rule list
-    already guarantees "everyone proposed" for free
-    (`harneskills.examples.fs.arbitrate_parse` needs none of this and
-    does not call it), and gains nothing from the extra tick. This
-    exists for the case that guarantee cannot reach: occasion and
-    resolver in one domain's `install()`, a responder registered by a
-    SECOND domain's `install()` that neither one has any ordering
-    relationship with at all (`loopingrules.help.arbitrate_help`, the
-    first caller).
-
-    What `arbitrate` and `census` do NOT share is what counts as a
-    correct outcome once resolved -- one winner versus every candidate
-    -- which is exactly why this returns the raw candidates rather than
-    deciding anything about them itself.
-    """
-    resolved = []
-    for occasion, component, _ripe in w.each(occasion_type, _Ripe):
-        candidates = [entity for entity, proposal in w.each(Proposal)
-                     if proposal.occasion == occasion.id]
-        resolved.append((occasion, component, candidates))
-    for occasion, _component in w.each(occasion_type, without=_Ripe):
-        w.attach(occasion, _Ripe())
-    return resolved
-
-
-def arbitrate(w, occasion_type) -> "list":
-    """Resolve every `occasion_type` entity that has a `Proposal`
-    naming it: the first one registered wins, every other candidate is
-    destroyed, the winner's `Proposal` is detached (real now), and the
-    occasion itself is destroyed. Returns the `(entity, component)`
-    pairs for occasions that got NO candidate -- a caller may say
-    something about one, or say nothing; both are legitimate, and
-    neither is this function's call to make. See `_resolved`, above,
-    for the two-sighting mechanism this and `census` share.
-    """
-    unanswered = []
-    for occasion, component, candidates in _resolved(w, occasion_type):
-        if not candidates:
-            unanswered.append((occasion, component))
-            w.destroy(occasion)
-            continue
-        winner, *losers = candidates
-        for loser in losers:
-            w.destroy(loser)
-        w.detach(winner, Proposal)
-        w.destroy(occasion)
-    return unanswered
-
-
-def census(w, occasion_type) -> "list":
-    """Resolve every `occasion_type` entity that is ripe, the same way
-    `arbitrate` does -- but there is no winner here, because a census
-    has no rivalry to judge: EVERY candidate counts. Each keeps
-    whatever it carries beyond `Proposal` (now detached, so it reads as
-    real); none are destroyed for losing, because none lost. The
-    occasion itself is still destroyed, once read.
-
-    Returns `(entity, component, candidates)` for every occasion
-    resolved this call -- `candidates` the (possibly empty) list of
-    entities that proposed against it. An occasion nobody answered is
-    NOT a special case the way `arbitrate`'s `unanswered` is: a census
-    with nothing to report IS the report, and it is the caller's to
-    read (and destroy, once it has) like any other resolved occasion,
-    not this function's to flag as a failure.
-    """
-    resolved = []
-    for occasion, component, candidates in _resolved(w, occasion_type):
-        for candidate in candidates:
-            w.detach(candidate, Proposal)
-        resolved.append((occasion, component, candidates))
-        w.destroy(occasion)
-    return resolved
-
 
 def _lower(value: Any, where: str) -> Any:
     """`value`, with any `Entity` turned into its plain id -- recursively,
@@ -451,36 +152,6 @@ def _normalize(component: Any) -> Any:
         object.__setattr__(fresh, field_name, value)
     return fresh
 
-
-@dataclasses.dataclass(frozen=True)
-class Change:
-    """One write this world made -- `action` is `spawn`/`destroy`/`attach`/
-    `detach`/`replace`/`remove`/`changed`, `entity` the plain id, `kind`
-    the component type's `__name__` (`""` for `spawn`/`destroy`/`changed`,
-    which are not about one type), and `component` the value involved, when
-    there is one: the component `attach`/`replace`/`remove` stored or took
-    off, or the value `detach` removed (one `Change` per value, since an
-    entity may carry several of the type `detach` names). `None` for
-    `spawn`/`destroy`/`changed`. `entity` is `-1` for a `changed()` call
-    that named none -- `0` is never a real id (entities count up from `1`),
-    but `-1` says so without a reader having to know that.
-
-    Appended to `World.changes` only while `World.tracing` is on -- see
-    there for why this is off by default, and `Loop.trace` for the
-    rule/tick attribution this class deliberately does not carry: this is
-    `World`'s own record of what it did, not `Loop`'s vocabulary for who
-    was running when it happened. A component this repo does not already
-    own may not be JSON-shaped data (see `_lower`, above) -- `Change`
-    holds it anyway, as a live value, because it is never `attach()`-ed
-    and so never has to be.
-    """
-
-    action: str
-    entity: int
-    kind: str = ""
-    component: Any = None
-
-
 class World:
     """Entities, the components on them, and the queries rules ask."""
 
@@ -497,20 +168,7 @@ class World:
         # reads it to tell a rule that did something from one that did
         # not, which is the whole of how it knows the world has settled.
         self.revision = 0
-        # Off by default -- a `Change` appended per write costs an
-        # allocation neither `revision` nor a rule that never asks for a
-        # trace should have to pay. `Loop.tracing` is what a caller
-        # actually flips; this is the flag it flips, and `changes` is
-        # where the record lands, meant to be DRAINED by whatever
-        # attributes it to a rule (`Loop.tick`, see `loopingrules.loop`)
-        # rather than read in place -- a still-running rule's writes sit
-        # here until its turn ends.
-        self.tracing = False
-        self.changes: List[Change] = []
-        # Words a domain expects a person to type. Only the prompt reads
-        # this (to autocorrect); nothing here affects what a rule finds.
-        self.vocabulary: set = set()
-
+        
     # -- entity ids, handles, either -----------------------------------
 
     def _id(self, entity) -> int:
@@ -537,8 +195,6 @@ class World:
         entity = Entity(self, self._next)
         self._entities[entity.id] = entity
         self.revision += 1
-        if self.tracing:
-            self.changes.append(Change("spawn", entity.id))
         if components:
             self.attach(entity, *components)
         return entity
@@ -568,8 +224,6 @@ class World:
         for bucket in self._by_type.values():
             bucket.pop(entity_id, None)
         self.revision += 1
-        if self.tracing:
-            self.changes.append(Change("destroy", entity_id))
         return True
 
     def attach(self, entity, *components) -> Entity:
@@ -595,8 +249,6 @@ class World:
                 continue
             values.append(component)
             self.revision += 1
-            if self.tracing:
-                self.changes.append(Change("attach", entity_id, cls.__name__, component))
         return self._entities[entity_id]
 
     def replace(self, entity, *components) -> Entity:
@@ -622,8 +274,6 @@ class World:
                 continue
             bucket[entity_id] = [normalized]
             self.revision += 1
-            if self.tracing:
-                self.changes.append(Change("replace", entity_id, cls.__name__, normalized))
         return self._entities[entity_id]
 
     def detach(self, entity, *kinds) -> bool:
@@ -638,9 +288,6 @@ class World:
             if popped is not None:
                 self.revision += 1
                 gone = True
-                if self.tracing:
-                    for value in popped:
-                        self.changes.append(Change("detach", entity_id, kind.__name__, value))
         return gone
 
     def remove(self, entity, component) -> bool:
@@ -657,49 +304,27 @@ class World:
         if not values:
             del bucket[entity_id]
         self.revision += 1
-        if self.tracing:
-            self.changes.append(Change("remove", entity_id, cls.__name__, component))
         return True
 
     def purge_transient(self) -> int:
         """Detach every component of every `@transient`-marked kind,
         everywhere in the world. Returns how many component INSTANCES were
         dropped -- `0` if nothing marked transient was ever attached.
-
-        The cheap half of "forget": nothing here asks which entities,
-        because a transient kind's whole bucket goes at once, not a
-        per-entity walk. What this does NOT do is any domain's own idea of
-        "forget everything about this file/session/whatever" -- that is a
-        stable-key-driven sweep a domain writes itself (only it knows which
-        DURABLE facts a forget should take down too); this only ever drops
-        what was already marked disposable, and leaves every entity itself
-        standing even if this was the only kind of component it carried.
         """
         dropped = 0
         for kind, bucket in list(self._by_type.items()):
             if not bucket or not is_transient(kind):
                 continue
-            for entity_id, values in bucket.items():
+            for _, values in bucket.items():
                 dropped += len(values)
-                if self.tracing:
-                    for value in values:
-                        self.changes.append(
-                            Change("detach", entity_id, kind.__name__, value))
-            bucket.clear()
+                bucket.clear()
             self.revision += 1
         return dropped
 
     def changed(self, entity=None) -> None:
         """Something changed that no attach said -- an index a domain keeps
-        by hand, mutated in place. See the ⚠ at the top of this module."""
+        by hand, mutated in place."""
         self.revision += 1
-        if self.tracing:
-            self.changes.append(Change("changed", self._id(entity)
-                                       if entity is not None else -1))
-
-    def learn(self, *words) -> None:
-        """Add words to what the prompt will pull a typo towards."""
-        self.vocabulary.update(str(word) for word in words)
 
     # -- reading -----------------------------------------------------
 
@@ -730,16 +355,7 @@ class World:
 
     def populated(self, *kinds) -> bool:
         """Whether ANY entity carries at least one of these component
-        types -- an existence check, not a query: `O(len(kinds))` dict
-        lookups, no intersection, no walk of a bucket.
-
-        This is what lets a rule go dormant rather than merely fast:
-        `each()` on an empty bucket already returns quickly, but it
-        still calls the rule's own Python body to find that out.
-        `Loop.rule` calls this against the reads `loopingrules.analyze`
-        derives from a rule's own source, so a rule none of whose reads
-        exist yet is skipped before it runs at all.
-        """
+        types """
         return any(self._by_type.get(k) for k in kinds)
 
     def each(self, *kinds, without=()) -> "list":

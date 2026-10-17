@@ -124,8 +124,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from examples.judge import Risk, RiskTolerance, TooRisky, flag_too_risky
-from loopingrules.engine import Said
-from loopingrules.world import reply, transient
+from loopingrules.engine import Reply, Said
+from loopingrules.world import transient
 
 
 @dataclass(frozen=True)
@@ -305,7 +305,7 @@ def hear_status(w) -> None:
             lines.append("%s: %d/%d" % (card_def.name, have, want.qty))
         if w.the(GoalMet) is not None:
             lines.append("goal met")
-        reply(w, "; ".join(lines))
+        w.spawn(Reply("user", "; ".join(lines)))
 
 
 # -- composing tags on a Listing, independently -------------------------
@@ -436,13 +436,13 @@ def reply_bought(w) -> None:
         w.destroy(entity)
         card_def = w.get(bought.card, CardDef)
         name = card_def.name if card_def else "card #%d" % bought.card
-        reply(w, "bought %s for %d" % (name, bought.price))
+        w.spawn(Reply("user", "bought %s for %d" % (name, bought.price)))
 
 
 def reply_bad_command(w) -> None:
     for entity, bad in w.each(BadCommand):
         w.destroy(entity)
-        reply(w, "! %s" % bad.why)
+        w.spawn(Reply("user", "! %s" % bad.why))
 
 
 def reply_goal_met(w) -> None:
@@ -453,7 +453,7 @@ def reply_goal_met(w) -> None:
     still-contested/still-unannounced candidate twice)."""
     for entity, _goal in w.each(GoalMet, without=Announced):
         w.attach(entity, Announced())
-        reply(w, "goal met -- every wanted card is in the collection")
+        w.spawn(Reply("user", "goal met -- every wanted card is in the collection"))
 
 
 RULES = (hear_list, hear_want, hear_status,

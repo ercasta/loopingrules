@@ -81,8 +81,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from examples.judge import Risk, RiskTolerance, TooRisky, flag_too_risky
-from loopingrules.engine import Said
-from loopingrules.world import reply, transient
+from loopingrules.engine import Reply, Said
+from loopingrules.world import transient
 
 
 HORIZON_DAYS = 7
@@ -210,7 +210,7 @@ def hear_status(w) -> None:
             if w.has(item_entity, OnList):
                 line += " -- on the list"
             lines.append(line)
-        reply(w, "; ".join(lines) if lines else "no items")
+        w.spawn(Reply("user", "; ".join(lines) if lines else "no items"))
 
 
 # -- projecting, and acting on the judge's verdict ------------------------
@@ -249,7 +249,7 @@ def add_to_list(w) -> None:
 def reply_bad_command(w) -> None:
     for entity, bad in w.each(BadCommand):
         w.destroy(entity)
-        reply(w, "! %s" % bad.why)
+        w.spawn(Reply("user", "! %s" % bad.why))
 
 
 RULES = (hear_stock, hear_needby, hear_status,
