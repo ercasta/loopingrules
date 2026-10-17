@@ -244,13 +244,43 @@ the argument.**
   a controlled **depth-dial** probe (`slope`), a **relevance sweep**
   (`relevance`) that dials the cross-entity condition's arity, and two more
   ladder rungs — `ranking` on `trip`'s bridge and `counting` on `quorum`.
+- `examples/acquisition.py` — Experiment 3, the novelty crux: acquiring the
+  SELL behaviour `cards` deliberately lacks, authored (a couple of rules plus
+  a knob) vs de novo (a flat learner over raw facts), with a convergence
+  probe for the representability question. Also `examples/trade.py` +
+  `examples/adapters.py` — an ownership island and an explicit
+  representation adapter, a side probe of whether an effect-carrying concept
+  stratifies (hub) or meshes (adapter); not on Experiment 3's critical path.
+- `examples/hierarchy.py` — Experiment 4: the "tune islands, freeze them,
+  tune only the bridge" scheme, measured. Two islands (weighted, graded
+  opinions), a weighted-threshold bridge, and a hidden global objective that
+  needs both signals unequally; reach, freeze cost, and covariate shift.
+- `examples/party.py` — Experiment 5: composing simple local rules into a
+  CHAINED investigation with NO central scheduler. Questions are entities,
+  raised by scoped conditions and answered by oblivious rules; a finding
+  makes a later rule's condition true (weather -> backup). Measured: the
+  chain terminates, and the SCOPE of the watched conditions decides both
+  correctness (too narrow skips a step) and cost (too broad wastes checks).
+- `examples/planning.py` — Experiment 6: (b) a finding that raises a CHOICE
+  among next questions (a rainy outdoor venue -> backup venue vs tent,
+  resolved locally by `examples.decide`'s `Option`/`Score`/`Winner`), and
+  (c) tuning the investigation's thresholds (`rain_threshold`, `max_checks`)
+  against a TRAJECTORY score (`valid - cost`) with `tuning.search`.
+- `examples/branching.py` — Experiment 7: deepening the branch -- the chosen
+  remedy raises ANOTHER choice (tent -> which tent?), both levels resolved by
+  the same `pick_winner` keyed by the question entity. `prefer_relocate` and
+  `max_checks` are tuned to pick the shallow `relocate` branch over the
+  deeper `tent` one; too small a depth budget silently refuses.
 - `loopingrules/analyze.analyze` is now memoized by function object (safe:
   no caller mutates the returned `Analysis`). Rule registration repeated
   thousands of times by a replay harness parses each rule once — the
   ablation suite dropped from ~84s to ~5s, the whole suite to ~10s.
 - Tests: `test_examples_tuning.py`, `test_examples_bridge.py`,
   `test_examples_market.py`, `test_examples_quorum.py`,
-  `test_examples_ablation.py` — `229 passing`.
+  `test_examples_ablation.py`, `test_examples_acquisition.py`,
+  `test_examples_adapters.py`, `test_examples_hierarchy.py`,
+  `test_examples_party.py`, `test_examples_planning.py`,
+  `test_examples_branching.py` — `271 passing`.
 
 ### What Experiment 1 found
 
@@ -440,6 +470,161 @@ the authored tag, balanced accuracy on the balanced pool):
   verdict), single-seed estimates, and one flat baseline (an axis-aligned
   tree) rather than the strongest possible learner.
 
+### What Experiment 3 found
+
+`examples/acquisition.py`, the novelty crux: acquire the SELL behaviour
+`cards` deliberately lacks, and measure what each system pays for it. The
+authored arm is a couple of rules (`tag_surplus` plus `decide_sell`'s
+held-gate) and one knob (`Policy.sell_premium`), perfect at `N = 0` by
+construction. The de novo arm is the same flat tree over the raw facts
+(`offer`, `value`, `held`, `premium`), never the `Surplus` tag; the target
+is the real sell verdict, observed on a scoring-only loop so nothing sells.
+
+- **The projection buys roughly `4x` the data at the 0.9 line, `~8x` at
+  0.95.** The tag reaches `0.9` balanced accuracy at `N = 16` and is exact
+  by `N = 32`; the raw facts need `N = 64` for `0.9` and only reach `~0.95`
+  by `N = 128`. The gap bites at small `N` (`~0.16` at `N = 8`).
+- **The new decision IS representable without the projection — at a
+  price.** Pushed to `N = 1024` the raw curve climbs to `~0.99` and never
+  quite closes on the tag's `1.0`: a DATA cost, not an impossibility. So on
+  this behaviour the de novo camp's objection survives weakly ("more data
+  buys it") while the theory holds strongly ("structure buys the data, and
+  a residual never fully closes").
+- **It reproduces the relational reading where `market` did not.** Unlike
+  Experiment 2's `market` non-result (its extra condition rarely bound),
+  the sell condition is a comparison against a PRODUCT
+  (`offer >= value*(1+premium)`) — the family the depth dial showed
+  structure pays for — and here the gap is real.
+- **A structural wrinkle, named.** Experiment 2's buy verdict is ALL
+  attached tags; the sell verdict is a projection (`Surplus`) PLUS an
+  inline guard (`held >= 1`) `decide_sell` never reifies. A structure
+  control carrying only `Surplus` under-specified the target and scored
+  *below* primitive (`~0.79` vs `~0.95`); the fair control carries both.
+  "The authored tags" is not automatically the authored DECISION — inline
+  control flow is structure too, and must be reified to be measured.
+- **Caveat.** Same controlled-imitation framing, single seed, one flat
+  baseline. The `4x` is one behaviour on one distribution, not a law.
+
+### What Experiment 4 found
+
+`examples/hierarchy.py`, the "tune islands, freeze them, tune only the
+bridge" scheme, measured on a controlled two-island probe (a graded opinion
+per island, a weighted-threshold bridge, a hidden global objective
+`0.7*x1 + 0.3*x2 >= 0.5` that needs both signals unequally). Numbers are
+held-in (the probe measures REACH, not generalization).
+
+- **The bridge does the work, and the freeze is not free.** Bridge tuning
+  beats an equal-weight bridge (`0.963` vs `0.873` aligned; `0.933` vs
+  `0.902` misaligned); the joint ceiling is `0.983`.
+- **Freezing costs more when local tasks misalign** (`joint - staged`:
+  `~0.02` aligned, `~0.05` misaligned) -- and not zero even when aligned,
+  because joint tuning sets biases away from the local optimum to make a
+  saturating island the linear bridge can exploit. "The local task's best
+  knob" is not "the best feature for the global task."
+- **Conditioning the data is not the lever.** The locally-tuned knob does
+  not move under a shifted input distribution for a well-specified
+  threshold OR calibration task; it moves only under MISSPECIFICATION
+  (`gain 2`, conditioned to `x1 < 0.4`: `0.5 -> 0.4`). Conditioning hard
+  enough can also make the local labels single-class, making the local
+  objective undefined.
+- **The load-bearing assumption** is that each island's LOCAL objective is
+  an honest proxy for the GLOBAL one. Where it is, freezing is nearly free;
+  where it is not, re-weighting helps but does not close the gap -- the fix
+  is to re-target the objective, not re-condition the data.
+- **Caveat.** A controlled, static, single-seed probe with one bridge
+  shape. It cannot show the SEQUENTIAL covariate shift `tuning.md` names
+  (one rule's change altering what later reaches another); that needs a
+  multi-tick domain.
+
+### What Experiment 5 found
+
+`examples/party.py`, composing simple local rules into a chained
+investigation with **no central scheduler**. A `Question(kind)` is an
+entity; a rule raises one only when its own condition holds and none is
+pending or `Checked` (dedup BY EXISTENCE); an oblivious rule answers it,
+leaving a finding a later rule's condition can read (`Rain` -> ask for a
+backup). `decide` waits on `w.first(Question) is None` (a NEGATED read, so
+`analyze` does not gate it dormant on the absent type).
+
+Two scenarios, venues `hall(indoor,50)`/`garden(outdoor,40)`, rain, budget
+100; reported as `(planned, valid, asks)`:
+
+- **Scope decides correctness.** On `outdoor_risky` (book the garden), a
+  `narrow` raiser that checks the weather for the FIRST venue only (the
+  indoor hall) never sees the rain, and the cautious decision REFUSES the
+  party: `(False, -, 0)`. `scoped`/`broad` run the full chain: `(True, True,
+  2)`.
+- **Scope decides cost.** On `indoor_chosen` (book the hall), `narrow`/
+  `scoped` ask nothing (`0`); `broad` asks about the weather for a venue
+  nobody is booking (`2`) -- a wasted check.
+- **A sub-scoped trigger is silent, not safe.** With a TRUSTING decision
+  ("no `Rain` found means fine"), the same narrow scope yields `(True,
+  **False**, 0)` -- a confident, INVALID plan (outdoor party in the rain,
+  no backup). The cautious decision is what turns a too-narrow scope from a
+  wrong answer into a refusal.
+- **No scheduler was needed.** Every step is a condition: "after the
+  weather check, ask for a backup" is the backup rule reading the `Rain` a
+  finding left behind. Sequencing is data.
+- **Caveat.** Every fact is already in the world (checks are conditional
+  DERIVATION, not external I/O -- `architecture.md`: no rule may block). A
+  version where a check must fetch an absent fact, and cost is real, is a
+  named next step.
+
+### What Experiment 6 found
+
+`examples/planning.py`, extending the party probe with (b) a CHOICE among
+next questions and (c) tuning against TRAJECTORY examples.
+
+- **(b) The choice point is a local conflict resolution, not a scheduler.**
+  A rainy outdoor booking raises a `Question("remedy")`; `propose_backup`
+  and `propose_tent` each attach `examples.decide`'s `Option`/`Score` to a
+  candidate (score = negated cost); `decide.pick_winner` -- reused verbatim
+  from the option/score bridge -- crowns the cheaper (the tent at 30 over
+  the hall at 50); `resolve_remedy` applies it. The dedup is per remedy
+  KIND, or the second proposer would be blocked and there would be no
+  choice at all.
+- **(c) The knobs are the trajectory.** `Policy(rain_threshold,
+  max_checks)` are the tunable surface; `score_replay` scores the RUN
+  (`valid*2 - 0.5*checks`), never a final number. Two failure modes and one
+  fix, on five scenarios:
+  - a `rain_threshold` of `0.9` calls a `0.4` drizzle "clear" and books an
+    unprotected outdoor venue -- INVALID, `2.0`;
+  - `max_checks = 1` cuts the chain right after the weather check, so the
+    remedy is never sought -- refused, `2.0`;
+  - `tuning.search` finds `(0.0, 2)` at `6.5`, beating the default
+    `(0.5, 4)` at `5.0` on validity-per-check. The surface has PLATEAUS
+    (any threshold below the lightest rain and above zero is equally good)
+    -- a behavioural equivalence class, per `tuning.md`, not one number.
+- **Caveat.** Same as Experiment 5: facts are present, checks are
+  derivation; and the two knobs are the only structure -- tuning still may
+  not move structure, only values.
+
+### What Experiment 7 found
+
+`examples/branching.py`, deepening the branch: the level-1 choice can OPEN
+a level-2 choice -- `rain -> Q(cover): tent OR relocate`, and if tent wins,
+`Q(tent_size): which tent?`. Both levels are the SAME mechanism (propose
+candidates carrying `decide.Option`/`Score`; `decide.pick_winner` crowns the
+best), kept apart by making each QUESTION ENTITY its own `occasion` --
+`Option(cover_id)` at level 1, `Option(tent_size_id)` at level 2 -- so one
+oblivious rule resolves both and the branch is just a condition. Score
+`valid*3 - checks`, four scenarios (small party, big party, dry, indoor):
+
+- **The branch is really two levels, and it is data-bounded.** The small
+  party under the default policy rents a tent and then chooses a TENT SIZE:
+  `checks = [weather, cover, tent_size]`, both `tent` and `tent_option`
+  winners present. Nothing authored "two levels"; level 2 exists only
+  because level 1 won with `tent`.
+- **Depth costs, and that is the trajectory.** The `tent` branch is 3
+  checks; `relocate` is 2. Tuning `prefer_relocate` up (`>= 40`) moves the
+  small party onto the shallow branch: total `6 -> 7`, all valid.
+- **A too-small depth budget is a silent refusal.** `max_checks = 1` stops
+  after the weather check, so no remedy is reached and the rainy outdoor
+  plans are refused -- `shallow_budget` scores `3` against the tuned `7`.
+- **Caveat.** Same as 5 and 6 (facts present, checks are derivation); and
+  the branch depth here is two, only because level 2 has no sub-choice of
+  its own -- the mechanism would recurse, but nothing exercises it.
+
 ### Repairs needed to run (pre-existing breakage)
 
 The `simplification` commits had left the package unable to register any
@@ -462,9 +647,17 @@ real domain's rules; fixed to proceed:
   runs whose `reach`/`binding` are noisy at this scale; averaging over
   several dataset draws would put an error bar on the slope rather than one
   number.
-- **Experiment 3** — new island: `market` already has selling; measure what
-  each system needs to ACQUIRE it (authored: a couple of rules plus a knob;
-  de novo: labels, and whether it can represent the new decision).
+- ~~**Experiment 3** — new island.~~ Done: `examples/acquisition.py`, see
+  "What Experiment 3 found." What it does NOT settle: a second, differently
+  shaped new behaviour (one whose decision is NOT a product-against-a-
+  threshold), to test whether the `4x` is a property of the method or of
+  this one relational family -- and a stronger flat learner than the
+  axis-aligned tree, which might close more of the residual.
+- **The sequential covariate shift Experiment 4 could not show.** Its probe
+  is static, so it can only see the objective mismatch, not the way one
+  rule's change alters the distribution of inputs a LATER rule meets. A
+  multi-tick domain that changes what reaches an island mid-run is the
+  honest next step for the "freeze islands, tune bridges" claim.
 
 ## Limits
 
