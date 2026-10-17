@@ -2,63 +2,17 @@
 market according to a goal (which cards it wants) and a risk profile (how
 much it will spend, how much premium over fair value it will tolerate).
 
-## Kept here, not shipped
-
-`loopingrules`'s own README says the package ships no domain except
-`help.py`. This module is not an exception to that -- it lives in
-`examples/`, not in `loopingrules/`, is not in `pyproject.toml`'s
-`packages=`, and nothing in the installed package imports it. It exists
-for the same reason `harneskills.examples.fs` and `pystrider` exist, one
-step closer to home: a worked domain, kept in this repo for
-demonstration, importable from a checkout the same way this file's own
-tests import it, never installed alongside `loopingrules` itself.
-
-## One actor, no rivalry -- so no `Proposal`/`arbitrate`/`census`
-
-Unlike `harneskills.examples.fs`'s `ParseRequest`/`propose_*`/
-`arbitrate_parse` (several candidate READINGS of one line competing) or
-`loopingrules.help`'s `HelpTopic` (several INSTALLED DOMAINS answering
-one occasion), nothing here ever has two rivals for one decision: one
-agent, its own goal, its own money. Every verb (`list`/`want`/`status`)
-is this module's alone to recognize, so a `hear_*` rule just claims the
-`Said` the moment it recognizes its own verb and never needs to arbitrate
-against a second interpretation.
-
 ## The actual point: composing tags nobody wrote the composition of
 
 The interesting mechanism here is not the market, it's `decide_buy`
 reading three tags -- `Wanted`, `Affordable`, `FairPriced` -- attached to
 one `Listing` by three rules that share no code and no awareness of each
-other. This is `pystrider.patterns.LoopCount` -> `pystrider.constraints.
-TooManyLoops` again (see `PRINCIPLES.md`, "the actual lever: a small
-vocabulary, closed under what rules produce"): `constraints.max_loops`
-reads a tag `patterns.loop_count` attached with zero idea a consumer
-exists; `decide_buy` is the same shape, three tags deep instead of one.
-
-⚠ One real difference from `LoopCount`, worth naming because it is the
-one bug this design would have shipped with otherwise: `LoopCount` is
-safe to derive ONCE per entity (`without=LoopCount` guards it) because a
-`pystrider` re-read destroys and rebuilds the whole entity, so the fact
-underneath it never changes out from under a live id. `Wanted`/
-`Affordable`/`FairPriced` cannot use that guard -- `Purse.cash`,
-`Wants.qty`, and `Copies.count` all change in place, on long-lived
-entities, while a `Listing` sits on the market for many ticks. Each tag
-rule below recomputes its boolean fresh every tick and goes BOTH
-directions (`attach` when true, `detach` when false) -- see `tag_wanted`/
-`tag_affordable`/`tag_fair_priced`. This costs nothing once settled
-(`attach`/`detach` are already no-ops when nothing changed) and is
-exactly the "recompute fresh, never cache" discipline `PRINCIPLES.md`
-asks for anyway.
+other. 
 
 ## Selling is a deliberate gap, not an oversight
 
 This agent only ever buys. A `decide_sell` rule would follow the exact
-same tag-then-act shape (`Surplus`/`NeedsCash` tags on an `Owned`-but-
-unwanted card, composed the same way `decide_buy` composes its three) --
-not built, per `DECISION_PATTERNS.md`'s "grow it only at the rule that
-actually collides": there is no second scenario yet that needs it, and
-guessing at the shape now would be exactly the speculative generality
-that file argues against.
+same tag-then-act shape 
 
 ## A fourth tag, projected onto a judge this domain does not own
 
@@ -80,7 +34,7 @@ not know or care which rule produced it.
 - `CardDef(name, rarity, value)` -- one entity per catalog card, the
   agent's own idea of what a card is worth. Seeded by `install`, one
   entity per catalog entry, by NAME -- an entry already present (by name)
-  is never touched, the same policy `fs.py.install` gives `BigFloor`: a
+  is never touched: a
   restored world's own value is a prior tick's conclusion, not something
   a later `install()` call has any business overwriting.
 - `Copies(count)` -- how many of a card the agent holds, attached to that
