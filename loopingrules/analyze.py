@@ -42,6 +42,19 @@ refuse-rather-than-guess discipline every parse boundary in this
 codebase already applies (`examples.cards._parse_int`, `_find_card`);
 this module just applies it to source code instead of a typed line.
 
+## Reading the change log
+
+`w.changes(changed=SomeType)` (`world.py`'s change log -- see
+`docs/plan-memory.md`) is a read whose genuinely-read type, if any, is the
+`changed=` argument. When that argument is a literal component type, it is
+attributed as a read, so a rule that only reacts to changes of one type
+keeps a correct gate; with no `changed=` at all it contributes no read and
+the rule falls back to "called every tick", the safe default, while a
+non-literal `changed=` cannot be attributed and is `Opaque` -- the same
+refuse-rather-than-guess treatment every other non-literal component
+argument gets. `w.recent(n)` reads the log too but names no type, so it is
+the same safe fallback.
+
 `destroy(entity)` is a deliberate, named exception to "every write is
 attributed to a Kind": it takes no component-type argument at all, so
 nothing here claims to know which types an entity it destroys was
@@ -350,6 +363,27 @@ def _walk_function(fn, module, analysis: Analysis, seen: set,
             analysis.writes.add(kind)
         elif method == "destroy":
             analysis.destroys = True
+        elif method == "changes":
+            # `w.changes(changed=SomeType)` reads the change log; when the
+            # `changed=` argument is a literal component type, that type is
+            # a genuine read (the rule only cares about changes to it).
+            # None, or any other keyword, contributes no read -- the rule
+            # then falls back to "no reads, called every tick", the safe
+            # default. A non-literal `changed=` is Opaque below, the same
+            # refusal every other non-literal component argument gets. See
+            # the module note, "reading the change log".
+            for kw in call.keywords:
+                if kw.arg != "changed":
+                    continue
+                kind = resolve_class(kw.value)
+                if kind is None:
+                    raise Opaque(_qualname(fn),
+                                 "changes(changed=...) argument is not a "
+                                 "literal component type: %r"
+                                 % ast.unparse(kw.value))
+                analysis.reads.add(kind)
+        elif method == "recent":
+            pass
         elif method in ("entity", "revision"):
             pass
         else:

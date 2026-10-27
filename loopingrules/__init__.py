@@ -7,7 +7,10 @@ it, and one thread to run a session on.
   `@dataclasses.dataclass` instances, no base class, holding only
   `None`/`bool`/`int`/`float`/`str` and `list`/`dict`/`tuple` of those --
   another entity is referenced by its plain id, never a live handle. An
-  entity may carry SEVERAL components of one type.
+  entity may carry SEVERAL components of one type. Every write also lands
+  in a transient, in-memory change log (`World.changes`), which a rule may
+  read to condition on what has HAPPENED, not only on what is true now --
+  see `docs/plan-memory.md`; it is never saved.
 * `loopingrules.loop` -- call every rule, in order, until a whole pass changes
   nothing. A rule is a function of one `World` that writes to it directly
   -- `spawn`/`attach`/`replace`/`detach`/`remove`/`destroy` -- and
@@ -51,9 +54,9 @@ from __future__ import annotations
 from . import engine, loop, save, share, world
 from .engine import Engine
 from .loop import Loop
-from .world import World
+from .world import Change, World
 
 __version__ = "0.1.0"
 
-__all__ = ["Engine", "Loop", "World", "engine", "loop", "save", "share",
+__all__ = ["Change", "Engine", "Loop", "World", "engine", "loop", "save", "share",
           "world", "__version__"]

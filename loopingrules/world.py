@@ -1,4 +1,17 @@
-"""The world model: entities, the components they carry """
+"""The world model: entities, the components they carry, and the log of
+every change made to them.
+
+Entities are identity, components are data, and `World` is the one place
+both are read and written. Every write ALSO lands in a transient, in-memory
+CHANGE LOG (`World.changes` / `World.recent`): what changed, on which tick,
+and which rule made the change (or `None`, for an install or the engine).
+A rule reads the log to condition on what HAS HAPPENED, not only on what is
+true now -- see `docs/plan-memory.md`. The log is never saved (`save.dump`
+walks entities and components, and the log is neither) and is bounded only
+if a caller asks (`Loop(capacity=...)`); anything meant to survive is an
+ordinary component a rule chose to attach. `Loop.tick` sets `_actor` and
+`_tick` around each rule call, which is the whole of the log's provenance.
+"""
 
 from __future__ import annotations
 
@@ -152,6 +165,29 @@ def _normalize(component: Any) -> Any:
         object.__setattr__(fresh, field_name, value)
     return fresh
 
+@dataclasses.dataclass(frozen=True)
+class Change:
+    """One mutation the world applied, as the change log records it.
+
+    `seq` is monotonic across the world's whole life; `tick` is the loop's
+    tick count at the moment (`0` before the first tick, so install-time
+    writes are `tick == 0`); `rule` names the rule that made it, or `None`
+    for a write made outside any rule (an install, the engine draining a
+    `Reply`); `kind` is one of `spawn`/`attach`/`replace`/`detach`/
+    `remove`/`destroy`/`changed`/`purge`; `target` is the entity id touched
+    (`None` for `purge`); and `payload` holds the affected component
+    INSTANCES -- those added for spawn/attach/replace, those removed for
+    detach/remove/destroy, and empty where there is nothing to name.
+    """
+
+    seq: int
+    tick: int
+    rule: object
+    kind: str
+    target: object
+    payload: tuple = ()
+
+
 class World:
     """Entities, the components on them, and the queries rules ask."""
 
@@ -168,6 +204,34 @@ class World:
         # reads it to tell a rule that did something from one that did
         # not, which is the whole of how it knows the world has settled.
         self.revision = 0
+        # The change log: transient, in-memory, never saved. `_seq` counts
+        # every record so `changes(since=...)` stays stable even when
+        # `_log_capacity` drops old entries; `_actor`/`_tick` are set by
+        # the Loop around each rule call, which is the log's provenance.
+        self._changes: List[Change] = []
+        self._seq = 0
+        self._actor = None
+        self._tick = 0
+        self._log_capacity = None
+
+    def _record(self, kind: str, target, payload) -> None:
+        """Append one `Change` -- called by every write below that actually
+        moved `revision`, never for a no-op (a re-attached equal value is
+        not a change and must not be in the log, same guarantee settling
+        rests on)."""
+        self._changes.append(Change(seq=self._seq, tick=self._tick,
+                                    rule=self._actor, kind=kind,
+                                    target=target, payload=tuple(payload)))
+        self._seq += 1
+        capacity = self._log_capacity
+        if capacity is not None and len(self._changes) > capacity:
+            del self._changes[:len(self._changes) - capacity]
+
+    def clear_changes(self) -> None:
+        """Drop the whole log. The log is not the world: nothing about the
+        entities or the fixpoint depends on it, so a long session may prune
+        it freely."""
+        self._changes.clear()
         
     # -- entity ids, handles, either -----------------------------------
 
@@ -195,6 +259,7 @@ class World:
         entity = Entity(self, self._next)
         self._entities[entity.id] = entity
         self.revision += 1
+        self._record("spawn", entity.id, [])
         if components:
             self.attach(entity, *components)
         return entity
@@ -221,9 +286,11 @@ class World:
         entity_id = self._id(entity)
         if self._entities.pop(entity_id, None) is None:
             return False
+        carried = []
         for bucket in self._by_type.values():
-            bucket.pop(entity_id, None)
+            carried.extend(bucket.pop(entity_id, None) or ())
         self.revision += 1
+        self._record("destroy", entity_id, carried)
         return True
 
     def attach(self, entity, *components) -> Entity:
@@ -241,6 +308,7 @@ class World:
         entity_id = self._id(entity)
         if entity_id not in self._entities:
             raise ValueError("%r is not in this world" % (entity,))
+        added = []
         for component in components:
             component = _normalize(component)
             cls = type(component)
@@ -249,6 +317,9 @@ class World:
                 continue
             values.append(component)
             self.revision += 1
+            added.append(component)
+        if added:
+            self._record("attach", entity_id, added)
         return self._entities[entity_id]
 
     def replace(self, entity, *components) -> Entity:
@@ -266,6 +337,7 @@ class World:
         entity_id = self._id(entity)
         if entity_id not in self._entities:
             raise ValueError("%r is not in this world" % (entity,))
+        replaced = []
         for component in components:
             cls = type(component)
             normalized = _normalize(component)
@@ -274,6 +346,9 @@ class World:
                 continue
             bucket[entity_id] = [normalized]
             self.revision += 1
+            replaced.append(normalized)
+        if replaced:
+            self._record("replace", entity_id, replaced)
         return self._entities[entity_id]
 
     def detach(self, entity, *kinds) -> bool:
@@ -282,12 +357,16 @@ class World:
         rest of that type standing."""
         entity_id = self._id(entity)
         gone = False
+        removed = []
         for kind in kinds:
             bucket = self._by_type.get(kind)
             popped = bucket.pop(entity_id, None) if bucket else None
             if popped is not None:
                 self.revision += 1
                 gone = True
+                removed.extend(popped)
+        if removed:
+            self._record("detach", entity_id, removed)
         return gone
 
     def remove(self, entity, component) -> bool:
@@ -304,6 +383,7 @@ class World:
         if not values:
             del bucket[entity_id]
         self.revision += 1
+        self._record("remove", entity_id, [component])
         return True
 
     def purge_transient(self) -> int:
@@ -319,12 +399,16 @@ class World:
                 dropped += len(values)
                 bucket.clear()
             self.revision += 1
+        if dropped:
+            self._record("purge", None, [])
         return dropped
 
     def changed(self, entity=None) -> None:
         """Something changed that no attach said -- an index a domain keeps
         by hand, mutated in place."""
         self.revision += 1
+        self._record("changed",
+                     None if entity is None else self._id(entity), [])
 
     # -- reading -----------------------------------------------------
 
@@ -434,6 +518,49 @@ class World:
     def entities(self) -> "list":
         """Every entity, in the order it was spawned."""
         return [self._entities[i] for i in sorted(self._entities)]
+
+    def changes(self, since=None, by=None, kind=None, changed=None,
+                target=None) -> tuple:
+        """The change log -- what has happened, oldest first.
+
+        Filters, all optional and ANDed: `since` a `seq` (return only
+        changes AFTER it), `by` a rule name, `kind` one of the kinds on
+        `Change`, `changed` a component TYPE (changes whose payload
+        mentions it -- added for attach/spawn/replace, removed for
+        detach/remove/destroy), and `target` an entity (handle or id).
+
+        Called while a rule is running, it sees only changes made BEFORE
+        the current tick: a rule never sees its own writes, nor another
+        rule's from the same tick, so a rule cannot trigger on itself and
+        drive an endless loop. Outside a rule (an install, a replay that
+        has finished) it sees the whole log. The `_record` call keeps the
+        log in step with `revision` -- a no-op is in neither.
+        """
+        current_tick = self._tick if self._actor is not None else None
+        target_id = None if target is None else self._id(target)
+        out = []
+        for change in self._changes:
+            if current_tick is not None and change.tick >= current_tick:
+                continue
+            if since is not None and change.seq <= since:
+                continue
+            if by is not None and change.rule != by:
+                continue
+            if kind is not None and change.kind != kind:
+                continue
+            if target_id is not None and change.target != target_id:
+                continue
+            if changed is not None and not any(
+                    isinstance(c, changed) for c in change.payload):
+                continue
+            out.append(change)
+        return tuple(out)
+
+    def recent(self, n) -> tuple:
+        """The last `n` changes `changes()` would return (`()` if `n <= 0`)."""
+        if n <= 0:
+            return ()
+        return self.changes()[-n:]
 
     def show(self, entity) -> str:
         """`#7  Entry(folder=1, name='todo.txt')  Size(bytes=17)`"""

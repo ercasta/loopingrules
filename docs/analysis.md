@@ -44,6 +44,17 @@ In `component_map`, such a rule lands in `opaque` with the reason and is
 honest "unknown". In `Loop.rule`, an opaque rule is simply called every
 tick.
 
+### The change log is a read too
+
+`w.changes(changed=SomeType)` counts as a read of `SomeType`: a rule that
+only reacts to changes of one type keeps a correct gate. With no `changed=`
+argument it contributes no read, and the rule falls back to being called
+every tick -- the same safe default as any other rule with nothing to gate
+on. A non-literal `changed=` cannot be attributed, so the rule is `Opaque`,
+exactly as a non-literal argument to any other read is (this module's
+refuse-rather-than-guess rule). See [Core concepts](concepts.md) for the
+log itself.
+
 Two caveats:
 
 - `analyze` needs source. A function defined in an interactive prompt or piped

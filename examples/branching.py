@@ -53,7 +53,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from examples import tuning
+import loopingrules_calibration as tuning
 from examples.decide import Option, Score, Winner, pick_winner
 from loopingrules.loop import Loop
 

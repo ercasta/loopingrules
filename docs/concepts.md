@@ -98,6 +98,31 @@ settle.
 If you keep an index by hand and mutate it in place, call `world.changed()`
 so the loop notices.
 
+## The change log
+
+Every write also appends a `Change` to a transient, in-memory **change log**
+on the world: the `kind` (`spawn` / `attach` / `replace` / `detach` /
+`remove` / `destroy` / `changed` / `purge`), the `target` entity id, the
+`payload` (the component instances added or removed), the `tick`, and the
+`rule` that made it (`None` for an install or the engine).
+
+```python
+w.changes()                     # everything that has happened, oldest first
+w.changes(kind="attach")        # one kind
+w.changes(changed=Size)         # changes that touched a Size
+w.changes(by="fs.flag_big")     # one rule's changes
+w.changes(since=42)             # after sequence number 42
+w.recent(10)                    # the last ten
+```
+
+A rule reads the log to condition on what has **happened**, not only on what
+is true now -- "was this already attempted, even though the marker is gone?"
+While a rule runs, `changes()` returns only changes from **before its own
+tick**, so it can never react to its own write and loop. The log is never
+saved, and is bounded only if you ask (`Loop(capacity=...)`); anything meant
+to survive a restart is an ordinary component a rule chose to attach. See
+`docs/plan-memory.md`.
+
 ## Rule
 
 A rule is a function of one argument, the `World`. It queries, then writes

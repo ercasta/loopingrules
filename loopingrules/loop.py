@@ -83,6 +83,20 @@ already on the entity did not. That is what settling is measured in, and
 it is why `World.attach` comparing before it stores is load-bearing
 rather than a convenience.
 
+## Every change is logged, and a rule may read the log
+
+The same write methods also append to a transient CHANGE LOG
+(`World.changes` / `World.recent`): what changed, on which tick, and by
+which rule. This is not `revision`-watching for the loop -- it is for a
+RULE that needs to condition on what has already HAPPENED, not only on
+what is true now (see `docs/plan-memory.md`). `tick()` stamps each record
+with the running rule (`world._actor`) and the tick (`world._tick`), so a
+rule calling `w.changes()` sees only changes from BEFORE the current tick
+and cannot react to its own write and loop. The log is in-memory and never
+saved; `Loop(capacity=N)` bounds it. It is what the removed
+`World.tracing` was reaching for, now first-class rather than a debug
+trace.
+
 ## A rule wakes only when something it reads exists
 
 There used to be a `loop.rule(fn, watches=(Kind, ...))` a rule author
@@ -180,7 +194,7 @@ def _name_of(fn) -> str:
 class Loop:
     """Rules, in order, over one world."""
 
-    def __init__(self, world=None, budget: int = 200, trace: bool = False) -> None:
+    def __init__(self, world=None, budget: int = 200, capacity=None) -> None:
         from .world import World
         self.world = World() if world is None else world
         self.budget = budget
@@ -189,9 +203,13 @@ class Loop:
         # `run`. The caller drains it; the loop only ever appends.
         self.errors: "list[tuple[str, BaseException]]" = []
         self.tick_count = 0
-
-    # Note: tracing was removed along with World.tracing/changes as part
-    # of the simplification. The trace feature is no longer available.
+        # The change log itself is the World's (see `world.py`); the loop
+        # owns only its bound and the provenance it stamps on each record:
+        # `_tick` (the current tick) and `_actor` (the rule running now, or
+        # None). `capacity` is the optional retention bound -- older
+        # changes are dropped past it; None keeps the whole session.
+        self.world._log_capacity = capacity
+        self.world._actor = None
 
     # -- registering --------------------------------------------------
 
@@ -288,6 +306,7 @@ class Loop:
         ran.
         """
         self.tick_count += 1
+        self.world._tick = self.tick_count
         fired = []
         for i in self._tick_order():
             name, fn = self.rules[i]
@@ -296,10 +315,13 @@ class Loop:
                 continue    # dormant -- not even called, see the module note
             before = self.world.revision
             raised = None
+            self.world._actor = name
             try:
                 fn(self.world)
             except Exception as e:  # noqa: BLE001 -- see the module docstring
                 raised = e
+            finally:
+                self.world._actor = None
             if raised is not None:
                 self._record(name, raised)
                 continue

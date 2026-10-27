@@ -14,21 +14,27 @@ loop and routes what it says to however many channels are attached to it.
 
 ```
 loopingrules/
-  world.py        entities, components, and the queries rules ask
+  world.py        entities, components, the queries rules ask, and the
+                    transient change log (World.changes)
   loop.py         every rule, in order, until nothing changes
   engine.py       one thread, the world, and the channels attached to it
   save.py         the world as JSONL: entities are ints, components are values
   share.py        a named subset of entities, portable between worlds
   analyze.py      what a rule reads and writes, derived from its own AST
+loopingrules_calibration/
+  kit.py          Knob, Scenario, Trace, replay, search -- the tuning instrument
+  report.py       calibrate: held-out scores, plateaus, sensitivity
 examples/
   cards.py, shopping.py, market.py, quorum.py, trip.py   worked domains
   judge.py, decide.py                                   domain-oblivious bridges
-  tuning.py, bridge_transfer.py, ablation.py            the tuning experiment
+  bridge_transfer.py, ablation.py                       the tuning experiments
 tests/
   test_loop.py         order, settling, the budget, a rule that raises
   test_engine.py       one world, several channels, a broadcast reply
   test_save.py         the same world, ids and all, next time
   test_share.py        pack import, id remapping, dangling refs
+  test_calibration.py  the tuning kit: replay, search, plateaus
+  test_changes.py      the change log: what changed, by which rule, when
   test_examples_*.py   each example domain, end to end
 PRINCIPLES.md           what keeps rules run to a fixpoint over a shared
                           World producing the wanted kind of emergence,
@@ -137,6 +143,14 @@ above, "no vocabulary above entities and components either") — see
 History, "A domain-oblivious judge."
 
 ## History
+
+**`docs/plan.md`: the product roadmap and its four design docs, then Phases 1-2 built — the calibration kit lifted out of `examples/tuning.py` and the change log revived, 2026-10-27.** The repo had a substrate and a research program (`docs/tuning.md`, Experiments 1-7) but no product shape: the engine ships no domain vocabulary, and there was nowhere for reusable patterns, an author's declared knob surface, or a dataset to live. `docs/plan.md` names the three parts (the engine, unchanged; a standard library of curated patterns that each expose a DECLARED tunable surface; an authoring + calibration workflow) and states the thesis everything is judged against — "authorship handles structure; calibration handles drift; a pattern is not reusable until it exposes a declared tunable surface." Four design docs argue the pieces and each end with what they do NOT settle, in `TODO.md`'s posture: D1 memory, D2 dataset/scoring, D3 calibration/knobs/linter, D4 online adaptation. Nothing past Phase 2 is a commitment to code.
+
+Phase 1 promotes the old `examples/tuning.py` into the shipped package `loopingrules_calibration` (`Knob`/`Scenario`/`Trace`/`replay`/`search`, plus `calibrate`/`Report`), adds replay caching and a pluggable per-tick observer, and corrects two flaws in the original behavioural `signature`: it now EXCLUDES the knob components — their values are the input, not the behaviour, so including them would give every distinct setting a distinct signature and no plateau could ever exist — and INCLUDES `@transient` tags, which `save.dump` skips but which are exactly where a rule records what it concluded. `examples/tuning.py` and `tests/test_examples_tuning.py` are gone; the three experiments that imported the module (`branching`, `bridge_transfer`, `planning`) now import the package.
+
+Phase 2 revives the change log the simplification deleted (`Loop.__init__` still carried the dead `trace: bool`). Every write on `World` — `spawn`/`attach`/`replace`/`detach`/`remove`/`destroy`, plus `changed` and `purge_transient` — appends an attributed `Change(seq, tick, rule, kind, target, payload)`. The write methods are instrumented so ONLY a change that actually moved `revision` is logged: a re-attached equal value logs nothing and still settles, the idempotence `loop.py` rests on, now observable. Rules read the log through `World.changes(...)`/`recent(n)`; `Loop.tick` stamps `_actor`/`_tick` around each rule call, so a rule calling `changes()` sees only changes from BEFORE its own tick and can never react to its own write and loop. The log is transient and never saved; `Loop(capacity=...)` bounds it, replacing the vestigial `trace=` parameter. `analyze` attributes `changes(changed=SomeType)` as a read of that type, so a memory-reading rule keeps a correct dormancy gate; no `changed=` (or `recent()`) contributes no read and falls back to "called every tick", and a non-literal `changed=` is `Opaque` — the same refuse-rather-than-guess treatment every other non-literal component argument gets. The kit's `Trace` gained a `changes` field, deliberately NOT part of the signature: plateaus keep their meaning, the log is a separate, richer field for a scorer or a check.
+
+Verified: `271 -> 295 passing` — the new `tests/test_calibration.py` (replacing the deleted `test_examples_tuning.py`) and `tests/test_changes.py`, with the whole existing suite green. Docs reconciled to the built state in the same change: the README file tree no longer names the removed `examples/tuning.py`, `docs/plan.md`'s "where the repo stands" table marks the change log Built (Phase 2) rather than removed, `docs/index.md` no longer says nothing is built, and `docs/concepts.md`/`docs/analysis.md`/`docs/tuning.md` describe the log, its `analyze` treatment, and the package. Left open, named rather than hidden: no worked promotion rule (transient log -> durable component) ships as an example yet, and `docs/plan-memory.md`'s original payload/kind sketch has drifted from what shipped — `spawn` names the new id in `target` (not `payload`), and the log carries all eight kinds, not six.
 
 **`examples.decide`: a second domain-oblivious judge, this one picking a SCORED winner among several
 rivals, 2026-09-25.** `judge.py` (see its own History entry, below) already proved one domain projecting a

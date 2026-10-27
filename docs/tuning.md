@@ -225,11 +225,18 @@ the argument.**
 
 ### Built
 
-- `examples/tuning.py` — the instrument: `Knob` (a declared tunable field
-  on a singleton component), `Scenario`, `replay` (deterministic, records
-  the per-tick firing trace and a behavioural `signature`), `read_knobs` /
-  `write_knobs` (refuse when the component was never seeded), `grid`, and
-  an optimizer-free `search`.
+- **The instrument is now a package**, `loopingrules_calibration` (Phase 1
+  of `docs/plan.md`): `Knob` (a declared tunable field on a singleton
+  component, with a `scope` saying whether a runtime controller may move it
+  later), `Scenario`, `replay` (deterministic, records the per-tick firing
+  trace and a behavioural `signature`), `read_knobs` / `write_knobs` (refuse
+  when the component was never seeded), `grid`, and an optimizer-free
+  `search` -- plus `calibrate`/`Report` (held-out scores, plateaus,
+  sensitivity) and replay caching. It was `examples/tuning.py`; the three
+  experiments that used it now import the package. Its `signature` corrects
+  two flaws in the original hash: it EXCLUDES the knob components (so many
+  settings can share one trajectory) and INCLUDES `@transient` tags (so
+  behaviour recorded only in a tag is not invisible).
 - `examples/bridge_transfer.py` — Experiment 1, using the real domains.
 - `examples/market.py` — rung 1 of the ladder: a richer trading island with
   **selling**, a **second bridge** (`examples.decide`'s `Option`/`Score` /
@@ -275,7 +282,7 @@ the argument.**
   no caller mutates the returned `Analysis`). Rule registration repeated
   thousands of times by a replay harness parses each rule once — the
   ablation suite dropped from ~84s to ~5s, the whole suite to ~10s.
-- Tests: `test_examples_tuning.py`, `test_examples_bridge.py`,
+- Tests: `test_calibration.py`, `test_examples_bridge.py`,
   `test_examples_market.py`, `test_examples_quorum.py`,
   `test_examples_ablation.py`, `test_examples_acquisition.py`,
   `test_examples_adapters.py`, `test_examples_hierarchy.py`,

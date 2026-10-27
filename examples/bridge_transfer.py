@@ -56,7 +56,7 @@ from __future__ import annotations
 import random
 
 from examples import cards, judge, shopping
-from examples.tuning import Scenario, replay
+from loopingrules_calibration import Scenario, replay
 
 
 TAU_CARDS = 0.6        # cards' authored policy: flag iff level > 0.6

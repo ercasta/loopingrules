@@ -4,7 +4,7 @@
 
 ```
 loopingrules/
-  world.py      World, Entity, @transient
+  world.py      World, Entity, @transient, Change (the change log)
   loop.py       Loop: registers rules, ticks them, runs to a fixpoint
   engine.py     Engine: one thread, one queue, N channels; Said/Reply
   save.py       world <-> JSONL, ids preserved, into an empty world
@@ -93,3 +93,4 @@ answer arrives.
 | The budget is a circuit breaker, not a proof of termination | `loop.py`, "The budget" |
 | Small closed vocabulary, conclusions re-enter as ordinary components | `PRINCIPLES.md` |
 | Abstention must be structural | `PRINCIPLES.md`, "To guard it" |
+| Every applied write is logged, transient and unpersisted | `world.py`, "The change log"; `loop.py`, "Every change is logged" |

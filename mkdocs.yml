@@ -22,3 +22,9 @@ nav:
   - Examples: examples.md
   - Testing and debugging: testing-debugging.md
   - Contributing: contributing.md
+  - Plan:
+      - Roadmap: plan.md
+      - Memory and the change log: plan-memory.md
+      - Dataset and scoring: plan-dataset.md
+      - Calibration API and knobs: plan-calibration.md
+      - Online adaptation: plan-adaptation.md

@@ -44,3 +44,11 @@ they are worth reading once the basics are clear:
 - `TODO.md` lists open threads.
 - `git log` is unusually informative here: commit messages carry the
   reasoning. See [Contributing](contributing.md).
+
+The forward-looking plan, unlike the above, *is* part of this site: the
+[Roadmap](plan.md) and its four design documents — [Memory and the change
+log](plan-memory.md), [Dataset and scoring](plan-dataset.md), [Calibration
+API and knobs](plan-calibration.md), and [Online adaptation](plan-adaptation.md).
+Phases 1-2 of the roadmap are built — the calibration kit and the change
+log; the rest is design. Each document ends with what it does *not* settle,
+in the same posture as `TODO.md`.
