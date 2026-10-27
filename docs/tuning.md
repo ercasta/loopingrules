@@ -237,6 +237,15 @@ the argument.**
   two flaws in the original hash: it EXCLUDES the knob components (so many
   settings can share one trajectory) and INCLUDES `@transient` tags (so
   behaviour recorded only in a tag is not invisible).
+- **The tunable surface is declared on the rule, and checked** (Phase 3 of
+  `docs/plan.md`): `@tunable(Knob(...))` co-locates a rule's knobs with the
+  rule (`loopingrules_calibration.surface`), `knobs(loop)` collects them from
+  a domain's registered rules, and `lint` -- over the same `analyze` AST
+  walk, as `analyze.literals` -- flags a numeric literal where a tunable rule
+  should read a component, reporting a knobbed rule `analyze` cannot see as
+  `unlintable` and excusing a literal only with a reason. This is
+  `docs/plan-calibration.md`'s linter: the enforcement of this file's own
+  design rule that a tunable rule never hard-codes its threshold.
 - `examples/bridge_transfer.py` — Experiment 1, using the real domains.
 - `examples/market.py` — rung 1 of the ladder: a richer trading island with
   **selling**, a **second bridge** (`examples.decide`'s `Option`/`Score` /

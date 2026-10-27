@@ -70,11 +70,28 @@ that special case is gone too: a domain spawns its own `Reply` (from
 `loopingrules.engine`) directly, and every call a rule makes into another
 module raises `Opaque` rather than being followed. This module no longer
 imports `Reply` at all.
+
+## What a rule hard-codes
+
+`literals(fn)` reports the other thing the map wants to see: every
+comparison in `fn` of a non-literal expression against a NUMERIC literal
+(`<`, `<=`, `>`, `>=`, `==`, `!=`), as `Literal(file, line, value,
+expression)` records. `docs/tuning.md`'s design rule -- "a tunable rule
+never hard-codes its threshold; it reads a component" -- is the reason: the
+same AST walk that derives reads can point at the literal a tunable rule
+should have turned into a read. This module reports the sites and stops;
+whether a given literal is a threshold that SHOULD have been a knob or a
+genuinely structural constant is a judgment only the author can make, so
+the policy -- and every suppression, with its reason -- lives in the
+calibration package's linter (`loopingrules_calibration.linter`), not here.
+`literals` refuses exactly as `analyze` does: a rule this module cannot see
+raises `Opaque`; it never silently reports "no literals".
 """
 
 from __future__ import annotations
 
 import ast
+import collections
 import inspect
 import textwrap
 from typing import Dict, Set
@@ -164,6 +181,61 @@ def analyze(fn) -> Analysis:
     _walk_function(fn, module, analysis, set())
     _CACHE[fn] = analysis
     return analysis
+
+
+# One hard-coded comparison site: `value` is the numeric literal, `line` its
+# real line in `file`, `expression` the whole comparison's source -- see
+# `literals`.
+Literal = collections.namedtuple("Literal", "file line value expression")
+
+
+def _is_numeric_literal(node) -> bool:
+    # `bool` is a subclass of `int`; `x > True` is not a numeric threshold,
+    # so it is excluded explicitly rather than folded in by isinstance.
+    return (isinstance(node, ast.Constant)
+            and isinstance(node.value, (int, float))
+            and not isinstance(node.value, bool))
+
+
+# The comparison operators `docs/plan-calibration.md`'s linter names
+# (`<`, `<=`, `>`, `>=`, `==`), plus `!=`, which is the same shape.
+_COMPARE_OPS = (ast.Lt, ast.LtE, ast.Gt, ast.GtE, ast.Eq, ast.NotEq)
+
+
+def literals(fn) -> tuple:
+    """Every place `fn` compares a non-literal expression against a NUMERIC
+    literal, as `Literal(file, line, value, expression)` records, in source
+    order. `line` is the real file line (decorator-aware). A comparison of
+    two literals (`1 < 2`) or of two expressions (`a > b`) is not one of
+    these -- only a threshold against a value built at runtime is.
+
+    Raises `Opaque` exactly as `analyze` does: a rule this module cannot see
+    cannot be checked for literals either, so the caller must tell "no
+    literals" apart from "not looked at" -- see `docs/plan-calibration.md`.
+    """
+    analyze(fn)                     # same refusal, and it fills the cache
+    tree = _source_tree(fn)
+    path = inspect.getsourcefile(fn) or "<unknown>"
+    _lines, start = inspect.getsourcelines(fn)
+    found = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Compare):
+            continue
+        sides = [node.left] + list(node.comparators)
+        for op, left, right in zip(node.ops, sides, sides[1:]):
+            if not isinstance(op, _COMPARE_OPS):
+                continue
+            left_lit = _is_numeric_literal(left)
+            right_lit = _is_numeric_literal(right)
+            if left_lit == right_lit:
+                continue            # both literal or neither: not the shape
+            found.append(Literal(
+                path, start + node.lineno - 1,
+                left.value if left_lit else right.value, ast.unparse(node)))
+    # `ast.walk` is breadth-first, not source order; sort so a multi-literal
+    # rule reports its sites top to bottom, deterministically.
+    found.sort(key=lambda site: site.line)
+    return tuple(found)
 
 
 class Report:

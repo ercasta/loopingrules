@@ -17,6 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from loopingrules.world import transient
+from loopingrules_calibration import Knob, tunable
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,7 @@ class TooRisky:
     pass
 
 
+@tunable(Knob(RiskTolerance, "max_level", 0.0, 1.0, steps=5))
 def flag_too_risky(w) -> None:
     """`TooRisky` iff some entity's own `Risk.level` exceeds the judge's
     `RiskTolerance.max_level` -- both directions, every tick, the same
@@ -55,7 +57,14 @@ def flag_too_risky(w) -> None:
     once and left stale.
 
     Abstains -- touches nothing -- when no `RiskTolerance` has been
-    seeded
+    seeded.
+
+    `max_level` is this rule's DECLARED tunable surface
+    (`@tunable(Knob(...))`, see `loopingrules_calibration.surface`), so
+    `knobs(loop)` collects it from any domain that installs this rule, and
+    `loopingrules_calibration.lint` holds the rule to it: the comparison
+    below reads `tolerance.max_level`, never a literal, which is exactly
+    what the linter is for.
     """
     tolerance = w.the(RiskTolerance)
     if tolerance is None:

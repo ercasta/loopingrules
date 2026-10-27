@@ -5,6 +5,15 @@ Phase 1 (first build) plus the author surface of Phase 3. Lifts
 calibration kit, adds co-located knob declaration, and adds the mechanism that
 makes the product thesis enforceable.
 
+**Status: Phase 1 built; the author surface and the linter built.** A rule
+declares its tunable surface with `@tunable(Knob(...))`
+(`loopingrules_calibration.surface`), `knobs(loop)` collects it from the
+rules a domain actually registered, and `loopingrules_calibration.lint`
+holds those rules to it — flagging a numeric literal where the rule should
+read a component, reporting a knobbed rule `analyze` cannot see as
+`unlintable`, and excusing a literal only through `allow=(...)` with a
+reason. The pattern library the phase also names is not built.
+
 ## The four-way contract
 
 `examples/tuning.py`'s `search(install, scenarios, knobs, scorer)` already
@@ -47,10 +56,15 @@ knob would search a surface that is not the one the rules read):
 Knob(component, field, low, high, steps, integer=False, scope="offline")
 ```
 
-**Co-located with `install`.** The declaration should sit next to the rule that
-reads the component, in the domain's own module, so it cannot drift from the
-rule. Explicit, never inferred (`docs/tuning.md` point 1: the domain must
-declare its tunable surface).
+**Co-located with the rule.** Built as a decorator: `@tunable(Knob(...))`
+sits on the rule that reads the component, in the domain's own module, so
+the declaration cannot drift from the rule. Explicit, never inferred
+(`docs/tuning.md` point 1: the domain must declare its tunable surface). A
+knob read by several rules may be declared on more than one of them;
+`knobs(loop)` de-duplicates, because it is still one knob. The knob is parked
+as a plain attribute on the rule function — the same trick `Loop.rule`
+already uses for its derived gate — so the engine never learns about
+calibration.
 
 **Classification (`scope`) — locked default `offline-only`:**
 
@@ -80,6 +94,16 @@ that compares against a **literal** where it should read a component knob.
 
 This is what turns "calibration matters" from a slogan into a check an author
 runs.
+
+**Built** as `loopingrules_calibration.lint(rules, allow=(), strict=False)`,
+over `analyze.literals` — the same AST walk, reporting each numeric-literal
+comparison with its real file/line and the rule's declared knobs as the
+candidates it should have read. Only a rule that declares a surface is
+linted at all; a knobbed rule `analyze` refuses is recorded `unlintable`,
+never passed as clean. There is **no silent auto-exclusion** — even a `== 0`
+sentinel is flagged until excused through `allow` with a reason, and every
+excuse is reported back. The default is to report; `strict=True` raises
+`LintError` on a finding or an unlintable knobbed rule, for a CI gate.
 
 ## replay: caching and the pluggable trace source
 
@@ -150,10 +174,14 @@ Re-calibration is expected as the dataset grows or the world drifts (D4).
 ## Open questions
 
 1. Does `scope="runtime"` belong on `Knob`, or on a separate runtime-surface
-   declaration?
+   declaration? **Settled: on `Knob`** — it already is, and
+   `runtime_knobs(knobs)` selects the subset.
 2. Should the linter be wired into `Loop.rule` (registration-time) or run as
-   an explicit tool/CI step?
+   an explicit tool/CI step? **Settled: an explicit tool** — the engine must
+   not import calibration, and `lint(..., strict=True)` gives a CI step its
+   hard failure.
 3. How many repeats per grid point before an error bar is trustworthy — fixed
    K, or adaptive racing?
 4. Does the report live in the package, or is it generated as a Markdown
-   artifact an author reads?
+   artifact an author reads? **Settled: both** — `LintReport` is the
+   structured artifact and `LintReport.to_markdown()` is for reading.

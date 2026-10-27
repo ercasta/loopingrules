@@ -1,8 +1,9 @@
 # Plan: engine + standard library + authoring/calibration workflow
 
-Status: Phases 1-2 built; the rest design. This directory holds the roadmap
-and four design docs (D1-D4). Nothing beyond Phase 2 is a commitment to
-code; each doc ends with the open questions it does *not* settle, in the
+Status: Phases 1-2 built, and Phase 3's author surface and linter with them;
+the pattern library and the rest are design. This directory holds the
+roadmap and four design docs (D1-D4). Nothing beyond that is a commitment
+to code; each doc ends with the open questions it does *not* settle, in the
 same posture `docs/tuning.md` and `TODO.md` already take.
 
 **Phase 2 status:** the change log is built -- `Change` + `World.changes`
@@ -17,6 +18,14 @@ observer, held-out scoring, plateaus and sensitivity; `examples/tuning.py`
 and `tests/test_examples_tuning.py` are gone, replaced by
 `tests/test_calibration.py`, and the three experiments that used the old
 module import the package. See `docs/plan-calibration.md`.
+
+**Phase 3 status (partial):** the author surface and the linter are built,
+the pattern library is not. `@tunable(Knob(...))` declares a rule's tunable
+surface on the rule itself (`loopingrules_calibration.surface`), collected by
+`knobs(loop)`; `lint` sits over `analyze.literals` and flags a numeric
+literal where a tunable rule should read a component, reports a knobbed rule
+`analyze` cannot see as `unlintable`, and excuses a literal only through
+`allow=(...)` with a reason. See `docs/plan-calibration.md`.
 
 ## Goal
 
@@ -48,7 +57,7 @@ The product thesis, stated once and used to judge everything below:
 | Calibration instrument | **Built (Phase 1)** as the package `loopingrules_calibration`: `Knob`/`Scenario`/`Trace`/`replay`/`search` plus `calibrate`/`Report`, replay caching, a per-tick observer, held-out scoring, plateaus/sensitivity. |
 | Worked domains + bridges | `examples/` (`judge`, `decide`, `cards`, `market`, `quorum`, `trip`, `party`, `planning`, `branching`...) — the material to distil a stdlib from. |
 | **Standard library** | Missing. The "closed catalog" the README's History references (`circuits.py`) is not in the tree. |
-| **Author surface** | Missing. No co-located knob declaration; `install` plus a hand-written `Knob` list in the experiment. |
+| **Author surface** | **Built (Phase 3)**: `@tunable(Knob(...))` co-located on the rule, collected by `knobs(loop)`; `lint` holds those rules to it. |
 | **Dataset kit** | Missing. No format, no capture, no labels/rankings, no train/eval split, no reporting. |
 | **Memory / change log** | **Built (Phase 2)**: `Change` + `World.changes`/`recent`/`clear_changes`, transient and never saved, `Loop(capacity=...)`-bounded, with `Loop.tick` provenance and `analyze` gating on `changes(changed=...)`. |
 | **Tools / external world** | Missing. Only the channel seam exists; no tape/cache, no effect fencing. |

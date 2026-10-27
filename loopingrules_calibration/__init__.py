@@ -34,10 +34,14 @@ Four things, kept apart on purpose:
   in ordinary Python.
 
 See `docs/plan-calibration.md` for the design, and `docs/tuning.md` for the
-theory this is the instrument for. What is NOT here yet, named so it is not
-mistaken for settled: the dataset artifact and capture channel, the checks
-vocabulary, preference pairs (`docs/plan-dataset.md`), the tunability
-linter, and the change log (`docs/plan-memory.md`).
+theory this is the instrument for. A rule declares its own tunable surface
+with `@tunable(Knob(...))`, `knobs(loop)` collects it from the rules a
+domain registered, and `lint` holds those rules to it -- reporting any
+numeric literal that should have read the component instead. What is NOT
+here yet, named so it is not mistaken for settled: the dataset artifact and
+capture channel, the checks vocabulary, and preference pairs
+(`docs/plan-dataset.md`); and the pattern library `docs/plan.md`'s Phase 3
+is to distil from `examples/`.
 """
 
 from __future__ import annotations
@@ -57,22 +61,32 @@ from .kit import (
     settled,
     write_knobs,
 )
+from .linter import Finding, LintError, LintReport, lint
 from .report import Report, calibrate
+from .surface import declared, knobs, runtime_knobs, tunable
 
 __all__ = [
     "Best",
+    "Finding",
     "Knob",
+    "LintError",
+    "LintReport",
     "Report",
     "Scenario",
     "Trace",
     "calibrate",
+    "declared",
     "grid",
+    "knobs",
+    "lint",
     "reached",
     "read_knobs",
     "replay",
     "replay_cached",
     "reply_contains",
+    "runtime_knobs",
     "search",
     "settled",
+    "tunable",
     "write_knobs",
 ]

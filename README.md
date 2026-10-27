@@ -24,6 +24,8 @@ loopingrules/
 loopingrules_calibration/
   kit.py          Knob, Scenario, Trace, replay, search -- the tuning instrument
   report.py       calibrate: held-out scores, plateaus, sensitivity
+  surface.py      @tunable, knobs: a rule's declared tunable surface
+  linter.py       lint: a hard-coded threshold where a rule should read a knob
 examples/
   cards.py, shopping.py, market.py, quorum.py, trip.py   worked domains
   judge.py, decide.py                                   domain-oblivious bridges
@@ -35,6 +37,7 @@ tests/
   test_share.py        pack import, id remapping, dangling refs
   test_calibration.py  the tuning kit: replay, search, plateaus
   test_changes.py      the change log: what changed, by which rule, when
+  test_linter.py       the declared tunable surface, and the linter over it
   test_examples_*.py   each example domain, end to end
 PRINCIPLES.md           what keeps rules run to a fixpoint over a shared
                           World producing the wanted kind of emergence,
@@ -143,6 +146,16 @@ above, "no vocabulary above entities and components either") — see
 History, "A domain-oblivious judge."
 
 ## History
+
+**`loopingrules_calibration`: the tunable surface declared on the rule, and the linter that holds it there (Phase 3), 2026-10-27.** `docs/plan-calibration.md` states the phase's two author-facing pieces and `docs/tuning.md` states the design rule under them — a tunable rule never hard-codes its threshold; it reads a component. Both are now built, over the machinery Phases 1 and 2 already landed.
+
+`@tunable(Knob(...))` (new `loopingrules_calibration/surface.py`) binds a rule's knob(s) to the rule FUNCTION itself — one opaque attribute, the same trick `Loop.rule` already uses for the gate it derives from `analyze`, so `loopingrules/` never learns about calibration. `knobs(loop)` gathers a domain's whole surface from the rules it actually registered (de-duplicated, since a knob shared by several rules is still one knob), `declared(fn)` reads one rule's, and `runtime_knobs` selects the `scope="runtime"` subset `docs/plan-adaptation.md` will let a controller move. The declaration moves out of the experiment and next to the rule that reads the component, where it cannot drift: `examples.judge.py`'s `flag_too_risky`, whose `RiskTolerance.max_level` is the judge's own knob, is the first rule to declare one, and `cards.install` — which registers it — collects it with no hand-written list.
+
+`lint(rules, allow=(), strict=False)` (new `linter.py`) is the enforcement. It sits on a new public `analyze.literals(fn)` — the SAME AST walk `analyze` uses for reads, reporting every comparison of a non-literal expression against a numeric literal with its real, decorator-aware file/line — and flags each one in a rule that declares a surface, naming that rule's own knobs as the candidates it should have read. Two postures come straight from `analyze`: only a rule that DECLARES a surface is linted at all (a rule that claims nothing is not the tool's business), and a knobbed rule `analyze` refuses to see is reported `unlintable`, never passed as clean — "could not look" is not "nothing to find". There are no silent auto-exclusions: even `== 0` is flagged until the author excuses it through `allow=((rule, literal, reason),)`, every excuse is reported back, and a suppression with no reason is refused. The default is to report; `strict=True` raises `LintError` on a finding OR an unlintable knobbed rule — the CI gate `docs/plan-calibration.md`'s success criterion asks for. It is an explicit tool, not wired into `Loop.rule`, because the engine must not import calibration.
+
+Left open on purpose, named rather than hidden: the phase's third piece — the curated pattern library `docs/plan.md` distils from `examples/` — is not built; and the surface exposed a real limit of per-rule declaration worth watching, that a knob read by MANY rules has no single rule to sit on (`branching`/`planning`'s shared `max_checks` is read through a `_budget_spent` helper), so those two experiments keep their module-level `KNOBS` for now rather than name an arbitrary owner.
+
+Verified: 295 -> 328 passing — the new `tests/test_linter.py` (`literals`, the surface, and the linter) plus a declared-surface section in `tests/test_calibration.py`, with the whole existing suite green. `examples/judge.flag_too_risky` lints clean, because it reads `tolerance.max_level` — which is the point.
 
 **`docs/plan.md`: the product roadmap and its four design docs, then Phases 1-2 built — the calibration kit lifted out of `examples/tuning.py` and the change log revived, 2026-10-27.** The repo had a substrate and a research program (`docs/tuning.md`, Experiments 1-7) but no product shape: the engine ships no domain vocabulary, and there was nowhere for reusable patterns, an author's declared knob surface, or a dataset to live. `docs/plan.md` names the three parts (the engine, unchanged; a standard library of curated patterns that each expose a DECLARED tunable surface; an authoring + calibration workflow) and states the thesis everything is judged against — "authorship handles structure; calibration handles drift; a pattern is not reusable until it exposes a declared tunable surface." Four design docs argue the pieces and each end with what they do NOT settle, in `TODO.md`'s posture: D1 memory, D2 dataset/scoring, D3 calibration/knobs/linter, D4 online adaptation. Nothing past Phase 2 is a commitment to code.
 

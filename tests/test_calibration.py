@@ -17,14 +17,18 @@ from loopingrules_calibration import (
     Knob,
     Scenario,
     calibrate,
+    declared,
     grid,
+    knobs,
     reached,
     read_knobs,
     replay,
     replay_cached,
     reply_contains,
+    runtime_knobs,
     search,
     settled,
+    tunable,
     write_knobs,
 )
 
@@ -290,3 +294,44 @@ def test_calibrate_renders_markdown():
     text = calibrate(_install_threshold, cases, knobs, _over_scorer).to_markdown()
     assert "# Calibration report" in text
     assert "Sensitivity" in text
+
+
+# -- the declared tunable surface, collected from a real domain -----------
+
+def test_knobs_collects_the_surface_a_domain_registers():
+    # `cards.install` registers `judge.flag_too_risky`, whose `RiskTolerance.
+    # max_level` is a declared `@tunable` -- so the whole surface comes back
+    # from the loop, with no hand-written knob list in the experiment.
+    loop = Loop()
+    cards.install(loop)
+    assert knobs(loop) == (
+        Knob(judge.RiskTolerance, "max_level", 0.0, 1.0, steps=5),)
+
+
+def test_declared_reads_back_what_tunable_attached():
+    assert declared(judge.flag_too_risky) == (
+        Knob(judge.RiskTolerance, "max_level", 0.0, 1.0, steps=5),)
+
+
+def test_a_rule_with_no_declaration_has_an_empty_surface():
+    assert declared(cards.hear_list) == ()
+
+
+def test_tunable_refuses_a_non_knob():
+    with pytest.raises(TypeError):
+        @tunable("max_level")
+        def _(w):
+            pass
+
+
+def test_tunable_needs_at_least_one_knob():
+    with pytest.raises(ValueError):
+        tunable()
+
+
+def test_runtime_knobs_keeps_only_the_runtime_scope():
+    offline = Knob(judge.RiskTolerance, "max_level", 0.0, 1.0, steps=5)
+    live = Knob(judge.RiskTolerance, "max_level", 0.0, 1.0, steps=5,
+                scope="runtime")
+    assert runtime_knobs((offline, live)) == (live,)
+    assert runtime_knobs((offline,)) == ()

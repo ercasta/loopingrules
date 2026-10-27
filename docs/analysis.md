@@ -62,4 +62,20 @@ Two caveats:
 - It follows plain same-module helper functions, at any depth, but not
   imported ones.
 
+## What a rule hard-codes
+
+`analyze.literals(fn)` reports every comparison in an analyzable rule of a
+non-literal expression against a **numeric literal** (`<`, `<=`, `>`, `>=`,
+`==`, `!=`), each as a `Literal(file, line, value, expression)`. It is the
+other half of the map: `analyze` says what a rule reads; `literals` points at
+the literal a *tunable* rule should have read instead (`docs/tuning.md`: "a
+tunable rule never hard-codes its threshold; it reads a component").
+
+It reports the sites and stops -- whether a literal is a threshold that
+should be a knob or a genuinely structural constant is the author's call, so
+the policy (and every suppression, with its reason) lives in
+`loopingrules_calibration.lint`, not here. Like `analyze`, it refuses rather
+than guesses: a rule this cannot see raises `Opaque`, it never silently
+reports "no literals".
+
 

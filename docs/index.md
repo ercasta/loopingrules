@@ -50,5 +50,6 @@ The forward-looking plan, unlike the above, *is* part of this site: the
 log](plan-memory.md), [Dataset and scoring](plan-dataset.md), [Calibration
 API and knobs](plan-calibration.md), and [Online adaptation](plan-adaptation.md).
 Phases 1-2 of the roadmap are built — the calibration kit and the change
-log; the rest is design. Each document ends with what it does *not* settle,
+log — and Phase 3's author surface and linter with them; the pattern library
+and the rest are design. Each document ends with what it does *not* settle,
 in the same posture as `TODO.md`.
