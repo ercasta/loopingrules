@@ -37,4 +37,4 @@ pythonpath = ["."]
 
 [tool.setuptools]
 py-modules = []
-packages = ["loopingrules", "loopingrules_calibration"]
+packages = ["loopingrules", "loopingrules_calibration", "loopingrules_patterns"]

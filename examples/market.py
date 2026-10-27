@@ -22,7 +22,7 @@ than invented to win a comparison:
    domain-oblivious `Option`/`Score` (score = `value - price`, "money left
    on the table"), and `decide.pick_winner` -- a rule that has never heard
    of a `Listing` -- tags the best RIVAL listing per card. `decide_buy`
-   reads `Winner`. So this island drives both `examples.judge` and
+   reads `Winner`. So this island drives both `loopingrules_patterns.judge` and
    `examples.decide`, where `cards` drove only `judge`.
 3. **A cross-entity condition.** `Strands` marks a listing whose purchase
    would drop cash below what a STRICTLY HIGHER-PRIORITY, still-unmet want
@@ -60,7 +60,7 @@ priorities, not because it makes the authored side look better.
 - `Wanted()` / `Affordable()` / `FairPriced()` / `Strands()` / `Surplus()`
   -- `@transient` tags, both directions every tick, the same recompute-fresh
   discipline `cards`' own tag rules use.
-- `examples.judge.Risk(level, reason)` -- resource exhaustion projection,
+- `loopingrules_patterns.judge.Risk(level, reason)` -- resource exhaustion projection,
   `replace`d fresh, thresholded by the judge into `TooRisky`.
 - `examples.decide.Option(occasion)` / `Score(value)` / `Winner()` -- the
   ranking bridge, `occurrence` = the listing's card id so rival listings
@@ -74,7 +74,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from examples.decide import Option, Score, Winner, pick_winner
-from examples.judge import Risk, RiskTolerance, TooRisky, flag_too_risky
+from loopingrules_patterns.judge import Risk, RiskTolerance, TooRisky, flag_too_risky
 from loopingrules.engine import Reply, Said
 from loopingrules.world import transient
 
@@ -331,7 +331,7 @@ def tag_fair_priced(w) -> None:
 
 
 def tag_risk(w) -> None:
-    """`examples.judge.Risk`, `replace`d fresh, of how much of the free room
+    """`loopingrules_patterns.judge.Risk`, `replace`d fresh, of how much of the free room
     the price would use -- the same projection `cards.tag_risk_level`
     makes, onto the bridge this domain does not own."""
     cash = w.the(Cash)
@@ -420,7 +420,7 @@ def decide_buy(w) -> None:
     """Every listing that is Wanted, Affordable, FairPriced, the judge's
     own `Winner` among its rivals, and neither `TooRisky` nor `Strands` ->
     bought. Reads FOUR independently-produced tags -- three of this module's
-    own, one from `examples.judge`, one from `examples.decide` -- the same
+    own, one from `loopingrules_patterns.judge`, one from `examples.decide` -- the same
     composition idiom `cards.decide_buy` uses, two bridges deep. Re-reads
     `Cash`/`Want`/`Held` at the top of each iteration and skips (never
     destroys) a listing an earlier purchase this call made stale."""
@@ -491,7 +491,7 @@ RULES = (hear_list, hear_want, hear_offer, hear_status,
 
 def install(loop, cash: int = 100, catalog=DEFAULT_CATALOG) -> None:
     """Register every rule above -- including the two bridge rules from
-    `examples.judge` and `examples.decide`, unmodified -- then seed the
+    `loopingrules_patterns.judge` and `examples.decide`, unmodified -- then seed the
     catalog, `Cash`, `Policy` and the judge's own `RiskTolerance`.
     BigFloor-style: a singleton already present is never reseeded."""
     loop.rule(hear_list)

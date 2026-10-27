@@ -58,7 +58,7 @@ def tally(w) -> None:
     """`Passed` iff a motion's own `for` votes number at least the quorum --
     a count over that motion's votes, both directions. Abstains (touches
     nothing) when no `Quorum` has been seeded, the same refuse-to-guess
-    discipline `examples.judge.flag_too_risky` applies to its threshold."""
+    discipline `loopingrules_patterns.judge.flag_too_risky` applies to its threshold."""
     quorum = w.the(Quorum)
     if quorum is None:
         return

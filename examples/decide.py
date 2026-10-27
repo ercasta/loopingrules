@@ -1,7 +1,7 @@
 """`decide` -- one domain-oblivious rule, testing whether the "several
 rivals, one winner" half of `DECISION_PATTERNS.md`'s vocabulary
 (`candidate`/`ranked`/`winner`) generalizes past a single domain the way
-`examples.judge`'s scalar-threshold half (`Risk`/`RiskTolerance` ->
+`loopingrules_patterns.judge`'s scalar-threshold half (`Risk`/`RiskTolerance` ->
 `TooRisky`) already does.
 
 ## What this is testing

@@ -1,4 +1,4 @@
-"""`examples.shopping` -- the second real domain fed to `examples.judge`'s
+"""`examples.shopping` -- the second real domain fed to `loopingrules_patterns.judge`'s
 `Risk`/`RiskTolerance`/`flag_too_risky`, and the tests that actually check
 the claim its own module docstring makes ("What this is testing" /
 "What it settled, once tried"). Convention mirrors `tests/test_examples_
@@ -7,7 +7,8 @@ settle, and hands back every `Reply` text produced."""
 
 import pytest
 
-from examples import judge, shopping
+from examples import shopping
+from loopingrules_patterns import judge
 from loopingrules.loop import Loop
 from loopingrules.engine import Reply, Said
 
@@ -161,9 +162,9 @@ def test_several_urgent_items_can_still_be_ranked_by_the_same_risk_level_the_jud
 
 def test_shopping_imports_the_judges_vocabulary_rather_than_reinventing_it():
     """Not a behavioural test -- a documentation pin, the mirror image of
-    `tests/test_examples_judge.py::test_the_module_imports_no_domain`:
-    checks the ACTUAL import statements name `examples.judge`, so the
-    reuse claimed in the module docstring is real, not merely a
+    `tests/test_patterns_judge.py::test_the_module_imports_no_domain`:
+    checks the ACTUAL import statements name `loopingrules_patterns.judge`,
+    so the reuse claimed in the module docstring is real, not merely a
     same-shaped component defined twice."""
     import ast
     import inspect
@@ -173,4 +174,4 @@ def test_shopping_imports_the_judges_vocabulary_rather_than_reinventing_it():
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module:
             names.append(node.module)
-    assert "examples.judge" in names
+    assert "loopingrules_patterns.judge" in names

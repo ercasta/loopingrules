@@ -8,9 +8,9 @@ overdraw.
 entity ids, plus an amount; `Movement(holder, thing, delta)` is a signed
 change to one (holder, thing) pair. A domain that wants to use this
 projects its OWN ownership onto those shapes from its own side -- the
-direction every bridge in this repo runs (see `examples.judge`) -- and
+direction every bridge in this repo runs (see `loopingrules_patterns.judge`) -- and
 this module never learns what a holder or a thing is. It imports nothing
-from `examples/`, pinned by a test the same way `examples.judge`'s own
+from `examples/`, pinned by a test the same way `loopingrules_patterns.judge`'s own
 obliviousness is: `trade` is the content-free operator "move," in the
 sense `world.each` is "enumerate" and `decide.pick_winner` is "choose."
 

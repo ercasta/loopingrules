@@ -20,6 +20,7 @@ nav:
   - Persistence and sharing: persistence.md
   - Rule analysis: analysis.md
   - Examples: examples.md
+  - Patterns: patterns.md
   - Testing and debugging: testing-debugging.md
   - Contributing: contributing.md
   - Plan:

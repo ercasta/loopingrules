@@ -8,7 +8,8 @@ cross-entity `Strands` condition -- plus the pieces it shares with `cards`.
 
 import pytest
 
-from examples import decide, judge, market
+from examples import decide, market
+from loopingrules_patterns import judge
 from loopingrules.engine import Reply, Said
 from loopingrules.loop import Loop
 
@@ -125,7 +126,7 @@ def test_the_ranking_bridge_buys_the_best_rival_listing_only(loop):
     """Two listings for the SAME card are rivals onto `decide.Option`/
     `Score`; `pick_winner` tags the higher-scoring (cheaper) one, and only
     it is bought. This is the second bridge -- `cards` drove only
-    `examples.judge`, this island drives `examples.decide` too."""
+    `loopingrules_patterns.judge`, this island drives `examples.decide` too."""
     say_all(loop, "want dragon 1 0", "list dragon 50", "list dragon 30")
     assert held(loop.world, "dragon") == 1
     assert loop.world.the(market.Cash) == market.Cash(70)

@@ -4,9 +4,11 @@ for what that does and does not mean. Not part of `packages=` in
 `pyproject.toml`: `pip install -e .` installs `loopingrules` and
 `loopingrules_calibration` alone, and nothing here is imported by either.
 
-Domains: `cards`, `shopping`, `market`, `quorum`, `trip`. The two
-domain-oblivious bridges they share are `judge` (`Risk`/`RiskTolerance`)
-and `decide` (`Option`/`Score`/`Winner`).
+Domains: `cards`, `shopping`, `market`, `quorum`, `trip`. One
+domain-oblivious bridge they share is `decide` (`Option`/`Score`/`Winner`);
+the other, `judge` (`Risk`/`RiskTolerance`), has been PROMOTED out of this
+directory into `loopingrules_patterns` (see `docs/plan.md`, Phase 3), which
+is where `cards`/`market`/`shopping` now import it from.
 
 `trade` is a third oblivious module, of ownership rather than a claim:
 `Holding`/`Movement`/`Agreed` describe who holds how much of an opaque

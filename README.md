@@ -26,9 +26,11 @@ loopingrules_calibration/
   report.py       calibrate: held-out scores, plateaus, sensitivity
   surface.py      @tunable, knobs: a rule's declared tunable surface
   linter.py       lint: a hard-coded threshold where a rule should read a knob
+loopingrules_patterns/
+  judge.py        the threshold judge: Risk/RiskTolerance -> TooRisky
 examples/
   cards.py, shopping.py, market.py, quorum.py, trip.py   worked domains
-  judge.py, decide.py                                   domain-oblivious bridges
+  decide.py                                             a domain-oblivious bridge
   bridge_transfer.py, ablation.py                       the tuning experiments
 tests/
   test_loop.py         order, settling, the budget, a rule that raises
@@ -38,6 +40,7 @@ tests/
   test_calibration.py  the tuning kit: replay, search, plateaus
   test_changes.py      the change log: what changed, by which rule, when
   test_linter.py       the declared tunable surface, and the linter over it
+  test_patterns_judge.py  the shipped judge pattern, and its declared knob
   test_examples_*.py   each example domain, end to end
 PRINCIPLES.md           what keeps rules run to a fixpoint over a shared
                           World producing the wanted kind of emergence,
@@ -146,6 +149,16 @@ above, "no vocabulary above entities and components either") — see
 History, "A domain-oblivious judge."
 
 ## History
+
+**`loopingrules_patterns`: the standard library, and its first promoted pattern (`judge`), 2026-10-27.** `docs/plan.md`'s Phase 3 has three pieces; the author surface and linter landed last, and this is the third — the curated pattern library the product thesis is about. The package `loopingrules_patterns` is new and, per the decision in discussion, holds BOTH kinds of pattern in one layout: a **bridge** (a domain-oblivious reader over a thin shape several domains project onto) and a **shape** (a component vocabulary a domain instantiates) — one module per pattern, no bridges/shapes split.
+
+The first pattern promoted is `judge`, moved out of `examples/judge.py` into `loopingrules_patterns/judge.py`. It is the cleanest first promotion because it already had what the promotion bar asks for: a SECOND domain depending on it AT RUNTIME (`README.md`'s standing bar, not merely a test written to feed it) and a DECLARED tunable surface. Three domains install it now — `examples.cards`, `examples.market`, `examples.shopping` — and `cards`/`shopping` import these exact objects, never same-shaped copies; `tests/test_examples_bridge.py` still pins that identity, and `tests/test_patterns_judge.py` (renamed from `test_examples_judge.py`, the same move `test_examples_tuning.py` → `test_calibration.py` made) pins both the obliviousness and the declared knob. `examples/judge.py` is deleted; every importer and prose reference now names `loopingrules_patterns.judge`, and the shopping documentation pin that checks the ACTUAL import statement was retargeted from `examples.judge` to `loopingrules_patterns.judge` so it keeps testing the real thing rather than a string that went stale.
+
+Deliberately unchanged: what the pattern IS. This is a MOVE plus a package, not a redesign — `Risk`/`RiskTolerance`/`TooRisky`/`flag_too_risky` are the same vocabulary, still projecting a normalized `0..1` claim and thresholding it against a tolerance the judge owns. Renaming them to something less domain-flavoured was considered and deferred: the names are already generic, and keeping them lets the identity pins and the two domains' docstrings stay honest about continuity.
+
+Left open, named rather than hidden: the rest of the candidate set — a scored contest (`examples.decide`), and the shape patterns (catalog+inventory, wants/goal, question/investigation, ...) — is listed in `docs/patterns.md` and `docs/plan.md` but NOT promoted; the bar is unchanged.
+
+Verified: 328 -> 329 passing. The addition is `tests/test_patterns_judge.py` (the renamed test plus one pin that the pattern declares its knob); `tests/test_examples_judge.py` is deleted with the module it tested, and every existing suite is green. `docs/patterns.md` is new and in the site nav; the README/plan/tuning/examples/index docs and the affected module docstrings were retargeted to the new home.
 
 **`loopingrules_calibration`: the tunable surface declared on the rule, and the linter that holds it there (Phase 3), 2026-10-27.** `docs/plan-calibration.md` states the phase's two author-facing pieces and `docs/tuning.md` states the design rule under them — a tunable rule never hard-codes its threshold; it reads a component. Both are now built, over the machinery Phases 1 and 2 already landed.
 

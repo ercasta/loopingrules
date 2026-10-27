@@ -9,7 +9,8 @@ list, so the experiment stays honest if a domain default changes -- what
 must hold is the SHAPE of the result, not one snapshot of it."""
 
 from examples import bridge_transfer as bt
-from examples import cards, judge, shopping
+from examples import cards, shopping
+from loopingrules_patterns import judge
 
 
 # -- form: one object, reused, at zero cost -----------------------------
@@ -24,8 +25,9 @@ def test_the_shared_vocabulary_is_the_same_object_across_islands():
 
 
 def test_the_identities_are_real_imports_not_same_shaped_copies():
-    # `cards`/`shopping` each import these from `examples.judge`; if either
-    # ever defined its own, the bridge would be a name, not a bridge.
+    # `cards`/`shopping` each import these from `loopingrules_patterns.
+    # judge`; if either ever defined its own, the bridge would be a name,
+    # not a bridge.
     assert cards.flag_too_risky is judge.flag_too_risky
     assert shopping.flag_too_risky is judge.flag_too_risky
     assert cards.Risk is shopping.Risk is judge.Risk

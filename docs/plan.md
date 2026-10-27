@@ -19,13 +19,16 @@ and `tests/test_examples_tuning.py` are gone, replaced by
 `tests/test_calibration.py`, and the three experiments that used the old
 module import the package. See `docs/plan-calibration.md`.
 
-**Phase 3 status (partial):** the author surface and the linter are built,
-the pattern library is not. `@tunable(Knob(...))` declares a rule's tunable
-surface on the rule itself (`loopingrules_calibration.surface`), collected by
-`knobs(loop)`; `lint` sits over `analyze.literals` and flags a numeric
-literal where a tunable rule should read a component, reports a knobbed rule
-`analyze` cannot see as `unlintable`, and excuses a literal only through
-`allow=(...)` with a reason. See `docs/plan-calibration.md`.
+**Phase 3 status (partial):** the author surface and the linter are built, and
+the pattern library has its first promoted pattern. `@tunable(Knob(...))`
+declares a rule's tunable surface on the rule itself
+(`loopingrules_calibration.surface`), collected by `knobs(loop)`; `lint` sits
+over `analyze.literals` and flags a numeric literal where a tunable rule
+should read a component, reports a knobbed rule `analyze` cannot see as
+`unlintable`, and excuses a literal only through `allow=(...)` with a reason.
+`loopingrules_patterns` ships `judge` (`docs/patterns.md`), promoted from
+`examples/judge.py` because three domains already install it at runtime; the
+remaining candidates are not shipped. See `docs/plan-calibration.md`.
 
 ## Goal
 
@@ -55,8 +58,8 @@ The product thesis, stated once and used to judge everything below:
 | Engine (`world`/`loop`/`engine`/`save`/`share`/`analyze`) | Complete, stable, no domain vocabulary. Little to do. |
 | Design theory | `docs/tuning.md` — rich, but framed as a research program (Experiments 1-7). |
 | Calibration instrument | **Built (Phase 1)** as the package `loopingrules_calibration`: `Knob`/`Scenario`/`Trace`/`replay`/`search` plus `calibrate`/`Report`, replay caching, a per-tick observer, held-out scoring, plateaus/sensitivity. |
-| Worked domains + bridges | `examples/` (`judge`, `decide`, `cards`, `market`, `quorum`, `trip`, `party`, `planning`, `branching`...) — the material to distil a stdlib from. |
-| **Standard library** | Missing. The "closed catalog" the README's History references (`circuits.py`) is not in the tree. |
+| Worked domains + bridges | `examples/` (`decide`, `cards`, `market`, `quorum`, `trip`, `party`, `planning`, `branching`...) — the material to distil a stdlib from. |
+| **Standard library** | **Built (Phase 3, partial)**: `loopingrules_patterns` ships `judge` (`docs/patterns.md`); the rest of the candidate set is not promoted yet. |
 | **Author surface** | **Built (Phase 3)**: `@tunable(Knob(...))` co-located on the rule, collected by `knobs(loop)`; `lint` holds those rules to it. |
 | **Dataset kit** | Missing. No format, no capture, no labels/rankings, no train/eval split, no reporting. |
 | **Memory / change log** | **Built (Phase 2)**: `Change` + `World.changes`/`recent`/`clear_changes`, transient and never saved, `Loop(capacity=...)`-bounded, with `Loop.tick` provenance and `analyze` gating on `changes(changed=...)`. |

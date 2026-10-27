@@ -4,7 +4,7 @@ an explicit, one-directional adapter?
 
 ## The question, and why an adapter and not a bridge
 
-`examples.judge` and `examples.decide` are bridges: a thin shared shape
+`loopingrules_patterns.judge` and `examples.decide` are bridges: a thin shared shape
 BOTH islands project onto, and an oblivious rule that reads only that
 shape and attaches its OWN tag back (`TooRisky`, `Winner`). A bridge can
 ANNOTATE; it cannot APPLY, because applying an effect means writing a

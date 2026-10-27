@@ -8,7 +8,8 @@ recover the buy decision from far fewer examples than primitive features.
 import pytest
 
 from examples import ablation as ab
-from examples import cards, decide, judge, market
+from examples import cards, decide, market
+from loopingrules_patterns import judge
 
 
 # -- the observation harness ---------------------------------------------

@@ -1,11 +1,11 @@
-"""`examples.judge` -- a domain-oblivious rule. Deliberately imports
-NOTHING from `examples.cards`: every test here spawns bare entities with
-no domain meaning at all, to pin the claim `judge.py`'s own docstring
-makes -- this rule knows only `Risk` and `RiskTolerance`, nothing about
-what produced either."""
+"""`loopingrules_patterns.judge` -- a domain-oblivious rule. Deliberately
+imports NOTHING from `examples.cards`: every test here spawns bare entities
+with no domain meaning at all, to pin the claim `judge.py`'s own docstring
+makes -- this rule knows only `Risk` and `RiskTolerance`, nothing about what
+produced either."""
 
-from examples import judge
 from loopingrules.loop import Loop
+from loopingrules_patterns import judge
 
 
 def install(loop, max_level=0.5):
@@ -54,10 +54,11 @@ def test_abstains_with_no_risk_tolerance_seeded():
 
 def test_the_module_imports_no_domain():
     """Not a behavioural test -- a documentation pin. `judge.py`'s own
-    docstring claims it "imports nothing from `examples.cards`"; this
-    checks the ACTUAL import statements (not prose that merely mentions
-    `cards` by name, which the module's docstring does, to explain
-    itself) never name a domain module."""
+    docstring claims it "imports nothing from any domain"; this checks the
+    ACTUAL import statements (not prose that merely mentions `cards` by
+    name, which the module's docstring does, to explain itself) never name a
+    domain module. The pattern depends on `loopingrules` and the
+    calibration kit it declares its knob with, and on no domain."""
     import ast
     import inspect
 
@@ -68,4 +69,13 @@ def test_the_module_imports_no_domain():
             names += [alias.name for alias in node.names]
         elif isinstance(node, ast.ImportFrom) and node.module:
             names.append(node.module)
-    assert not any(name.startswith("examples.cards") for name in names)
+    assert not any(name.startswith("examples") for name in names)
+
+
+def test_the_judge_is_a_declared_pattern():
+    """`docs/plan.md`, Phase 3: a pattern is not reusable until it exposes a
+    DECLARED tunable surface. This one declares `RiskTolerance.max_level`."""
+    from loopingrules_calibration import Knob, declared
+
+    assert declared(judge.flag_too_risky) == (
+        Knob(judge.RiskTolerance, "max_level", 0.0, 1.0, steps=5),)

@@ -46,8 +46,9 @@ from __future__ import annotations
 
 import random
 
-from examples import cards, decide, judge, market, quorum, trip
+from examples import cards, decide, market, quorum, trip
 from loopingrules.loop import Loop
+from loopingrules_patterns import judge
 
 
 # -- observing the authored verdict, without acting ----------------------

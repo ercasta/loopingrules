@@ -1,9 +1,9 @@
 """`shopping` -- a household shopping list, and the second real domain
-this repo has ever asked `examples.judge`'s `Risk` to serve.
+this repo has ever asked `loopingrules_patterns.judge`'s `Risk` to serve.
 
 ## What this is testing
 
-`examples.judge`'s own docstring names the open question plainly: whether
+`loopingrules_patterns.judge`'s own docstring names the open question plainly: whether
 one `Risk` shape (`level: float` in `0..1`, plus a named `reason`) "holds
 across two UNRELATED domains, or is secretly two domains' different ideas
 wearing one field name," and it says only `examples.cards` has ever had to
@@ -38,9 +38,9 @@ to get it.
 
 ## Kept here, not shipped
 
-Same standing as `examples.cards`/`examples.judge` -- see `cards.py`'s own
+Same standing as `examples.cards`/`loopingrules_patterns.judge` -- see `cards.py`'s own
 module docstring for what that does and does not mean. This module
-imports `examples.judge`, never `examples.cards`, and is not imported by
+imports `loopingrules_patterns.judge`, never `examples.cards`, and is not imported by
 either.
 
 ## Vocabulary
@@ -60,13 +60,13 @@ either.
   here yet needs "no longer needed," and guessing at that shape now would
   be exactly the speculative generality `DECISION_PATTERNS.md` argues
   against.
-- `examples.judge.Risk(level, reason)` -- this domain's projection, onto
+- `loopingrules_patterns.judge.Risk(level, reason)` -- this domain's projection, onto
   a component it does not own, of how close `NeededBy.days` is to `0`,
   linear across `HORIZON_DAYS`. Deliberately NOT blended with `Stock` --
   the point of this module is testing whether TIME PRESSURE alone fits
   the same shape `cards` built out of SPENDING ROOM, not building the
   most realistic shopping assistant possible.
-- `examples.judge.RiskTolerance(max_level)` -- seeded by `install`, owned
+- `loopingrules_patterns.judge.RiskTolerance(max_level)` -- seeded by `install`, owned
   by `judge.py`, same as `cards.py`'s copy.
 - `OnList()` -- `@transient` tag, both directions every tick, the same
   "recompute fresh, never cache" discipline `cards.tag_wanted` uses: on
@@ -80,7 +80,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from examples.judge import Risk, RiskTolerance, TooRisky, flag_too_risky
+from loopingrules_patterns.judge import Risk, RiskTolerance, TooRisky, flag_too_risky
 from loopingrules.engine import Reply, Said
 from loopingrules.world import transient
 
@@ -216,7 +216,7 @@ def hear_status(w) -> None:
 # -- projecting, and acting on the judge's verdict ------------------------
 
 def project_urgency(w) -> None:
-    """`examples.judge.Risk`, `replace`d fresh onto every item that
+    """`loopingrules_patterns.judge.Risk`, `replace`d fresh onto every item that
     carries a `NeededBy` -- see the module docstring's "What this is
     testing." `level` rises linearly from `0.0` at `HORIZON_DAYS` or
     further out to `1.0` at (or past) `0` days -- capped both ends, the

@@ -4,7 +4,7 @@ BRIDGE buy cross-island transfer, and how much of it is form versus value?
 ## The two islands and the one bridge
 
 `examples.cards` and `examples.shopping` are two independent domains that
-both project their own fact onto `examples.judge`'s `Risk(level, reason)`
+both project their own fact onto `loopingrules_patterns.judge`'s `Risk(level, reason)`
 and both let the SAME `flag_too_risky` compare that `level` to the SAME
 `RiskTolerance.max_level`. Cards means RESOURCE EXHAUSTION (how much of
 the cash room a price would use); shopping means TIME PRESSURE (how close
@@ -55,8 +55,9 @@ from __future__ import annotations
 
 import random
 
-from examples import cards, judge, shopping
+from examples import cards, shopping
 from loopingrules_calibration import Scenario, replay
+from loopingrules_patterns import judge
 
 
 TAU_CARDS = 0.6        # cards' authored policy: flag iff level > 0.6
@@ -144,7 +145,7 @@ def form_reuse():
     """The bridge's FORM, and what reusing it costs.
 
     Every name is the SAME object, not a same-shaped copy: both islands
-    import them from `examples.judge` unchanged (each pins that with a test
+    import them from `loopingrules_patterns.judge` unchanged (each pins that with a test
     of its own). That identity is why `new_rules_or_data` is `0` -- the
     shape was bought once and is used twice, and no example was needed to
     make it transfer.

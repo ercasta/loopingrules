@@ -10,7 +10,7 @@ import dataclasses
 
 import pytest
 
-from examples import judge
+from loopingrules_patterns import judge
 from loopingrules import analyze
 from loopingrules.loop import Loop
 from loopingrules_calibration import (

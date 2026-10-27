@@ -12,7 +12,10 @@ gives you three things:
 It ships **no domain, no channel and no transport**. Everything you would
 build on top of it (a file assistant, a trading agent, a trip planner) is a
 set of rules and components that live in your own code. The
-[`examples/`](examples.md) directory holds worked ones.
+[`examples/`](examples.md) directory holds worked ones, and two sibling
+packages build on the engine: [`loopingrules_calibration`](plan-calibration.md)
+tunes a domain's declared knobs, and [`loopingrules_patterns`](patterns.md)
+ships curated patterns once a second domain depends on them.
 
 ## Who this guide is for
 
@@ -29,6 +32,7 @@ order you would want to learn things in:
 | save a world, or move entities between worlds | [Persistence and sharing](persistence.md) |
 | know what a rule reads and writes | [Rule analysis](analysis.md) |
 | find a worked domain to copy | [Examples](examples.md) |
+| reuse a curated pattern | [Patterns](patterns.md) |
 | debug a rule that will not settle | [Testing and debugging](testing-debugging.md) |
 | send a change | [Contributing](contributing.md) |
 
@@ -50,6 +54,7 @@ The forward-looking plan, unlike the above, *is* part of this site: the
 log](plan-memory.md), [Dataset and scoring](plan-dataset.md), [Calibration
 API and knobs](plan-calibration.md), and [Online adaptation](plan-adaptation.md).
 Phases 1-2 of the roadmap are built — the calibration kit and the change
-log — and Phase 3's author surface and linter with them; the pattern library
-and the rest are design. Each document ends with what it does *not* settle,
-in the same posture as `TODO.md`.
+log — and Phase 3's author surface, linter and first [pattern](patterns.md)
+with them; the rest of the pattern library and the roadmap are design. Each
+document ends with what it does *not* settle, in the same posture as
+`TODO.md`.

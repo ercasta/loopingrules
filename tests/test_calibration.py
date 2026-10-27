@@ -10,7 +10,8 @@ import dataclasses
 
 import pytest
 
-from examples import cards, judge
+from examples import cards
+from loopingrules_patterns import judge
 from loopingrules.engine import Reply, Said
 from loopingrules.loop import Loop
 from loopingrules_calibration import (

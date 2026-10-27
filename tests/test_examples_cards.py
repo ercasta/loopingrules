@@ -6,7 +6,8 @@ runs the loop to a settle, and hands back every `Reply` text produced."""
 
 import pytest
 
-from examples import cards, judge
+from examples import cards
+from loopingrules_patterns import judge
 from loopingrules.loop import Loop
 from loopingrules.engine import Reply, Said
 

@@ -1,15 +1,31 @@
-"""`judge` -- one domain-oblivious rule, testing whether a single shared
-`Risk` shape can serve any domain's judge without the judge knowing what
-domain it is.
+"""`judge` -- the threshold-judge pattern: a domain PROJECTS a normalized
+`Risk` claim about an entity onto the world, and one oblivious rule flags
+anything past a tolerance the judge itself owns.
 
-A judge that reasons over `realizes(option,
-property)` -- a domain-specific rule PROJECTS its own facts onto a
-shared property, and the judge reads only the projection, oblivious to
-what produced it (*"pizza realizes carbs, carbs realizes energy"*). This
-module is that shape, narrowed to one property: `Risk` is what a domain
-projects onto; `RiskTolerance` is the judge's own threshold; `flag_too_
-risky` (below) is the whole judge. 
+A domain's own rule deposits `Risk(level, reason)` onto whatever it is
+reasoning about -- "this is how concerning proceeding would be", `level` in
+`[0.0, 1.0]`, `reason` a short human-readable account -- and `flag_too_
+risky`, below, reads only that projection. It has never heard of a listing,
+a purse, a deadline or a card, and imports nothing from any domain: it is
+the narrow shape `DECISION_PATTERNS.md`'s deleted `arbitration.py` described,
+one property wide. `RiskTolerance(max_level)` is the judge's own knob,
+deliberately separate from any domain's own risk knobs
+(`examples.cards.RiskProfile`, which feeds the PROJECTION, not the judgment)
+-- the threshold a judge applies belongs to the judge, not to whichever
+domain happened to install it first.
 
+Promoted from `examples/judge.py` (see `docs/plan.md`, Phase 3) as the first
+pattern in this library, because it already had what promotion asks for: a
+second and third domain depending on it at RUNTIME (`examples.cards`,
+`examples.market` and `examples.shopping` all install it), and a declared
+tunable surface (`@tunable`). `cards` and `shopping` import these exact
+objects, never same-shaped copies; `tests/test_examples_bridge.py` pins that
+identity.
+
+What this does NOT settle: whether one `Risk` shape fits a domain that wants
+a genuinely different KIND of "how concerning". The evidence so far is two
+projections sharing it without alteration -- resource exhaustion in `cards`,
+time pressure in `shopping` -- which is real but not universal.
 """
 
 from __future__ import annotations

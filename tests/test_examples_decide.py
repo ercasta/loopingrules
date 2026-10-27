@@ -68,7 +68,7 @@ def test_two_occasions_are_resolved_independently():
 
 def test_the_module_imports_no_domain():
     """Not a behavioural test -- a documentation pin, the same check
-    `tests/test_examples_judge.py::test_the_module_imports_no_domain`
+    `tests/test_patterns_judge.py::test_the_module_imports_no_domain`
     already runs for `judge.py`. Checks the ACTUAL import statements
     never name a domain module, not just that the docstring claims so."""
     import ast

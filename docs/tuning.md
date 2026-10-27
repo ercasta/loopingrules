@@ -309,7 +309,7 @@ predicts:
 
 - **Form transfers at zero cost.** `cards`/`shopping` import the same
   `Risk` / `RiskTolerance` / `TooRisky` / `flag_too_risky` *objects* from
-  `examples.judge` — identity, not same-shaped copies. No new rules, no new
+  `loopingrules_patterns.judge` — identity, not same-shaped copies. No new rules, no new
   examples (`new_rules_or_data == 0`).
 - **Value does not transfer across a policy gap.** A threshold fit on
   cards lands at `0.625` (cards' policy is `0.6`); scored against shopping
