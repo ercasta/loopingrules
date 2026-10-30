@@ -16,7 +16,15 @@ gate. The calibration kit's `replay` fills `Trace.changes` from it (the
 signature is unchanged -- the log is a separate field). Tests:
 `tests/test_changes.py`. Retention is `Loop(capacity=...)`; the `signature`
 deliberately does NOT include the log (settled: plateaus keep their meaning,
-the log is a separate field). A worked promotion example is still to come.
+the log is a separate field).
+
+**Promotion is built too** (2026-10-30): `loopingrules.memory` ships
+`Memory`/`MemoryPolicy`/`Remembered`/`MemoryCursor`, the `remember`/`forget`
+rules, and `install`, with the declared `@tunable` surface in
+`loopingrules_patterns.memory` (the engine cannot import calibration). Tests:
+`tests/test_memory.py`. No `examples/` domain installs it for real yet -- the
+mechanism is proven against bare entities in tests, not an independently-
+authored domain, and that is real, separate work.
 
 ## Problem
 
@@ -164,6 +172,13 @@ def promote_lesson(w):
 - Rules never read a "durable memory API" — they read data another rule chose
   to make. The log is only ever the short-term look-back window. This keeps
   `analyze`'s story clean and keeps `save` honest.
+
+Shipped (2026-10-30) as exactly this shape: `loopingrules.memory`'s
+`remember` reads `w.changes(since=MemoryCursor.seq)` and spawns a durable
+`Remembered` per qualifying change; `forget` destroys the entries past a
+tuned `MemoryPolicy`. The retention policy this doc left open was chosen as
+a COUNT (`max_entries`/`max_per_target`), not a tick window — see the
+module's own "what this does not settle".
 
 Cost named, not hidden: promoted memory lands in `save`, so it has a size and
 lifetime cost and it changes replay. Each durable artifact should declare what

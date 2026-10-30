@@ -58,6 +58,16 @@ report = calibrate(install, cases, knobs(loop), scorer)
 Three domains install it — `examples.cards`, `examples.market`,
 `examples.shopping` — which is why it was the first to graduate.
 
+## Shipped: `memory` (a declared surface, not a pattern)
+
+`loopingrules_patterns.memory` holds the declared tunable surface for
+`loopingrules.memory`, the engine's short-term memory. The mechanism stays in
+the engine — it reads the transient change log, an engine primitive, and the
+engine must not import `loopingrules_calibration` — so this module imports
+`remember`/`forget` and attaches `Knob(MemoryPolicy, ...)` to those exact
+functions. `knobs(loop)` and `lint` therefore see them like any pattern's
+rules; there is no separate `MemoryPolicy`-shaped copy to drift.
+
 ## Not shipped yet
 
 Named so the gap is not a surprise: the other candidates — a scored contest

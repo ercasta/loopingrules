@@ -21,6 +21,8 @@ loopingrules/
   save.py         the world as JSONL: entities are ints, components are values
   share.py        a named subset of entities, portable between worlds
   analyze.py      what a rule reads and writes, derived from its own AST
+  memory.py       short-term memory: remember/forget promoting changes out
+                    of the transient log into durable Remembered components
 loopingrules_calibration/
   kit.py          Knob, Scenario, Trace, replay, search -- the tuning instrument
   report.py       calibrate: held-out scores, plateaus, sensitivity
@@ -28,6 +30,7 @@ loopingrules_calibration/
   linter.py       lint: a hard-coded threshold where a rule should read a knob
 loopingrules_patterns/
   judge.py        the threshold judge: Risk/RiskTolerance -> TooRisky
+  memory.py       the declared tunable surface for loopingrules.memory
 examples/
   cards.py, shopping.py, market.py, quorum.py, trip.py   worked domains
   decide.py                                             a domain-oblivious bridge
@@ -39,6 +42,7 @@ tests/
   test_share.py        pack import, id remapping, dangling refs
   test_calibration.py  the tuning kit: replay, search, plateaus
   test_changes.py      the change log: what changed, by which rule, when
+  test_memory.py       short-term memory: promotion, retention, the surface
   test_linter.py       the declared tunable surface, and the linter over it
   test_patterns_judge.py  the shipped judge pattern, and its declared knob
   test_examples_*.py   each example domain, end to end
@@ -149,6 +153,18 @@ above, "no vocabulary above entities and components either") — see
 History, "A domain-oblivious judge."
 
 ## History
+
+**`loopingrules.memory`: short-term memory -- the promotion half `docs/plan-memory.md` left open, 2026-10-30.** The change log (`World.changes`, Phase 2) records what HAPPENED but is transient: never saved, bounded only by `Loop(capacity=...)`, and needing a full-window scan every tick. D1's own *"Promotion: how anything becomes durable"* named the missing half -- a rule that reads the log and attaches ordinary durable components, so "we already tried this" survives the marker that recorded it -- and closed with *"A worked promotion example is still to come."* This is that half, in the engine rather than an example, because what it reads (`World.changes`) is an engine primitive and the engine imports nothing above it.
+
+Four ordinary (and so `save`-able, shareable, queryable) components and two rules. `Memory()` is a singleton a domain spawns to opt in; `MemoryPolicy(max_entries, max_per_target, kinds)` is the singleton the rules READ (no hard-coded threshold anywhere, which is what makes them calibratable); `Remembered(seq, tick, rule, kind, target, types)` is its OWN entity per promoted change, keyed by the change's `seq`; `MemoryCursor(seq)` is the high-water mark. `remember` walks `w.changes(since=cursor)`, filters by policy, and spawns a `Remembered` per qualifying change; `forget` destroys the entries past `max_entries`/`max_per_target`, newest kept -- the DESTRUCTION is the "short" in short-term, what it drops gone from the world rather than hidden from a view.
+
+The cursor is load-bearing, not an optimization: without it `forget` would be undone every tick, because the log still holds a change whose `Remembered` entry was just dropped, and `remember` would re-promote it forever. Two further bugs surfaced only by running the thing, both pinned rather than reasoned about after the fact. First, the exclusion of memory's own writes used `w.has(entity, Remembered, MemoryCursor)` -- and `has` is ALL-of, so a `Remembered`-only entity matched nothing and every promotion was re-promoted: a 200-tick hot loop, caught by a diagnostic that printed the changelog, not by inspection. Second, once that was fixed, a `Remembered` entity's own SPAWN still leaked: `World.spawn` records an EMPTY payload, and `forget` destroying the entity makes "does its target carry `Remembered`?" false exactly when a later tick asks. The fix is state-independent -- recognise memory's own writes by the `rule` name `Loop.rule` infers (`memory.remember`), plus the payload check for detach/destroy/replace -- because a check that depends on a possibly-destroyed entity cannot be sound. `install` seeds the cursor after its own spawn record for the same reason: a spawn is an empty-payload change too.
+
+Where the declared surface lives was decided by the layout, not preference: `pyproject.toml` gives `loopingrules` no dependencies, and `docs/plan-calibration.md` says *the engine must not import calibration*, so `@tunable` cannot sit next to the rule inside `loopingrules/memory.py`. The fish is split cleanly instead -- mechanism plus rules in the engine; `loopingrules_patterns/memory.py` imports those exact functions and attaches `Knob(MemoryPolicy, ...)` to them (`tunable` mutates and returns the function, so `knobs(loop)` and `lint` see the very rules the domain registered). It is the pattern package's second module, and the first that is a *surface* rather than a bridge or a shape.
+
+Left open, named in the module docstring rather than hidden: retention is a COUNT, not a clock (a rule has no public handle on the current tick, and a count is deterministic); `kinds` is a coarse admission filter with no notion of importance or novelty; and what `share.py` means for a promoted memory -- and the cursor that decides what is already known -- is undecided, though `save` round-trips it as ordinary data. Also not done: no `examples/` domain installs memory for real yet, so the mechanism is proven against `tests/test_memory.py`'s bare entities, not against an independently-authored domain -- the same bar the 2026-09-14 `harneskills` migration and the 2026-09-08 `files.py` proof were held to.
+
+Verified: `329 -> 343 passing`. The addition is `tests/test_memory.py` (14 tests: promotion, durability through `save`/`load`, settling and no duplication, the memory rules never promoting themselves, install seeding not replayed, the `kinds` filter, `max_entries`/`max_per_target` retention, a forgotten change not re-remembered, abstention, `analyze` seeing the rules, and the pattern layer's declared surface collected by `knobs` and linting clean), with the whole existing suite green.
 
 **`loopingrules_patterns`: the standard library, and its first promoted pattern (`judge`), 2026-10-27.** `docs/plan.md`'s Phase 3 has three pieces; the author surface and linter landed last, and this is the third — the curated pattern library the product thesis is about. The package `loopingrules_patterns` is new and, per the decision in discussion, holds BOTH kinds of pattern in one layout: a **bridge** (a domain-oblivious reader over a thin shape several domains project onto) and a **shape** (a component vocabulary a domain instantiates) — one module per pattern, no bridges/shapes split.
 

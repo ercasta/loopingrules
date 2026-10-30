@@ -26,6 +26,11 @@ test file written to feed it.
   `TooRisky`. A domain projects a normalized `0..1` claim onto `Risk`; the
   oblivious rule flags anything past the tolerance. Three domains install
   it (`examples.cards`, `examples.market`, `examples.shopping`).
+* `loopingrules_patterns.memory` -- the DECLARED tunable surface for
+  `loopingrules.memory`: the short-term-memory mechanism stays in the
+  engine (it reads the change log, an engine primitive), and this module
+  attaches the `@tunable` knobs to its `remember`/`forget` rules so
+  `knobs(loop)` and the linter can see them.
 
 What is NOT here yet, named so it is not mistaken for settled: the other
 candidates `docs/plan.md`'s Phase 3 lists -- a scored contest (`examples.
@@ -35,6 +40,6 @@ question/investigation, ...) -- are candidates, not shipped.
 
 from __future__ import annotations
 
-from . import judge
+from . import judge, memory
 
-__all__ = ["judge"]
+__all__ = ["judge", "memory"]

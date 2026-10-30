@@ -19,6 +19,12 @@ it, and one thread to run a session on.
   none of the component types it reads exist yet; it may also declare
   `priority=` to run ahead of another rule, regardless of which was
   registered first.
+* `loopingrules.memory` -- SHORT-TERM MEMORY: `remember` promotes selected
+  changes out of the transient change log and into ordinary, durable
+  `Remembered` components, and `forget` drops them again past a tuned
+  `MemoryPolicy` -- so "we already tried this" survives the marker that
+  recorded it. See `docs/plan-memory.md`; the declared tunable surface
+  lives in `loopingrules_patterns.memory`.
 * `loopingrules.engine` -- ONE thread that runs the loop, and the channels
   attached to it. `Said(name, "...")` in from whichever channel it
   arrived on; `Reply(user, "...")` out to every channel there is.
@@ -51,12 +57,12 @@ request removed," for the removal itself.
 
 from __future__ import annotations
 
-from . import engine, loop, save, share, world
+from . import engine, loop, memory, save, share, world
 from .engine import Engine
 from .loop import Loop
 from .world import Change, World
 
 __version__ = "0.1.0"
 
-__all__ = ["Change", "Engine", "Loop", "World", "engine", "loop", "save", "share",
-          "world", "__version__"]
+__all__ = ["Change", "Engine", "Loop", "World", "engine", "loop", "memory",
+          "save", "share", "world", "__version__"]

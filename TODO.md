@@ -197,3 +197,14 @@ core"), named so they are not lost rather than scheduled.
   in the trail has to detach-then-reattach `Focus` itself to get a new
   entry -- named in `_FocusSeen`'s own docstring, not silently missed,
   but nothing here decides whether that is the right default.
+- **`loopingrules.memory` (the 2026-10-30 short-term-memory system, a
+  different module from the `Focus`/`MemoryEntry` one the bullet above
+  names) has three open threads of its own, all in its module docstring.**
+  Retention is a COUNT (`MemoryPolicy.max_entries`/`max_per_target`), not a
+  tick window, because a rule has no public handle on the current tick to
+  expire against -- if a window is wanted, `World` needs to expose its
+  `_tick` first, and `analyze` needs to accept `w.tick`. The `kinds` filter
+  is coarse: there is no notion of importance or novelty, so a chatty rule
+  can spend the whole budget on trivia. And `share.py`'s meaning for a
+  promoted memory -- and for the `MemoryCursor` that decides what is
+  already known -- is undecided; only `save`/`load` round-trips it today.
