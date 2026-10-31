@@ -2,7 +2,8 @@
 
 Status: Phases 1-2 built, and Phase 3's author surface and linter with them;
 the pattern library and the rest are design. This directory holds the
-roadmap and four design docs (D1-D4). Nothing beyond that is a commitment
+roadmap and five design docs (D1-D5, the fifth being the forge in D5).
+Nothing beyond that is a commitment
 to code; each doc ends with the open questions it does *not* settle, in the
 same posture `docs/tuning.md` and `TODO.md` already take.
 
@@ -104,7 +105,11 @@ These came out of the design discussion and are assumed by D1-D4:
 - **Derive from the AST** (`analyze.py`): reads/writes and, later, the
   tunability lint come from walking the rule's own source, not from a person's
   declaration that can drift.
-- **Tune values, never structure** (`docs/tuning.md`).
+- **Tune values, never structure** (`docs/tuning.md`) — **scope retired by
+  D5**: structure may now be machine-*translated* from a corpus and frozen,
+  but the discipline the rule protected (frozen operators, verification gates,
+  freeze-before-tune) is preserved. See `PRINCIPLES.md`, "What is
+  machine-derived, and at which layer," and `docs/plan-forge.md`.
 
 ## Phase roadmap
 
@@ -112,7 +117,7 @@ Order is dependency-driven. Each phase is independently shippable and testable.
 
 | Phase | Deliverable | Depends on | Design doc |
 |---|---|---|---|
-| 0 | The four design docs, reviewed | — | D1-D4 |
+| 0 | The five design docs, reviewed | — | D1-D5 |
 | 1 | **Calibration kit**: `Scenario`/`Knob`/`replay`/`search` promoted to `loopingrules_calibration`, with pluggable trace source, replay caching, train/eval split, mean +/- variance, plateau/sensitivity report | — | D3 |
 | 2 | **Memory**: instrumented change log, read API, `analyze` exception, sharpened signatures | — | D1 |
 | 3 | **Author surface + patterns**: co-located knob declaration + classification, tunability linter, curated patterns each exposing its tunable surface | 1, 2 | D3, D2 |
@@ -120,6 +125,7 @@ Order is dependency-driven. Each phase is independently shippable and testable.
 | 5 | **Tools / external world**: tool-channel stdlib, environment tape/cache, effect fencing, calls-to-competence axis | 2, 3 | (separate doc) |
 | 6 | **Descriptors** (optional): rules return change-lists; atomicity, validation, rules-as-data | 2 | (separate doc) |
 | 7 | **Fast-timescale adaptation + end-to-end exemplar**: in-run controller rules, plus one non-toy agentic domain calibrated end to end and a written author walkthrough | 4, 5 | D4 |
+| 8 | **The forge**: corpus → catalog, verified and frozen, with NL-in/NL-out at the edges; ordered risk-first so the structural half (no LM) is proven before translation is attempted | 1, 3 | D5 |
 
 Phase 1 is the first build (the choice made in discussion). Phases 2 and 3 are
 the ones that make the workflow real; 4-7 are the payoff.

@@ -29,3 +29,4 @@ nav:
       - Dataset and scoring: plan-dataset.md
       - Calibration API and knobs: plan-calibration.md
       - Online adaptation: plan-adaptation.md
+      - The forge (corpus to catalog): plan-forge.md
