@@ -208,3 +208,20 @@ core"), named so they are not lost rather than scheduled.
   can spend the whole budget on trivia. And `share.py`'s meaning for a
   promoted memory -- and for the `MemoryCursor` that decides what is
   already known -- is undecided; only `save`/`load` round-trips it today.
+- **`loopingrules_islands` is a SPIKE, and folding it in is a named debt,
+  not a someday.** (`docs/plan-islands.md`, D6.) It is deliberately absent
+  from `pyproject.toml`'s `packages=` the way `loopingrules_forge` is, and
+  it holds exactly two islands (`items`, `funds`) and one probe (`i0`) --
+  enough to pin the SHAPE (settles, reuses across two domains, composes
+  across two islands, and the "fabricating candidates" antipattern is
+  caught) and nothing more. The fold-in has three parts, none done: (1)
+  decide whether an island is a `loopingrules_patterns` shape or its own
+  thing, and move the ONE real island there once a second domain depends on
+  it at runtime -- the standing bar, not a test written to feed it; (2)
+  `i0`'s reach check (`the entities a rule actually wrote on`, from the
+  change log) is the seed of the cross-island read graph antipattern 4
+  needs -- it is not built; (3) the design note must keep recording only
+  what a probe holds up, because `DECISION_PATTERNS.md` was deleted in
+  `cdf98d6` for being untested prose. The unresolved shape questions
+  (monotone vs revisable promotion, what a decision may read, cycles,
+  overlapping bridges) are in `docs/plan-islands.md`'s own last section.
