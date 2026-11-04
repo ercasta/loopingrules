@@ -2,9 +2,26 @@ site_name: LoopingRules Developer Guide
 site_url: https://ercasta.github.io/loopingrules/
 site_description: An entity-component world, a loop of rules over it, and one thread to run a session on.
 docs_dir: docs
+repo_url: https://github.com/ercasta/loopingrules
+repo_name: ercasta/loopingrules
 theme:
-  name: readthedocs
-  navigation_depth: 2
+  name: material
+  features:
+    - navigation.instant
+    - navigation.top
+    - search.suggest
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
 markdown_extensions:
   - admonition
   - tables
