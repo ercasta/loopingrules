@@ -168,6 +168,48 @@ Read: Sutton, Precup and Singh, *Between MDPs and semi-MDPs* (1999); Sutton
 and Barto, *Reinforcement Learning* (2nd ed., free PDF), the options chapter;
 Dyna (Sutton, 1991).
 
+### Modeling and executable actions — what the agent reasons over
+
+The rule-learning systems above all take the *model* as given: they learn
+behavior over a representation someone else designed. The modeling half is the
+representation itself, and the key idea is **reified actions with an executable
+(operational) description**: an action is a first-class object, its effects are
+data, and an interpreter runs it — so the agent can *reason* (plan, compose,
+inspect) and *execute* on the same object.
+
+Why here: rules alone do not say what the agent reasons about; and OWL/RDF
+cannot carry behavior (open-world and monotone, no time, no actions, global
+triples). Full map in `modeling.md`.
+
+Read: Orkin, *Three States and a Plan* (GOAP, 2006); Levesque et al., *Golog*
+(1997); Fox and Long, *PDDL* (2003); Meseguer, rewriting logic / the Maude
+book (reflection + search); Minsky, *A Framework for Representing Knowledge*
+(1974); Davis, Shrobe and Szolovits, *What is a Knowledge Representation?*
+(1993).
+
+### Hybrid learning: stated rules + examples + feedback
+
+The classical three engines of knowledge, combined rather than chosen between:
+**deduction** (stated rules), **induction** (examples), **interaction**
+(feedback). The standard architecture is **CEGIS around a Bayesian prior over
+programs** — propose from rules and examples, verify, take a counterexample,
+ask or derive, repeat.
+
+Why here: the requirement is "learning partly as stated rules, partly from a
+few examples, partly from live feedback" — and the repo's own forge routing is
+already three-source (translator / analysis / human). The discipline is to give
+each source a different *artifact* (structure / values / refinement) and to
+*adjudicate* conflicts, never average them.
+
+Read: Solar-Lezama, *Program Synthesis by Sketching* (CEGIS, 2008); Lake,
+Salakhutdinov and Tenenbaum (2015, one-shot program induction); Ellis et al.,
+*DreamCoder* (2021); DeJong and Mooney, explanation-based learning (1986); Ross
+et al., *DAgger* (2011); Ball et al. (2023) and Pei et al. (2023), RL with
+prior data; Christiano et al., preference-based RL (2017); Alshiekh et al.,
+shielding / safe RL (2018); Ng, Harada and Russell, reward shaping (1999);
+Settles, active learning (2009). Probabilistic / neuro-symbolic: ProbLog,
+DeepProbLog, Scallop; Letham et al., Bayesian Rule Lists (2015).
+
 ## A six-week path
 
 - **Weeks 1-2**: blackboard history; GP fundamentals (Poli's Field Guide);
@@ -178,6 +220,9 @@ Dyna (Sutton, 1991).
 - **Week 6**: library learning (Stitch/LILO, then DreamCoder) and MAP-Elites
   (pyribs).
 - **As needed**: ILP (Popper) and LLM-guided evolution (OpenEvolve).
+- **Then, if the agent must *reason* and *learn from few shots*:** modeling
+  (`modeling.md` — reified actions, GOAP/PDDL/Golog) and hybrid learning
+  (CEGIS: stated rules + examples + feedback).
 
 ## Offline and phone
 

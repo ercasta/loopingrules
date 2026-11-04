@@ -1,8 +1,10 @@
 # Plan: engine + standard library + authoring/calibration workflow
 
 Status: Phases 1-2 built, and Phase 3's author surface and linter with them;
-the pattern library and the rest are design. This directory holds the
-roadmap and five design docs (D1-D5, the fifth being the forge in D5).
+the pattern library and the rest are design, apart from the reuse layer's
+first spike (D6). This directory holds the roadmap and six design docs
+(D1-D6, the sixth being the reuse layer in D6), plus `modeling.md` for the
+modeling half.
 Nothing beyond that is a commitment
 to code; each doc ends with the open questions it does *not* settle, in the
 same posture `docs/tuning.md` and `TODO.md` already take.
@@ -30,6 +32,22 @@ should read a component, reports a knobbed rule `analyze` cannot see as
 `loopingrules_patterns` ships `judge` (`docs/patterns.md`), promoted from
 `examples/judge.py` because three domains already install it at runtime; the
 remaining candidates are not shipped. See `docs/plan-calibration.md`.
+
+**D6 status (partial):** the reuse layer -- islands, bridges, conjunction --
+has a first spike, `loopingrules_islands` (`items`/`funds`, probe `i0`, pinned
+by `tests/test_islands_i0.py`): it settles, reuses one island across two
+domains, composes across two islands, and catches the fabricating-candidates
+antipattern. **Nothing is folded in yet** -- `TODO.md` records that debt. The
+open shape questions (monotone vs revisable promotion, what a decision may
+read, cycles, overlapping bridges) are in `docs/plan-islands.md`.
+
+**Modeling status:** design only (`docs/modeling.md`). The model is the
+executable world plus *reified actions* -- schema + effect deltas + executor --
+reasoned over by a planner; **not** an ontology, because OWL/RDF cannot carry
+behavior. `circuits.Call`/`ToolRequest` is already two-thirds of the triad.
+
+**Learning status:** design only (prior art in `docs/study-guide.md`). Nothing
+of the hybrid loop is built: no EA/ILP induction, no three-source adjudication.
 
 ## Goal
 
@@ -65,6 +83,9 @@ The product thesis, stated once and used to judge everything below:
 | **Dataset kit** | Missing. No format, no capture, no labels/rankings, no train/eval split, no reporting. |
 | **Memory / change log** | **Built (Phase 2)**: `Change` + `World.changes`/`recent`/`clear_changes`, transient and never saved, `Loop(capacity=...)`-bounded, with `Loop.tick` provenance and `analyze` gating on `changes(changed=...)`. |
 | **Tools / external world** | Missing. Only the channel seam exists; no tape/cache, no effect fencing. |
+| **Reuse layer** | **Spike built (D6)**: `loopingrules_islands` (`items`/`funds`, probe `i0`) — settles, reuses across two domains, composes across two islands, catches the fabricating antipattern; not folded in yet. |
+| **Modeling** | Missing. No reified actions, no action algebra, no planner; design in `docs/modeling.md`. |
+| **Hybrid learning** | Missing. No three-source loop (rules/examples/feedback), no EA/ILP induction; prior art in `docs/study-guide.md`. |
 
 ## Decisions already locked
 
@@ -94,6 +115,28 @@ These came out of the design discussion and are assumed by D1-D4:
 7. **The artifact of calibration is a saved world** (`save.dump`), not
    generated code — parameters are components, so a tuned result is data.
 
+Locked in discussion since D1-D5 (assumed by D6, `modeling.md`, and the
+learning direction):
+
+8. **The runtime is non-LLM and the I/O is structured.** The first goal is an
+   agentic system whose inputs and outputs are components, not natural
+   language; an LLM may *help authoring* but never sits in the run-time
+   decision path.
+9. **The reuse layer is the priority, and it is semantic.** Islands, bridges
+   and conjunction (D6) — a graph of foundational concepts, not a flat library
+   — are what make a domain's concepts reusable. Highest uncertainty, so it is
+   probed before anything is built on it.
+10. **The model is executable, not declared.** The model is the world (its
+    rules) plus reified actions; structure is *derived* from the code, never
+    maintained beside it. No ontology (`modeling.md`).
+11. **Three learning sources, three artifacts.** Stated rules write
+    **structure**; examples fit **values**; feedback refines values and makes
+    new examples. Sources are *adjudicated*, never averaged; a conflict is a
+    first-class gap.
+12. **One grammar, many generators.** Structure may be proposed by an LM, an
+    evolutionary search, or a human; it is verified by the gates and frozen
+    before tuning, so the generator is swappable.
+
 ## Principles carried forward (not up for re-litigation here)
 
 - **No rule may block** (`architecture.md`): external I/O is a deposited
@@ -117,7 +160,7 @@ Order is dependency-driven. Each phase is independently shippable and testable.
 
 | Phase | Deliverable | Depends on | Design doc |
 |---|---|---|---|
-| 0 | The five design docs, reviewed | — | D1-D5 |
+| 0 | The design docs, reviewed | — | D1-D6 |
 | 1 | **Calibration kit**: `Scenario`/`Knob`/`replay`/`search` promoted to `loopingrules_calibration`, with pluggable trace source, replay caching, train/eval split, mean +/- variance, plateau/sensitivity report | — | D3 |
 | 2 | **Memory**: instrumented change log, read API, `analyze` exception, sharpened signatures | — | D1 |
 | 3 | **Author surface + patterns**: co-located knob declaration + classification, tunability linter, curated patterns each exposing its tunable surface | 1, 2 | D3, D2 |
@@ -126,9 +169,14 @@ Order is dependency-driven. Each phase is independently shippable and testable.
 | 6 | **Descriptors** (optional): rules return change-lists; atomicity, validation, rules-as-data | 2 | (separate doc) |
 | 7 | **Fast-timescale adaptation + end-to-end exemplar**: in-run controller rules, plus one non-toy agentic domain calibrated end to end and a written author walkthrough | 4, 5 | D4 |
 | 8 | **The forge**: corpus → catalog, verified and frozen, with NL-in/NL-out at the edges; ordered risk-first so the structural half (no LM) is proven before translation is attempted | 1, 3 | D5 |
+| 9 | **Reuse layer (D6)**: islands/bridges/conjunction promoted and *folded in*; the spike's debt paid; the cross-island read graph that catches spooky coupling | 3 | D6 |
+| 10 | **Modeling**: reified actions (schema + deltas + executor), an action algebra, and a planner over schemas against the forked world | 9 | `modeling.md` |
+| 11 | **Hybrid learning**: the three-source loop (stated rules / examples / feedback), with structure, values and refinement kept on separate artifacts | 7, 10 | `study-guide.md` (D7 pending) |
 
 Phase 1 is the first build (the choice made in discussion). Phases 2 and 3 are
-the ones that make the workflow real; 4-7 are the payoff.
+the ones that make the workflow real; 4-7 are the payoff; 8 is the structure
+authoring layer; 9-11 are the semantic/agentic layer the product thesis finally
+rests on.
 
 ## Cross-cutting work
 
@@ -141,6 +189,9 @@ the ones that make the workflow real; 4-7 are the payoff.
   the repo's existing style — what it does, and *what it does not settle*.
 - **Tests**: the repo's suite is the contract. Each phase adds its own
   `tests/test_*` and keeps the whole suite green.
+- **One grammar, many generators** (locked 12): the forge IR is the interface;
+  an LM, an evolutionary search, and a human all *propose* into it, and the
+  gates dispose. Nothing is trusted because of who proposed it.
 
 ## How success is judged
 
@@ -151,6 +202,10 @@ the ones that make the workflow real; 4-7 are the payoff.
 3. The same checks that tune offline can be wired as a controller without
    rewriting them (D4), demonstrating calibration-as-drift-response.
 4. The tuned artifact is data (a saved world), versioned and reproducible.
+5. The agent's model is *executable and reasoned over* — reified actions plus a
+   planner — not merely run (`modeling.md`).
+6. Learning mixes stated rules, a few examples, and live feedback, with
+   conflicts surfaced rather than smoothed (`study-guide.md`).
 
 ## Open questions carried across docs
 
@@ -160,3 +215,11 @@ the ones that make the workflow real; 4-7 are the payoff.
 - Whether the controller is authored as rules (in-substrate) or as an external
   service reading the trace (D4).
 - Whether `circuits`-style rules-as-data is revived, and if so when (Phase 6).
+- Whether an action schema is the *source* the executor realizes, or a
+  *derived view* checked against it; and whether the planner is in-substrate or
+  an external search over the forked world (`modeling.md`).
+- How the three learning sources adjudicate a conflict, and how confidence is
+  attached to each (`study-guide.md`).
+- Whether an evolutionary or ILP learner *replaces* the forge's translation or
+  *complements* it, and where the two share the grammar (`study-guide.md`).
+- Whether a probabilistic / belief layer can coexist with the determinism gate.
