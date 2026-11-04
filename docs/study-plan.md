@@ -11,10 +11,12 @@ By the end you can state, for this system, four sentences and defend each:
 > Fitness and credit come from **XCS** (accuracy-based, niche GA). Generation
 > is constrained by **Grammatical Evolution / strongly-typed GP** over the IR.
 > Abstractions ("models", islands) are discovered by **library learning**
-> (ADFs, Stitch-style compression). Diversity is kept by **MAP-Elites**.
+> (ADFs, Stitch-style compression). Diversity is kept by **MAP-Elites**. And
+> the *model* is the executable world plus **reified actions** (schema +
+> effect deltas + executor), reasoned over by a planner.
 
-And you have *hand-built* a tiny version of the first three and can point to
-where each would live in the repo.
+And you have *hand-built* a tiny version of the first three and of the action
+triad, and can point to where each would live in the repo.
 
 ## How the course works
 
@@ -29,7 +31,7 @@ where each would live in the repo.
 - **You are not learning the field.** You are learning four mechanisms. If a
   module sprawls, stop and note the gap rather than reading on.
 
-## The core modules (about 12.5 h)
+## The core modules (about 14.5 h)
 
 | # | Time | Read | Build | Checkpoint |
 |---|---|---|---|---|
@@ -40,7 +42,8 @@ where each would live in the repo.
 | M4 | 2 h | Koza (ADFs); DreamCoder (idea); Stitch (method) | evolve a **reusable subroutine** on a task with a shared subexpression | state the precondition for library learning; why can it not refactor a black box? |
 | M5 | 1.5 h | Mouret & Clune (MAP-Elites); Lehman & Stanley (novelty) | hand-code **MAP-Elites** to illuminate a 2-D task | fitness vs. behavior descriptor; how does this become an island library? |
 | M6 | 1 h | "ILP at 30" (skim); FunSearch; OpenEvolve README | run **Popper** on `grandparent` (or read its output) | when ILP, when GP, when LLM-guided? |
-| Cap | 2 h | - | write `labs/NOTES.md` (the four sentences + a decision per mechanism) | can you defend each sentence with a *build* you did? |
+| M7 | 2 h | `modeling.md`; Orkin (GOAP); Golog; PDDL; Maude | reify one action as a schema with effect deltas, executed by a rule | source or derived view? and what makes an action *reason*-able? |
+| Cap | 2 h | - | write `labs/NOTES.md` (the five sentences + a decision per mechanism) | can you defend each sentence with a *build* you did? |
 
 ### M3 is the one that matters
 
@@ -86,15 +89,16 @@ Small enough to finish, big enough to teach. Each names an acceptance test.
 ## The 8-hour cut
 
 If you have one day: **M0 + M1 + M3 + Capstone**, and skim (do not build)
-M2 and M5.
+M2, M5 and M7.
 
 - M0 (0.5) + M1 (1) + M3 (3) + Capstone (2) = **6.5 h** of work, plus ~1.5 h
   of reading. That is the 80/20: XCS's credit mechanism plus the mapping onto
-  your system. Skip M4/M6 entirely on this cut; you can come back.
+  your system. Skip M4/M6 entirely, and skim `modeling.md` only if the agent's
+  *reasoning* matters more to you than its learning.
 
-## The 16-hour extension
+## Beyond 16 hours (optional depth)
 
-With the second day, add depth, not breadth:
+The full core is ~14.5 h. With more time, add depth, not breadth:
 
 1. **GE properly** (2 h): build the genotype-to-grammar mapping instead of
    typed trees; make the IR the grammar; confirm every genome decodes to a
@@ -107,7 +111,9 @@ With the second day, add depth, not breadth:
    precisely your schema constraint; feel how they bound the search.
 5. **LLM-guided loop** (2 h): run **OpenEvolve** on one toy; see the LLM as
    the mutation operator inside the EA you already built.
-6. **Read the two surveys** (1 h): "ILP at 30" and the LCS survey. This is
+6. **A planner over schemas** (2 h): build the GOAP/PDDL-shaped search over
+   your reified actions, and run it against the forked world (`save`/`load`).
+7. **Read the two surveys** (1 h): "ILP at 30" and the LCS survey. This is
    where you stop treating the field as black boxes.
 
 ## What to ignore (anti-goals)
@@ -140,3 +146,7 @@ All references (authors, years, and what to read first) are in the
 - Mouret & Clune, *MAP-Elites* (2015).
 - Cropper, Dumančić, Evans & Muggleton, *Inductive Logic Programming at 30* (2022).
 - Romera-Paredes et al., *FunSearch* (2024); OpenEvolve (2025).
+- Orkin, *Three States and a Plan* (GOAP, 2006); Levesque et al., *Golog* (1997);
+  Fox & Long, *PDDL* (2003); Meseguer, rewriting logic / the Maude book.
+- Minsky, *A Framework for Representing Knowledge* (1974); Davis, Shrobe &
+  Szolovits, *What is a Knowledge Representation?* (1993).
