@@ -8,7 +8,7 @@ built yet"). It is **design only; nothing is built.** The package name
 `loopingrules_forge` is provisional.
 
 It rests on a scope change to the repo's own rules; read
-[`PRINCIPLES.md`](../PRINCIPLES.md)'s new section, "What is machine-derived,
+`PRINCIPLES.md`'s new section, "What is machine-derived,
 and at which layer," first.
 
 ## The pivot: one catalog, three surfaces

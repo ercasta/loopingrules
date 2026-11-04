@@ -23,6 +23,7 @@ nav:
   - Patterns: patterns.md
   - Testing and debugging: testing-debugging.md
   - Contributing: contributing.md
+  - Study guide: study-guide.md
   - Plan:
       - Roadmap: plan.md
       - Memory and the change log: plan-memory.md
