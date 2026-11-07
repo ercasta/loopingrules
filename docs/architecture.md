@@ -33,14 +33,18 @@ world  <--  loop  <--  engine
 ## What "no domain, no channel, no transport" means
 
 `world`, `loop`, `engine` and `save` ship no rules and no components beyond
-`Said` and `Reply`, and know nothing about files, sockets or terminals.
+the shapes the loop and the engine route by — `Said`/`Reply` and
+`reflect.RuleCard`/`RuleControl` — and know nothing about files, sockets or
+terminals.
 
 ## One tick, step by step
 
 `Loop.tick()` in `loop.py`:
 
-1. Compute the order: rules sorted by `priority` descending, ties in
-   registration order.
+1. Read the schedule: `reflect.RuleControl` components are collected by rule
+   hash. A rule with `enabled=False` is dropped from the order and never
+   called; otherwise a control's `priority` (or the rule's own `priority=` when
+   no control exists) orders it, ties in registration order.
 2. For each rule:
     1. **Gate.** If the rule has a derived read set and
        `world.populated(*reads)` is false, skip it. The body is never
@@ -88,7 +92,7 @@ answer arrives.
 | Decision | Where |
 |---|---|
 | Rules write directly, not by returning a change list | `loop.py` module docstring |
-| Registration order (or `priority=`), not scoring | `loop.py`, "Order is registration order" |
+| Registration order (or `priority=`, or a runtime `RuleControl`), not scoring | `loop.py`; `reflect.py` |
 | Dormancy gate derived from the AST, not declared | `loop.py` and `analyze.py` |
 | The budget is a circuit breaker, not a proof of termination | `loop.py`, "The budget" |
 | Small closed vocabulary, conclusions re-enter as ordinary components | `PRINCIPLES.md` |

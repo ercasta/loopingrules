@@ -26,6 +26,13 @@ def watch_first(w): ...
 - **Use `priority` for real pipelining**, such as "parse before interpret", not
   to silently pick a winner between two rules that disagree. Disagreement
   wants an explicit design decision, not a priority tie-break.
+- **A rule can be controlled at RUNTIME without being edited.** Any rule may
+  attach a `reflect.RuleControl(hash, enabled, ...)` naming another rule by
+  its hash; the loop reads it at the top of each tick and skips or reorders
+  that rule. It is the one control channel above the shared world, and it may
+  only *subtract* or *reorder* — the derived gate still decides dormancy, so
+  enabling a rule cannot make it fire on reads it does not have. See
+  [Reflection and the control channel](plan-reflection.md).
 - `loop.install(fn, *args)` hands the loop to a domain's own installer, which
   registers its rules and seeds its entities.
 

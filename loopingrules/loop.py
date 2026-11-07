@@ -73,6 +73,14 @@ than the alternative -- an ordering that is only PARTIALLY defined, so
 that a rule newly given a shared type with another discovers the tie is
 suddenly broken by installation order it never chose.
 
+A rule may also be controlled at RUNTIME, without being edited: a controller
+attaches a `reflect.RuleControl` naming a rule by its hash, and `_tick_order`
+reads it at the top of each tick to skip or reprioritise that rule. That is
+the one control channel above the shared `World`; it is opt-in (no control
+exists until a rule writes one) and it may only SUBTRACT or REORDER, never
+manufacture a firing -- `analyze`'s gate still decides dormancy. See
+`loopingrules.reflect`.
+
 ## A rule fires by CHANGING something
 
 The loop cannot see inside a rule and does not try. It reads
@@ -176,6 +184,7 @@ from __future__ import annotations
 import collections
 
 from . import analyze
+from .reflect import RuleControl, rule_hash, rule_name
 
 Settled = collections.namedtuple("Settled", "ticks hot")
 
@@ -186,9 +195,13 @@ def _name_of(fn) -> str:
     Qualified because two domains installed at once will both have one
     called `hear`, and `/rules` listing it twice, or an error naming one
     of them, would send you to the wrong file.
+
+    Delegates to `reflect.rule_name`, which is the SAME name a `RuleCard`
+    carries and a `Remembered.rule` records -- one definition, so a
+    controller matching a card against the change log cannot drift from
+    registration.
     """
-    module = getattr(fn, "__module__", "") or ""
-    return "%s.%s" % (module.rsplit(".", 1)[-1], getattr(fn, "__name__", "rule"))
+    return rule_name(fn)
 
 
 class Loop:
@@ -261,6 +274,10 @@ class Loop:
         if reads:
             fn._loopingrules_watches = tuple(reads)
         fn._loopingrules_priority = priority
+        # The rule's identity for `reflect.RuleControl` -- a content hash, so
+        # a controller can name this rule without holding a reference to a
+        # function `World` could never store. See `loopingrules.reflect`.
+        fn._loopingrules_hash = rule_hash(fn)
         rule_name = name or _name_of(fn)
         if any(existing == rule_name for existing, _ in self.rules):
             raise ValueError(
@@ -296,9 +313,33 @@ class Loop:
         registered after the loop has already ticked once takes its
         declared priority into account immediately, not from whenever it
         happened to be appended.
+
+        `reflect.RuleControl` is read here, at the top of the tick: a rule
+        whose hash carries `enabled=False` is dropped from the order and
+        never called, and a control's `priority` overrides the rule's own.
+        A control written DURING this tick therefore takes effect on the
+        NEXT -- the same one-tick lag `World.changes` gives a rule reading
+        history, and it settles for the same reason: a controller that keeps
+        re-emitting an equal control moves nothing and the world stops.
         """
-        return sorted(range(len(self.rules)), key=lambda i: (
-            -getattr(self.rules[i][1], "_loopingrules_priority", 0), i))
+        controls = {}
+        for _entity, control in self.world.each(RuleControl):
+            controls[control.hash] = control
+        order = []
+        for i, (_name, fn) in enumerate(self.rules):
+            control = controls.get(getattr(fn, "_loopingrules_hash", None))
+            if control is not None and not control.enabled:
+                continue
+            order.append(i)
+
+        def key(i):
+            fn = self.rules[i][1]
+            control = controls.get(getattr(fn, "_loopingrules_hash", None))
+            if control is not None:
+                return (-control.priority, i)
+            return (-getattr(fn, "_loopingrules_priority", 0), i)
+
+        return sorted(order, key=key)
 
     def tick(self) -> "list[str]":
         """One pass over every rule, in tick order: call it, done. Returns

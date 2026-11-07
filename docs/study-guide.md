@@ -23,7 +23,10 @@ The target: you should be able to say, for this system, *"credit comes from
 XCS's accuracy/niche scheme; generation is constrained by Grammatical
 Evolution over the IR; abstractions are discovered by Stitch-style
 compression; diversity is kept by MAP-Elites."* Four sentences, and the wheel
-is not reinvented.
+is not reinvented. A fifth for self-representation: *"reflection comes from a
+one-level reflective tower (rules as data) over the blackboard, framed
+cognitively by Global Workspace Theory, with the line drawn at
+runtime-observe / offline-change."*
 
 ## The systems, in reading order
 
@@ -39,6 +42,21 @@ are the design brief.
 Read: Erman et al., *The Hearsay-II Speech-Understanding System* (1980);
 Lee Nii, *Blackboard Systems*, AI Magazine (1986, parts 1 and 2); Jagannathan
 et al. (eds.), *Blackboard Architectures and Applications* (1989).
+
+**Global Workspace Theory (GWT) is the cognitive reading of this shape.** A
+limited-capacity shared workspace that many specialist processes compete to
+broadcast into, with a mechanism that amplifies one coalition at a time, is
+what Baars proposed as the functional core of "conscious access" — and it *is*
+a blackboard with an attention scheduler. It matters here because it makes the
+control channel of `docs/plan-reflection.md` (D7) not a bolt-on: a workspace
+that selects what enters is the theory's own mechanism, and a *self-model* —
+representations over the workspace, including over the rules — is where the
+modern versions of GWT put the "self."
+
+Read: Baars, *A Cognitive Theory of Consciousness* (1988); Baars, *Global
+Workspace Theory of Consciousness* (2005); Dehaene and Changeux, *A neuronal
+model linking subjective reports and conscious perception* (2003), and the
+global neuronal workspace reviews.
 
 ### Genetic Programming / evolutionary computation — the base vocabulary
 
@@ -187,6 +205,29 @@ book (reflection + search); Minsky, *A Framework for Representing Knowledge*
 (1974); Davis, Shrobe and Szolovits, *What is a Knowledge Representation?*
 (1993).
 
+### Reflective towers and homoiconicity — rules that can read rules
+
+A language that can represent its own programs as data (homoiconic: Lisp,
+Prolog, Maude), plus a tower of interpreters each able to inspect and re-run
+the level below. "Reflection" is the mechanism by which a program inspects or
+modifies its own structure and behaviour; without homoiconicity a program is
+opaque to itself.
+
+Why here: it is the direct prior art for `docs/plan-reflection.md` (D7).
+`RuleCard`/`RuleControl` are a one-level reflective tower — rules reified as
+data a rule can read, and a control channel the loop enforces — and the
+discipline D7 holds hard (the system represents itself at RUNTIME and changes
+itself only OFFLINE) is exactly where a reflective tower's unbounded
+self-editing would otherwise put termination and trust at risk. GWT supplies
+the other half: the workspace whose contents the tower reflects over.
+
+Read: Smith, *Procedural Reflection in Programming Languages* (3-Lisp; MIT
+TR-272, 1982); Friedman and Wand, *Reification: Reflection without
+Metaphysics* (1984); the reflection chapter of Clavel et al., *All About
+Maude* (2007); Abelson and Sussman, *SICP*, the metacircular evaluator and
+`eval`/`apply`. For the "self" half: Minsky, *Society of Mind* (1986) and
+*The Emotion Machine* (2006).
+
 ### Hybrid learning: stated rules + examples + feedback
 
 The classical three engines of knowledge, combined rather than chosen between:
@@ -219,7 +260,9 @@ DeepProbLog, Scallop; Letham et al., Bayesian Rule Lists (2015).
 - **Week 5**: Grammatical Evolution and STGP; make the IR the grammar.
 - **Week 6**: library learning (Stitch/LILO, then DreamCoder) and MAP-Elites
   (pyribs).
-- **As needed**: ILP (Popper) and LLM-guided evolution (OpenEvolve).
+- **As needed**: ILP (Popper); LLM-guided evolution (OpenEvolve); and, for the
+  reflection/control direction (`plan-reflection.md`, D7), reflective towers
+  (Smith's 3-Lisp) with Global Workspace Theory (Baars) as the cognitive frame.
 - **Then, if the agent must *reason* and *learn from few shots*:** modeling
   (`modeling.md` — reified actions, GOAP/PDDL/Golog) and hybrid learning
   (CEGIS: stated rules + examples + feedback).

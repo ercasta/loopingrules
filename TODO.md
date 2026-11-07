@@ -225,3 +225,29 @@ core"), named so they are not lost rather than scheduled.
   `cdf98d6` for being untested prose. The unresolved shape questions
   (monotone vs revisable promotion, what a decision may read, cycles,
   overlapping bridges) are in `docs/plan-islands.md`'s own last section.
+- **The reflection control channel is a SECOND channel, and its engine read
+  is a core change.** (`docs/plan-reflection.md`, D7.) `loopingrules.reflect`
+  (`RuleCard`/`RuleControl`/`reify`/`rule_hash`) and the `_tick_order` read
+  ship, pinned by `r0`/`r1`. Open: (1) `rule_hash` hashes SOURCE, so
+  same-source closures collide -- the target is a hash of the IR datum plus
+  the component schema and operator version (a per-rule `Frozen.version`);
+  (2) whether the scheduler read moves out of `loop.py` into its own module;
+  (3) whether a `RuleCard` is one component per rule or a single declared
+  catalog the loop owns; (4) multi-controller interaction and multi-knob
+  coupling, unprobed; (5) a production controller needs monotonicity,
+  hysteresis or a rate limit (D4's list) -- D7 adds none, it only pins that
+  an oscillator stays `hot`.
+- **IR-native is decided but the IR has not moved.** (`docs/plan-reflection.md`,
+  D7; locked decision 13.) Domains still author Python, and the IR stays in
+  `loopingrules_forge`. `r1` proves IR analysis is TOTAL and agrees with
+  `analyze` 12/12, with the one verbatim helper (`_status_text`) forced to
+  DECLARE its reads. Open: move the IR into a frozen engine core, re-target
+  `analyze` onto it, and keep `analyze`-on-Python as an audit
+  (derived-beats-declared across the two representations).
+- **`loopingrules/circuits.py` is gone from the tree (deleted in `5a11bef`
+  "cleanup"), but `README.md` and this file still describe it as shipped
+  ("circuits.py promoted to core").** That is stale documentation, not a
+  claim about the code, and it is named rather than silently fixed here.
+  D7 revives the *concept* -- a closed, total operational semantics -- rather
+  than restoring the file; whoever folds D7 in should decide whether the IR
+  core is that revival and retire the stale references in the same change.

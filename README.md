@@ -23,6 +23,9 @@ loopingrules/
   analyze.py      what a rule reads and writes, derived from its own AST
   memory.py       short-term memory: remember/forget promoting changes out
                     of the transient log into durable Remembered components
+  reflect.py      reflection: RuleCard (a rule's own reads/writes, reified),
+                    RuleControl (the one control channel the loop reads),
+                    reify, rule_hash
 loopingrules_calibration/
   kit.py          Knob, Scenario, Trace, replay, search -- the tuning instrument
   report.py       calibrate: held-out scores, plateaus, sensitivity
@@ -31,6 +34,10 @@ loopingrules_calibration/
 loopingrules_patterns/
   judge.py        the threshold judge: Risk/RiskTolerance -> TooRisky
   memory.py       the declared tunable surface for loopingrules.memory
+loopingrules_reflect/
+  r0.py           reflection over memory + rule-cards: a rule that reads
+                    both and disables another, without editing it
+  r1.py           the forge IR analyzed without the Python AST, totally
 examples/
   cards.py, shopping.py, market.py, quorum.py, trip.py   worked domains
   decide.py                                             a domain-oblivious bridge
@@ -45,6 +52,8 @@ tests/
   test_memory.py       short-term memory: promotion, retention, the surface
   test_linter.py       the declared tunable surface, and the linter over it
   test_patterns_judge.py  the shipped judge pattern, and its declared knob
+  test_reflect_r0.py   reflection: the control channel over memory + cards
+  test_reflect_r1.py   the IR analyzed without the Python AST
   test_examples_*.py   each example domain, end to end
 PRINCIPLES.md           what keeps rules run to a fixpoint over a shared
                           World producing the wanted kind of emergence,
@@ -153,6 +162,20 @@ above, "no vocabulary above entities and components either") — see
 History, "A domain-oblivious judge."
 
 ## History
+
+**`loopingrules.reflect` + `loopingrules_reflect`: rules as data, and the one control channel that may move them — hashes, reification, and IR analysis proven total, 2026-11-07.** Two things the substrate could not do, and both come from the same missing move. First, a rule could not be CONTROLLED without being edited: the stigmergic way to "activate" a building block is to attach a component its rule reads, which only works if the rule was authored reading that component — so a controller would have to refactor every rule it controls. Second, one rule could not REASON over another: rules are functions, and `World` stores data, never callables (`world._lower` refuses a Python object), so "rules over rules" was impossible in principle. The move that fixes both is the one `lock`-to-`where` requires: put rules into the blackboard as data, and let the loop — which already knows every rule — be the reader.
+
+`reflect.reify(loop)` deposits one `RuleCard` per registered rule: its content `hash`, its `name`, and its `reads`/`writes` (component class names), derived by `analyze`, so a card cannot drift from the rule it describes. `reflect.RuleControl(hash, enabled, priority)` is the shape the LOOP reads, in `_tick_order`, at the top of each tick — `enabled=False` drops the rule from the order and it is never called; `priority` moves it. A controller is then just a rule (`priority>0`) that reads `Remembered` (what each rule HAS DONE, `loopingrules.memory`) and `RuleCard` (what each rule IS) and writes `RuleControl` — the D4 move with the schedule as the knob.
+
+This is a **second channel, and it is named as one.** `PRINCIPLES.md`'s "the only channel between them is what gets deposited into the shared `World`" still holds in the load-bearing sense — the controller deposits a component and the loop is one oblivious reader — but the substrate now has a control shell it did not have. Two disciplines keep it sound and are pinned rather than asserted: `RuleControl` may only SUBTRACT or REORDER (`analyze`'s derived gate still decides dormancy, so an enabled rule with a closed gate stays skipped — no control can manufacture a firing), and a control written during a tick lands on the NEXT one, the same one-tick lag `world.changes` already gives a rule reading history. It settles for the same reason everything else does: a controller that re-emits an EQUAL control moves nothing.
+
+The second half is the ground truth. `plan-forge.md` chose "the Python rule is the backend" and M0 concluded "the IR IS a Python-subset AST"; this moves the ground truth to the IR, for the reason the plan under-sold: `analyze` on Python is a PARTIAL function (`Opaque`, because Python is open), while analysis over a CLOSED IR is a TOTAL one — and totality is exactly what makes an EA safe to admit, since a frozen operator set gives every mutation a complete static account of what it reads and writes. Homoiconicity's payoff, stated as engineering and not more, is that reflection stops being a bespoke introspection API and becomes the ordinary operator machinery: the same move that lets a controller reference a rule lets the forge translate one and `modeling.md`'s "the model is the world's rules" become literal — it is the reason XCS works. What it is NOT is consciousness; it is a self-model and a metacognitive loop (blackboard architectures are the computational analogue of Global Workspace Theory; "rules over rules" is reflective towers — Smith's 3-Lisp, Maude's rewriting-logic reflection). The line held hard: **the system represents itself at runtime and changes itself only offline** — a controller selects among a frozen rule set and never rewrites one (locked decision 8). The self-reference hazard is where this bites, so it is pinned rather than smoothed: a controller whose own action flips the evidence it acts on stays `hot`.
+
+The two probes are `loopingrules_reflect/r0.py` (runtime) and `r1.py` (static). R0: `bump` alone never settles (`hot` after the budget); the same function object, with a controller reading memory + rule-cards, settles in six ticks, and the disabled rule's own source contains no `RuleControl` — control verified as world data, not argued. R1: `reads`/`writes`/`negated_reads`/`destroys` over the forge IR equal `analyze` on the lowered Python for all twelve `cards` rules — the structural sibling of M0's behavioural claim. One finding, and it is the concession ledger showing up in analysis: `hear_status`'s reads live in the verbatim helper `_status_text` (raw Python, M0's lexing/formatting escape), so they cannot come from the IR alone; the walker therefore REQUIRES a verbatim helper to DECLARE its reads and REFUSES otherwise — a closed semantics makes analysis total, it does not make the edge disappear, only forced and named.
+
+Deliberately left alone, named rather than hidden. The engine grew: `_tick_order` now reads a component, and `PRINCIPLES.md` calls the engine frozen; the change is opt-in (no control exists until a rule writes one) and the probes plus the gates are the mitigation, not the prose. `rule_hash` hashes SOURCE, so same-source closures collide — the intended identity is a hash of the IR datum plus the component schema and operator version (a per-rule `Frozen.version`), not built. The IR is NOT moved into the engine; `analyze`-on-Python is not yet demoted to an audit. A production controller needs monotonicity, hysteresis or a rate limit (D4's own list) — D7 adds none. And one piece of stale documentation surfaced and is named, not silently fixed: `loopingrules/circuits.py` was deleted in `5a11bef` ("cleanup"), yet `README.md` and `TODO.md` still describe it as shipped; D7 revives the concept (a closed, total operational semantics), not the file.
+
+Verified: `359 -> 372 passing`. The addition is `tests/test_reflect_r0.py` (9 tests: the controller settles a hot loop, the controlled rule is never edited, reify idempotence and coverage, a card matching `analyze`, a disabled rule never called, enabling past a closed gate doing nothing, an unknown hash inert, an oscillator staying hot, and reification over real `cards`) and `tests/test_reflect_r1.py` (4 tests: 12/12 agreement, a verbatim helper required to declare its reads, totality over the whole IR, and negated reads surviving). One regression caught and fixed before it stuck: `rule_hash` first called `inspect.getsource` on every registration, which undid `analyze`'s memoisation and took the suite from ~17s to ~53s; it is now memoised by function object, the same way and for the same reason `analyze` is.
 
 **`loopingrules.memory`: short-term memory -- the promotion half `docs/plan-memory.md` left open, 2026-10-30.** The change log (`World.changes`, Phase 2) records what HAPPENED but is transient: never saved, bounded only by `Loop(capacity=...)`, and needing a full-window scan every tick. D1's own *"Promotion: how anything becomes durable"* named the missing half -- a rule that reads the log and attaches ordinary durable components, so "we already tried this" survives the marker that recorded it -- and closed with *"A worked promotion example is still to come."* This is that half, in the engine rather than an example, because what it reads (`World.changes`) is an engine primitive and the engine imports nothing above it.
 

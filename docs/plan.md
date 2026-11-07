@@ -2,8 +2,9 @@
 
 Status: Phases 1-2 built, and Phase 3's author surface and linter with them;
 the pattern library and the rest are design, apart from the reuse layer's
-first spike (D6). This directory holds the roadmap and six design docs
-(D1-D6, the sixth being the reuse layer in D6), plus `modeling.md` for the
+first spike (D6) and reflection's two probes (D7). This directory holds the
+roadmap and seven design docs (D1-D7 — the sixth the reuse layer, the
+seventh reflection and the control channel), plus `modeling.md` for the
 modeling half.
 Nothing beyond that is a commitment
 to code; each doc ends with the open questions it does *not* settle, in the
@@ -40,6 +41,16 @@ domains, composes across two islands, and catches the fabricating-candidates
 antipattern. **Nothing is folded in yet** -- `TODO.md` records that debt. The
 open shape questions (monotone vs revisable promotion, what a decision may
 read, cycles, overlapping bridges) are in `docs/plan-islands.md`.
+
+**D7 status (probes built):** the reflection direction has its engine
+primitive (`loopingrules.reflect`: `RuleCard`/`RuleControl`/`reify`/
+`rule_hash`, and the `_tick_order` read that makes a control real) and two
+probes, `loopingrules_reflect/{r0,r1}.py` (pinned by
+`tests/test_reflect_r0.py`/`test_reflect_r1.py`). R0 shows a rule over memory
++ rule-cards tames a hot loop with the controlled rule unchanged, and an
+oscillating controller stays hot; R1 shows the forge IR is analyzable without
+the Python AST, totally, agreeing with `analyze` 12/12. **Nothing is folded
+in** and the IR is not moved into the engine. See `docs/plan-reflection.md`.
 
 **Modeling status:** design only (`docs/modeling.md`). The model is the
 executable world plus *reified actions* -- schema + effect deltas + executor --
@@ -84,6 +95,8 @@ The product thesis, stated once and used to judge everything below:
 | **Memory / change log** | **Built (Phase 2)**: `Change` + `World.changes`/`recent`/`clear_changes`, transient and never saved, `Loop(capacity=...)`-bounded, with `Loop.tick` provenance and `analyze` gating on `changes(changed=...)`. |
 | **Tools / external world** | Missing. Only the channel seam exists; no tape/cache, no effect fencing. |
 | **Reuse layer** | **Spike built (D6)**: `loopingrules_islands` (`items`/`funds`, probe `i0`) — settles, reuses across two domains, composes across two islands, catches the fabricating antipattern; not folded in yet. |
+| **Reflection / control channel** | **Probe built (D7)**: `loopingrules.reflect` + `r0`/`r1` — a rule over memory + rule-cards changes the schedule with the controlled rules unchanged, and an oscillator is caught; IR analysis is total. Not folded in. |
+| **IR-native rules** | **Probe built (D7)**: `r1` proves the forge IR is analyzable without the Python AST, agreeing with `analyze` 12/12; the IR is not yet an engine core and `analyze`-on-Python is not yet demoted to an audit. |
 | **Modeling** | Missing. No reified actions, no action algebra, no planner; design in `docs/modeling.md`. |
 | **Hybrid learning** | Missing. No three-source loop (rules/examples/feedback), no EA/ILP induction; prior art in `docs/study-guide.md`. |
 
@@ -136,6 +149,14 @@ learning direction):
 12. **One grammar, many generators.** Structure may be proposed by an LM, an
     evolutionary search, or a human; it is verified by the gates and frozen
     before tuning, so the generator is swappable.
+13. **Rules are data, and the loop reads one control channel** (D7). A rule
+    is identified by a content hash and reified as a `RuleCard`; a
+    `RuleControl` component — read by the loop at the top of each tick — may
+    DISABLE or REPRIORITISE a rule without editing it, and may only subtract
+    or reorder (the derived gate still decides dormancy). Structure is
+    IR-native: a closed semantics whose analysis is TOTAL, which is what makes
+    an EA safe to admit. The runtime selects among a FROZEN rule set; it never
+    rewrites one.
 
 ## Principles carried forward (not up for re-litigation here)
 
@@ -171,7 +192,8 @@ Order is dependency-driven. Each phase is independently shippable and testable.
 | 8 | **The forge**: corpus → catalog, verified and frozen, with NL-in/NL-out at the edges; ordered risk-first so the structural half (no LM) is proven before translation is attempted | 1, 3 | D5 |
 | 9 | **Reuse layer (D6)**: islands/bridges/conjunction promoted and *folded in*; the spike's debt paid; the cross-island read graph that catches spooky coupling | 3 | D6 |
 | 10 | **Modeling**: reified actions (schema + deltas + executor), an action algebra, and a planner over schemas against the forked world | 9 | `modeling.md` |
-| 11 | **Hybrid learning**: the three-source loop (stated rules / examples / feedback), with structure, values and refinement kept on separate artifacts | 7, 10 | `study-guide.md` (D7 pending) |
+| 11 | **Hybrid learning**: the three-source loop (stated rules / examples / feedback), with structure, values and refinement kept on separate artifacts | 7, 10 | `study-guide.md` (D8 pending) |
+| 12 | **Reflection + IR-native**: rule hash and `RuleCard` reification folded in, the control channel (`RuleControl` read by the loop), and the IR moved into a frozen engine core with `analyze` re-targeted onto it and `analyze`-on-Python kept as an audit | 6 | D7 |
 
 Phase 1 is the first build (the choice made in discussion). Phases 2 and 3 are
 the ones that make the workflow real; 4-7 are the payoff; 8 is the structure
@@ -215,6 +237,10 @@ rests on.
 - Whether the controller is authored as rules (in-substrate) or as an external
   service reading the trace (D4).
 - Whether `circuits`-style rules-as-data is revived, and if so when (Phase 6).
+- Whether the scheduler read lives in the loop core or a `scheduler` module,
+  and whether a `RuleCard` is one component per rule or a single catalog (D7).
+- Whether the IR becomes an engine core with `analyze` re-targeted onto it,
+  and what the rule hash is over the IR datum rather than the source (D7).
 - Whether an action schema is the *source* the executor realizes, or a
   *derived view* checked against it; and whether the planner is in-substrate or
   an external search over the forked world (`modeling.md`).

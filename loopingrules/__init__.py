@@ -25,6 +25,11 @@ it, and one thread to run a session on.
   `MemoryPolicy` -- so "we already tried this" survives the marker that
   recorded it. See `docs/plan-memory.md`; the declared tunable surface
   lives in `loopingrules_patterns.memory`.
+* `loopingrules.reflect` -- REFLECTION: `reify` deposits a `RuleCard` per
+  rule (its reads/writes, derived by `analyze`), so one rule can read
+  another; `RuleControl` is the engine's one CONTROL CHANNEL, a component
+  the loop reads to disable or reprioritise a rule WITHOUT editing it. See
+  `docs/plan-reflection.md`.
 * `loopingrules.engine` -- ONE thread that runs the loop, and the channels
   attached to it. `Said(name, "...")` in from whichever channel it
   arrived on; `Reply(user, "...")` out to every channel there is.
@@ -57,7 +62,7 @@ request removed," for the removal itself.
 
 from __future__ import annotations
 
-from . import engine, loop, memory, save, share, world
+from . import engine, loop, memory, reflect, save, share, world
 from .engine import Engine
 from .loop import Loop
 from .world import Change, World
@@ -65,4 +70,4 @@ from .world import Change, World
 __version__ = "0.1.0"
 
 __all__ = ["Change", "Engine", "Loop", "World", "engine", "loop", "memory",
-          "save", "share", "world", "__version__"]
+          "reflect", "save", "share", "world", "__version__"]
