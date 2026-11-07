@@ -274,3 +274,12 @@ core"), named so they are not lost rather than scheduled.
   not the two gates (shape, behaviour) the toy genome can trip; (4) the hash
   is not schema-aware (a per-rule projection of `m2.Frozen.version`), and
   hand-written Python rules have no IR datum to hash.
+- **Next, when resumed (recommended, not started): make the generator MEAN
+  something.** Emit evolved constants as `Knob`s and fit them with `search`/
+  `calibrate` -- the repo's structure-from-generation / values-from-search
+  split -- on a non-trivial control domain (e.g. a controller computing a
+  `cut` from a `Regime` signal, which Phase 4's `examples/drift.py` already
+  frames), then give GP a controller PATTERN LIBRARY (`docs/plan-reflection.
+  md`, D7: "select from a set of controller patterns"). Both answer the
+  probe's open question -- does GP scale, or does it need the patterns? The
+  IR fold stays deferred until IR-native runtime is actually needed.

@@ -64,12 +64,15 @@ built. See `docs/plan-adaptation.md`/`docs/plan-dataset.md`.
 **Generator status (walking skeleton):** `loopingrules_forge.evolve` — GP over
 the IR: `ir_hash` (identity over the DATUM, not the source), `random_expr`/
 `mutate`/`crossover` operators, a controller-pattern genome with a condition
-HOLE, the
-Phase-4 checks as fitness, and a gate (analyze-clean and settles). On a toy
+HOLE, the Phase-4 checks as fitness, and a gate (analyze-clean and settles). On a toy
 control domain (two runaway rules to disable) it finds a controller in five
 generations, where a do-nothing controller scores `0.0` and the known-good
 condition `1.0`. It proves the PIPELINE, not that GP scales. See
-`docs/plan-forge.md`.
+`docs/plan-forge.md`. **Next (not started):** make the generator *mean*
+something — emit evolved constants as `Knob`s and fit them with `search`/
+`calibrate` (structure-from-generation / values-from-search) on a non-trivial
+control domain, then a controller PATTERN LIBRARY (`docs/plan-reflection.md`,
+D7). The IR fold stays deferred until IR-native runtime is actually needed.
 
 **Modeling status:** design only (`docs/modeling.md`). The model is the
 executable world plus *reified actions* -- schema + effect deltas + executor --
