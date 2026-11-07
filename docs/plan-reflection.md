@@ -161,11 +161,14 @@ named."
 
 ## What this does not settle
 
-- **The hash.** `rule_hash` hashes the rule's SOURCE, so identical-source
+- **The hash.** `reflect.rule_hash` hashes a rule's SOURCE, so same-source
   rules share a hash (intended for a DSL, a named hazard for same-source
-  closures). The target is a hash of the IR datum + component schema +
-  operator version — a per-rule projection of `m2.Frozen.version` — not
-  built.
+  closures). `reflect.identity` now prefers a hash a rule already carries, and
+  `loopingrules_forge.evolve.ir_hash` supplies one over the IR DATUM (plus an
+  operator version) for a GENERATED rule — so a generated rule is named by its
+  structure, not its source. Still not built: a schema-aware hash over the
+  component contract (a per-rule projection of `m2.Frozen.version`), and an IR
+  datum for hand-written Python rules, which have none.
 - **Where the IR lives.** IR-native means the IR should become a frozen
   engine core (the deleted `circuits.py` precedent), with `analyze`
   re-targeted onto it and `analyze`-on-Python kept as an audit. D7 does not

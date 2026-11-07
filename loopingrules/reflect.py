@@ -108,6 +108,15 @@ def rule_hash(fn) -> str:
     return digest
 
 
+def identity(fn) -> str:
+    """A rule's identity: a hash it already carries (a generator stamped an
+    IR-datum hash on it -- see `loopingrules_forge.evolve`), else
+    `rule_hash(fn)` from its source. `Loop.rule` and `card_for` both use this,
+    so a generated rule is identified by its STRUCTURE, a hand-written one by
+    its source, consistently."""
+    return getattr(fn, "_loopingrules_hash", None) or rule_hash(fn)
+
+
 @dataclasses.dataclass(frozen=True)
 class RuleControl:
     """The loop's scheduling input, keyed by a rule's `hash`.
@@ -150,10 +159,10 @@ def card_for(fn) -> RuleCard:
     try:
         analysis = analyze.analyze(fn)
     except analyze.Opaque:
-        return RuleCard(rule_hash(fn), rule_name(fn), (), (),
+        return RuleCard(identity(fn), rule_name(fn), (), (),
                         False, True, getattr(fn, "_loopingrules_priority", 0))
     return RuleCard(
-        rule_hash(fn), rule_name(fn),
+        identity(fn), rule_name(fn),
         tuple(sorted(k.__name__ for k in analysis.reads)),
         tuple(sorted(k.__name__ for k in analysis.writes)),
         analysis.destroys, False, getattr(fn, "_loopingrules_priority", 0))

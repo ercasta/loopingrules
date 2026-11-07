@@ -61,13 +61,24 @@ stationary world settles in one move. The SAME `Check` objects wire the
 offline scorer and the online controller. The fast timescale (Phase 7) is not
 built. See `docs/plan-adaptation.md`/`docs/plan-dataset.md`.
 
+**Generator status (walking skeleton):** `loopingrules_forge.evolve` — GP over
+the IR: `ir_hash` (identity over the DATUM, not the source), `random_expr`/
+`mutate`/`crossover` operators, a controller-pattern genome with a condition
+HOLE, the
+Phase-4 checks as fitness, and a gate (analyze-clean and settles). On a toy
+control domain (two runaway rules to disable) it finds a controller in five
+generations, where a do-nothing controller scores `0.0` and the known-good
+condition `1.0`. It proves the PIPELINE, not that GP scales. See
+`docs/plan-forge.md`.
+
 **Modeling status:** design only (`docs/modeling.md`). The model is the
 executable world plus *reified actions* -- schema + effect deltas + executor --
 reasoned over by a planner; **not** an ontology, because OWL/RDF cannot carry
 behavior. `circuits.Call`/`ToolRequest` is already two-thirds of the triad.
 
-**Learning status:** design only (prior art in `docs/study-guide.md`). Nothing
-of the hybrid loop is built: no EA/ILP induction, no three-source adjudication.
+**Learning status:** the EA is a walking skeleton (`loopingrules_forge.
+evolve`); otherwise design only (prior art in `docs/study-guide.md`). No ILP
+induction, no three-source adjudication.
 
 ## Goal
 
@@ -103,6 +114,7 @@ The product thesis, stated once and used to judge everything below:
 | **Dataset kit** | **Partial (Phase 4)**: the checks vocabulary is built (`checks`: `Check`/`total` + generic terms); the format, capture channel, labels/rankings and train/eval split are still missing. |
 | **Memory / change log** | **Built (Phase 2)**: `Change` + `World.changes`/`recent`/`clear_changes`, transient and never saved, `Loop(capacity=...)`-bounded, with `Loop.tick` provenance and `analyze` gating on `changes(changed=...)`. |
 | **Checks as control (slow adaptation)** | **Built (Phase 4)**: `loopingrules_calibration.checks` (the pure `Check`/`total` vocabulary) + `adapt` (the between-episode `Adapter`) + Experiment 8 (`examples/drift.py`); a frozen world degrades as the target drifts and the adapter tracks it, using the SAME checks. Fast timescale (Phase 7) not built. |
+| **Structure generator (EA)** | **Walking skeleton (D5)**: `loopingrules_forge.evolve` — GP over the IR finds a controller (gated, hashed over the IR datum) on a toy control domain; scaling to real controllers is open. |
 | **Tools / external world** | Missing. Only the channel seam exists; no tape/cache, no effect fencing. |
 | **Reuse layer** | **Spike built (D6)**: `loopingrules_islands` (`items`/`funds`, probe `i0`) — settles, reuses across two domains, composes across two islands, catches the fabricating antipattern; not folded in yet. |
 | **Reflection / control channel** | **Probe built (D7)**: `loopingrules.reflect` + `r0`/`r1` — a rule over memory + rule-cards changes the schedule with the controlled rules unchanged, and an oscillator is caught; IR analysis is total. Not folded in. |
@@ -199,7 +211,7 @@ Order is dependency-driven. Each phase is independently shippable and testable.
 | 5 | **Tools / external world**: tool-channel stdlib, environment tape/cache, effect fencing, calls-to-competence axis | 2, 3 | (separate doc) |
 | 6 | **Descriptors** (optional): rules return change-lists; atomicity, validation, rules-as-data | 2 | (separate doc) |
 | 7 | **Fast-timescale adaptation + end-to-end exemplar**: in-run controller rules, plus one non-toy agentic domain calibrated end to end and a written author walkthrough | 4, 5 | D4 |
-| 8 | **The forge**: corpus → catalog, verified and frozen, with NL-in/NL-out at the edges; ordered risk-first so the structural half (no LM) is proven before translation is attempted | 1, 3 | D5 |
+| 8 | **The forge**: corpus → catalog — **partial**: M0-M2 (IR/gates/freeze) and the EA generator (`evolve`) built; the corpus and LM not | 1, 3 | D5 |
 | 9 | **Reuse layer (D6)**: islands/bridges/conjunction promoted and *folded in*; the spike's debt paid; the cross-island read graph that catches spooky coupling | 3 | D6 |
 | 10 | **Modeling**: reified actions (schema + deltas + executor), an action algebra, and a planner over schemas against the forked world | 9 | `modeling.md` |
 | 11 | **Hybrid learning**: the three-source loop (stated rules / examples / feedback), with structure, values and refinement kept on separate artifacts | 7, 10 | `study-guide.md` (D8 pending) |

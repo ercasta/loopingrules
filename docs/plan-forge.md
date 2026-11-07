@@ -4,7 +4,11 @@ Turn a natural-language **corpus** into **components and rules** — verified,
 frozen before use — behind a single **catalog** that also serves NL-in /
 NL-out at run time. This is the structure-authoring layer the roadmap
 deferred ("the closed catalog was built *for* a future search but none is
-built yet"). It is **design only; nothing is built.** The package name
+built yet"). It is **design only apart from the probes**: M0-M2 are built (IR
+expressiveness, the gates, freeze), and `loopingrules_forge.evolve` is a
+first, non-LM **generator** for the IR — GP over a controller's condition,
+gated and hashed — so "one grammar, many generators" (locked decision 12) has
+its second generator as a walking skeleton. The package name
 `loopingrules_forge` is provisional.
 
 It rests on a scope change to the repo's own rules; read
@@ -362,6 +366,25 @@ structural: open-world vs closed-world; monotone description logic vs
 global triples vs entity-attached components. Keep the catalog in a
 self-owned plain format (JSON + schema) and treat any ontology formalism as an
 **export target or checker**, never the source of truth.
+
+## A second generator: GP over the IR (built, `loopingrules_forge.evolve`)
+
+Locked decision 12 says structure may be proposed by an LM, an evolutionary
+search, or a human, and the generator is swappable. `evolve.py` is the
+evolutionary one, as a walking skeleton on purpose (the M0-M2 posture):
+`ir_hash` names an IR rule by its DATUM -- not its source, so a re-render
+under another module name is the same rule, which is the identity a
+`RuleControl` keys on; GP operators (`random_expr`/`mutate`/`crossover`)
+search a controller PATTERN's condition; `gate` is the disposal (analyze-clean
+and settles); the fitness is the Phase-4 checks (`loopingrules_calibration.
+checks`). On a toy domain -- two runaway rules a controller must disable by
+reading `RuleCard` and writing `RuleControl` -- GP finds `('A' in
+card.writes) or ('B' in card.writes)` in five generations, where a do-nothing
+controller scores `0.0` and the known-good condition scores `1.0`. It proves
+the PIPELINE (genome -> gate -> fitness -> freeze -> hash), not that GP scales
+to real controllers; that is the open question, along with constants-as-knobs
+(the repo's structure-from-generation / values-from-search split) and the full
+M1 gate suite.
 
 ## What this does not settle
 

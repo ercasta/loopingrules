@@ -262,3 +262,15 @@ core"), named so they are not lost rather than scheduled.
   first-class and `checks` is scalar-only about; (4) whether a check may
   itself be tuned (D2's own open question); (5) multi-knob coupling in
   `adapt` (a re-`search` moves them together, no policy).
+- **The structure generator is a WALKING SKELETON.** (`loopingrules_forge.
+  evolve`; `docs/plan-forge.md`, D5; locked decision 12.) GP over the IR finds
+  a controller on a toy domain, gated (analyze-clean + settles) and hashed over
+  its datum (`ir_hash`, preferred by `reflect.identity`). Open: (1) does GP
+  scale to real controllers, or does it need the controller PATTERN LIBRARY
+  D7 sketches -- a hand-supplied pattern and a six-atom condition are not
+  authoring from nothing; (2) constants are literals, where the repo's split
+  is structure-from-generation / values-from-search, so a real run emits a
+  knob and calibrates it; (3) the full six-gate M1 suite is the real disposal,
+  not the two gates (shape, behaviour) the toy genome can trip; (4) the hash
+  is not schema-aware (a per-rule projection of `m2.Frozen.version`), and
+  hand-written Python rules have no IR datum to hash.

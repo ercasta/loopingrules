@@ -184,7 +184,7 @@ from __future__ import annotations
 import collections
 
 from . import analyze
-from .reflect import RuleControl, rule_hash, rule_name
+from .reflect import RuleControl, identity, rule_name
 
 Settled = collections.namedtuple("Settled", "ticks hot")
 
@@ -276,8 +276,11 @@ class Loop:
         fn._loopingrules_priority = priority
         # The rule's identity for `reflect.RuleControl` -- a content hash, so
         # a controller can name this rule without holding a reference to a
-        # function `World` could never store. See `loopingrules.reflect`.
-        fn._loopingrules_hash = rule_hash(fn)
+        # function `World` could never store. A generator may have stamped an
+        # IR-datum hash on `fn` already; `identity` prefers it over the source
+        # hash, so a generated rule is named by its structure. See
+        # `loopingrules.reflect` and `loopingrules_forge.evolve`.
+        fn._loopingrules_hash = identity(fn)
         rule_name = name or _name_of(fn)
         if any(existing == rule_name for existing, _ in self.rules):
             raise ValueError(
