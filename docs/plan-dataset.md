@@ -5,6 +5,14 @@ them is not.** This doc defines what a training example is, where it comes
 from, how it is scored, and — importantly — the seam that lets the same checks
 later drive online adaptation (D4).
 
+**Status (Phase 4): the checks vocabulary is built.** `loopingrules_calibration.
+checks` implements the pure vocabulary below — `Check(name, fn, weight)`,
+`total(*checks)`, and generic terms (`settles`, `ticks_at_most`, `says`,
+`world_has`, `invariant`, `as_check`) — and the SAME `Check` objects feed both
+the offline scorer and the slow-timescale adapter (`docs/plan-adaptation.md`).
+**Not built:** the dataset artifact, the capture channel, preference pairs, and
+tuned checks.
+
 ## The two poles
 
 An author has two ways to say "this behaviour is wanted / unwanted":

@@ -291,12 +291,21 @@ the argument.**
   no caller mutates the returned `Analysis`). Rule registration repeated
   thousands of times by a replay harness parses each rule once — the
   ablation suite dropped from ~84s to ~5s, the whole suite to ~10s.
+- **Phase 4 (checks as control, slow timescale) — `loopingrules_calibration.
+  checks` + `adapt`, `examples/drift.py`.** The pure `Check`/`total`
+  vocabulary (D2) and the between-episode `Adapter`/`adapt` (D4), measured by
+  Experiment 8: a frozen world's agreement falls as a hidden target ramps
+  (`0.74` tail, cut stuck at `0.3`), the adapter tracks it (cut `0.7`,
+  `~1.0`), a stationary world settles in one move, and a rate limit bounds
+  the adjustments — the SAME `Check` objects wire the offline scorer and the
+  online controller (`docs/plan-adaptation.md`, `docs/plan-dataset.md`).
 - Tests: `test_calibration.py`, `test_examples_bridge.py`,
   `test_examples_market.py`, `test_examples_quorum.py`,
   `test_examples_ablation.py`, `test_examples_acquisition.py`,
   `test_examples_adapters.py`, `test_examples_hierarchy.py`,
   `test_examples_party.py`, `test_examples_planning.py`,
-  `test_examples_branching.py` — `271 passing`.
+  `test_examples_branching.py` — `271 passing`. (Later: `checks`/`adapt` add
+  `test_calibration_checks.py`/`test_examples_drift.py`; the suite is `386`.)
 
 ### What Experiment 1 found
 

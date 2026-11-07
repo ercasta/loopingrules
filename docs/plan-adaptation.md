@@ -5,6 +5,21 @@ structure; calibration handles drift.** Offline tuning answers "is this
 configured well for the world I sampled?"; online adaptation keeps it
 configured as the world moves. Locked: design for it now, build offline first.
 
+**Status: the slow timescale (Phase 4) is built; the fast one (Phase 7) is
+not.** `loopingrules_calibration.checks` names a pure, composable `Check` and
+`total(...)` builds the scorer -- one vocabulary, wired twice (see below).
+`loopingrules_calibration.adapt` is the between-episode adapter: `Adapter`
+carries the moving `Knob`s, the shared `Check`s, and the D4 guards
+(`margin` hysteresis, `every` rate limit, the knobs' own bounds), and
+`adapt(episodes, install, adapter, start=...)` re-`search`es a window of the
+PAST and adopts past the margin. `examples/drift.py` (Experiment 8) measures
+it: a frozen world's agreement falls as the hidden target ramps
+(`0.74` -> tail, cut stuck at `0.3`), the adapter tracks it (cut `0.7`,
+agreement `~1.0`), a stationary world settles after ONE move, and a rate
+limit bounds the adjustments. The fast timescale -- a rule writing a knob or a
+`RuleControl` mid-run -- is not built; `loopingrules.reflect` (D7) now
+supplies the channel it will need.
+
 ## Why it fits the architecture
 
 Knobs are **singleton components the rules read** (`docs/tuning.md`'s design
@@ -44,6 +59,15 @@ incremental re-calibration: literally `search` applied to the latest trace,
 keeping the inner world deterministic given the knobs. Safest, closest to the
 offline kit already built, and it already delivers "the system keeps itself
 configured."
+
+**Built.** `loopingrules_calibration.adapt`: the `Adapter` (moving knobs +
+shared checks + `margin`/`every`/`window`) and `adapt(...)`, which re-`search`es
+a window of past episodes before each one and adopts only past the margin.
+The `Knob.scope="runtime"` set is what a controller may move
+(`surface.runtime_knobs`), so the surface is still auditable (D3). Experiment
+8 (`examples/drift.py`) is the measurement, and the honest caveats are its
+own: a controlled ramp, deterministic, single seed, no multi-knob coupling,
+no pull-back-to-baseline on a bad episode.
 
 ### Fast timescale (Phase 7) — adapt within a run
 

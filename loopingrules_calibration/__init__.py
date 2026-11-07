@@ -39,9 +39,13 @@ with `@tunable(Knob(...))`, `knobs(loop)` collects it from the rules a
 domain registered, and `lint` holds those rules to it -- reporting any
 numeric literal that should have read the component instead. What is NOT
 here yet, named so it is not mistaken for settled: the dataset artifact and
-capture channel, the checks vocabulary, and preference pairs
-(`docs/plan-dataset.md`); and the pattern library `docs/plan.md`'s Phase 3
-is to distil from `examples/`.
+capture channel, and preference pairs (`docs/plan-dataset.md`); and the
+pattern library `docs/plan.md`'s Phase 3 is to distil from `examples/`.
+
+The **objective** now has a vocabulary of its own (Phase 4): `checks.Check`
+names a pure term, `total(*checks)` composes the scorer, and the SAME `Check`
+objects feed a slow-timescale `adapt.Adapter` that re-tunes the knobs between
+episodes as the world drifts (`docs/plan-adaptation.md`).
 """
 
 from __future__ import annotations
@@ -63,30 +67,53 @@ from .kit import (
 )
 from .linter import Finding, LintError, LintReport, lint
 from .report import Report, calibrate
+from .checks import (
+    Check,
+    as_check,
+    check,
+    invariant,
+    says,
+    settles,
+    ticks_at_most,
+    total,
+    world_has,
+)
+from .adapt import Adapter, Step, adapt
 from .surface import declared, knobs, runtime_knobs, tunable
 
 __all__ = [
+    "Adapter",
     "Best",
+    "Check",
     "Finding",
     "Knob",
     "LintError",
     "LintReport",
     "Report",
     "Scenario",
+    "Step",
     "Trace",
+    "adapt",
+    "as_check",
     "calibrate",
+    "check",
     "declared",
     "grid",
+    "invariant",
     "knobs",
     "lint",
     "reached",
     "read_knobs",
     "replay",
     "replay_cached",
-    "reply_contains",
     "runtime_knobs",
+    "says",
     "search",
     "settled",
+    "settles",
+    "ticks_at_most",
+    "total",
     "tunable",
+    "world_has",
     "write_knobs",
 ]

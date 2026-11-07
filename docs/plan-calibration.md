@@ -12,7 +12,11 @@ rules a domain actually registered, and `loopingrules_calibration.lint`
 holds those rules to it — flagging a numeric literal where the rule should
 read a component, reporting a knobbed rule `analyze` cannot see as
 `unlintable`, and excusing a literal only through `allow=(...)` with a
-reason. The pattern library the phase also names is not built.
+reason. **Phase 4 added `checks` and `adapt`** (in
+`loopingrules_calibration`): the pure `Check`/`total` vocabulary and the
+between-episode adapter, so the objective is one object wired offline and
+online (`docs/plan-dataset.md`, `docs/plan-adaptation.md`). The pattern
+library the phase also names is not built.
 
 ## The four-way contract
 
@@ -44,6 +48,8 @@ read_knobs, write_knobs                    # refuse rather than guess (unchanged
 grid, search                               # optimizer-free baseline
 calibrate(install, dataset, knobs, scorer, seeds=...) -> Report
 Report: best, plateaus, sensitivity, train_score, eval_score, variance, signature
+Check, check, total, settles, says, ...    # the checks vocabulary (D2, Phase 4)
+Adapter, adapt                             # slow-timescale re-tuning (D4, Phase 4)
 ```
 
 ## Knobs: declaration, classification, ranges

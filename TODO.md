@@ -251,3 +251,14 @@ core"), named so they are not lost rather than scheduled.
   D7 revives the *concept* -- a closed, total operational semantics -- rather
   than restoring the file; whoever folds D7 in should decide whether the IR
   core is that revival and retire the stale references in the same change.
+- **Checks as control (Phase 4) is built for the SLOW timescale only.**
+  (`docs/plan-adaptation.md`, `docs/plan-dataset.md`.) `checks` + `adapt` +
+  `examples/drift.py` ship, pinned by `tests/test_calibration_checks.py` and
+  `tests/test_examples_drift.py`. Open: (1) the FAST timescale -- a rule
+  writing a knob or a `RuleControl` mid-run (Phase 7), where oscillation
+  lives and where D7's channel will be used; (2) D4's revert-to-baseline when
+  adaptation drives the system out of bounds -- `start` is the baseline, the
+  revert is not built; (3) preference pairs (`A > B`), which D2 makes
+  first-class and `checks` is scalar-only about; (4) whether a check may
+  itself be tuned (D2's own open question); (5) multi-knob coupling in
+  `adapt` (a re-`search` moves them together, no policy).

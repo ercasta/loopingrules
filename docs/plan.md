@@ -52,6 +52,15 @@ oscillating controller stays hot; R1 shows the forge IR is analyzable without
 the Python AST, totally, agreeing with `analyze` 12/12. **Nothing is folded
 in** and the IR is not moved into the engine. See `docs/plan-reflection.md`.
 
+**Phase 4 status (built):** checks as control, slow timescale.
+`loopingrules_calibration.checks` is the pure `Check`/`total` vocabulary;
+`loopingrules_calibration.adapt` is the between-episode `Adapter`/`adapt`
+(`margin`/`every`/`window`); `examples/drift.py` (Experiment 8) measures it --
+a frozen world degrades as the target ramps, the adapter tracks it, a
+stationary world settles in one move. The SAME `Check` objects wire the
+offline scorer and the online controller. The fast timescale (Phase 7) is not
+built. See `docs/plan-adaptation.md`/`docs/plan-dataset.md`.
+
 **Modeling status:** design only (`docs/modeling.md`). The model is the
 executable world plus *reified actions* -- schema + effect deltas + executor --
 reasoned over by a planner; **not** an ontology, because OWL/RDF cannot carry
@@ -91,8 +100,9 @@ The product thesis, stated once and used to judge everything below:
 | Worked domains + bridges | `examples/` (`decide`, `cards`, `market`, `quorum`, `trip`, `party`, `planning`, `branching`...) — the material to distil a stdlib from. |
 | **Standard library** | **Built (Phase 3, partial)**: `loopingrules_patterns` ships `judge` (`docs/patterns.md`); the rest of the candidate set is not promoted yet. |
 | **Author surface** | **Built (Phase 3)**: `@tunable(Knob(...))` co-located on the rule, collected by `knobs(loop)`; `lint` holds those rules to it. |
-| **Dataset kit** | Missing. No format, no capture, no labels/rankings, no train/eval split, no reporting. |
+| **Dataset kit** | **Partial (Phase 4)**: the checks vocabulary is built (`checks`: `Check`/`total` + generic terms); the format, capture channel, labels/rankings and train/eval split are still missing. |
 | **Memory / change log** | **Built (Phase 2)**: `Change` + `World.changes`/`recent`/`clear_changes`, transient and never saved, `Loop(capacity=...)`-bounded, with `Loop.tick` provenance and `analyze` gating on `changes(changed=...)`. |
+| **Checks as control (slow adaptation)** | **Built (Phase 4)**: `loopingrules_calibration.checks` (the pure `Check`/`total` vocabulary) + `adapt` (the between-episode `Adapter`) + Experiment 8 (`examples/drift.py`); a frozen world degrades as the target drifts and the adapter tracks it, using the SAME checks. Fast timescale (Phase 7) not built. |
 | **Tools / external world** | Missing. Only the channel seam exists; no tape/cache, no effect fencing. |
 | **Reuse layer** | **Spike built (D6)**: `loopingrules_islands` (`items`/`funds`, probe `i0`) — settles, reuses across two domains, composes across two islands, catches the fabricating antipattern; not folded in yet. |
 | **Reflection / control channel** | **Probe built (D7)**: `loopingrules.reflect` + `r0`/`r1` — a rule over memory + rule-cards changes the schedule with the controlled rules unchanged, and an oscillator is caught; IR analysis is total. Not folded in. |
@@ -185,7 +195,7 @@ Order is dependency-driven. Each phase is independently shippable and testable.
 | 1 | **Calibration kit**: `Scenario`/`Knob`/`replay`/`search` promoted to `loopingrules_calibration`, with pluggable trace source, replay caching, train/eval split, mean +/- variance, plateau/sensitivity report | — | D3 |
 | 2 | **Memory**: instrumented change log, read API, `analyze` exception, sharpened signatures | — | D1 |
 | 3 | **Author surface + patterns**: co-located knob declaration + classification, tunability linter, curated patterns each exposing its tunable surface | 1, 2 | D3, D2 |
-| 4 | **Checks as control** (slow timescale): observe the completed episode, adjust knobs between runs (incremental re-calibration) | 2, 3 | D4 |
+| 4 | **Checks as control** (slow timescale) — **built**: `checks` (the pure vocabulary) + `adapt` (the between-episode adapter) + Experiment 8 (`examples/drift.py`) | 2, 3 | D4 |
 | 5 | **Tools / external world**: tool-channel stdlib, environment tape/cache, effect fencing, calls-to-competence axis | 2, 3 | (separate doc) |
 | 6 | **Descriptors** (optional): rules return change-lists; atomicity, validation, rules-as-data | 2 | (separate doc) |
 | 7 | **Fast-timescale adaptation + end-to-end exemplar**: in-run controller rules, plus one non-toy agentic domain calibrated end to end and a written author walkthrough | 4, 5 | D4 |

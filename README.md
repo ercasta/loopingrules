@@ -31,6 +31,10 @@ loopingrules_calibration/
   report.py       calibrate: held-out scores, plateaus, sensitivity
   surface.py      @tunable, knobs: a rule's declared tunable surface
   linter.py       lint: a hard-coded threshold where a rule should read a knob
+  checks.py       the pure Check vocabulary: Check, check, total, and the
+                    generic terms (settles, says, world_has, invariant)
+  adapt.py        slow-timescale adaptation: Adapter (moving knobs, shared
+                    checks, margin/every/window) and adapt(...)
 loopingrules_patterns/
   judge.py        the threshold judge: Risk/RiskTolerance -> TooRisky
   memory.py       the declared tunable surface for loopingrules.memory
@@ -42,18 +46,21 @@ examples/
   cards.py, shopping.py, market.py, quorum.py, trip.py   worked domains
   decide.py                                             a domain-oblivious bridge
   bridge_transfer.py, ablation.py                       the tuning experiments
+  drift.py                                              Experiment 8: slow adaptation
 tests/
   test_loop.py         order, settling, the budget, a rule that raises
   test_engine.py       one world, several channels, a broadcast reply
   test_save.py         the same world, ids and all, next time
   test_share.py        pack import, id remapping, dangling refs
   test_calibration.py  the tuning kit: replay, search, plateaus
+  test_calibration_checks.py  the checks vocabulary: purity, composition
   test_changes.py      the change log: what changed, by which rule, when
   test_memory.py       short-term memory: promotion, retention, the surface
   test_linter.py       the declared tunable surface, and the linter over it
   test_patterns_judge.py  the shipped judge pattern, and its declared knob
   test_reflect_r0.py   reflection: the control channel over memory + cards
   test_reflect_r1.py   the IR analyzed without the Python AST
+  test_examples_drift.py  Experiment 8: slow adaptation tracks drift
   test_examples_*.py   each example domain, end to end
 PRINCIPLES.md           what keeps rules run to a fixpoint over a shared
                           World producing the wanted kind of emergence,
@@ -162,6 +169,16 @@ above, "no vocabulary above entities and components either") — see
 History, "A domain-oblivious judge."
 
 ## History
+
+**`loopingrules_calibration.checks` + `adapt`: checks as control, the slow timescale — one objective wired offline and online, measured against a drifting world (Phase 4), 2026-11-07.** Phase 4's claim is the product thesis at its strongest and its most falsifiable: *the same checks that tune offline can be wired as a controller without rewriting them* (`plan.md`'s success criterion 3). The kit already scored a trace with a `scorer`, but a scorer was a bare `Trace -> float`, so an offline objective and a controller's objective could only ever be *same-shaped lambdas* nobody could prove were the same. D2 had already named the missing piece — "a **Check** is a pure function `Trace -> score or observation` (plus the ability to compose)" — and locked decision 3 named why purity is load-bearing: the offline scorer must not perturb what it measures, the online controller deliberately does, and collapsing the two sandboxes would tune a world its own measurement moved. So this lands D2's vocabulary and D4's slow adapter together, because neither is worth much without the other.
+
+`checks.Check(name, fn, weight)` makes a term *nameable*; `check`/`as_check` build one, `total(*checks)` is the scorer, and the generic terms every trace has come with it (`settles`, `ticks_at_most`, `says`, `world_has`, `invariant` — the last reading `Trace.observations`, the process pole D2 contrasts with black-box output). `adapt.Adapter(knobs, checks, margin, every, window)` + `adapt(episodes, install, adapter, start=...)` is the slow timescale D4 says to build first: before each episode, re-`search` a window of the PAST episodes and adopt the best values only if they beat the current ones by `margin`. The guards D4 requires from day one are all present and cheap — hysteresis (`margin`), a rate limit (`every`), bounds (the knob grid) — and the knobs that may move are exactly `surface.runtime_knobs(knobs(loop))`, so the runtime set stays small and auditable (D3). The invariant the whole drift curve rests on is one line: the window is strictly episodes BEFORE the current one, so an episode never tunes for itself; a leak there would make the reported score a lie, so it is the first thing the tests pin.
+
+Experiment 8 (`examples/drift.py`) is the measurement, and it is a controlled probe on purpose (the `hierarchy.py`/`ablation.py` idiom), so nothing domain-specific can hide the mechanism. One knob, `Policy.cut`, over the shape `judge.flag_too_risky` already is — single-threshold operating-point selection: choose an example iff `x >= cut`, where it is correct to choose iff `x >= target`, and `target` is hidden and ramps `0.3 -> 0.7` across the stream. Frozen (tuned on the early episodes), the cut sticks at `0.3` and tail agreement falls to `0.74` — the cost of not adapting. Started from that same frozen baseline, the adapter tracks the target (final cut `0.7`, tail agreement `~1.0`). A **stationary** world, started from a deliberately wrong cut (`0.1`), moves exactly ONCE and then stops — no churn — and a rate limit (`every=12`) bounds the adjustments to `1` where unthrottled takes `4`, trading a little tail agreement for far fewer moves. Every number is a held-in measurement of the mechanism, not a natural distribution.
+
+Deliberately left alone, named rather than hidden. The fast timescale — a rule writing a knob or a `RuleControl` mid-run — is Phase 7, and it is where oscillation lives; `loopingrules.reflect` (D7) now supplies the channel it will need, and nothing here uses it. The probe is a controlled ramp, deterministic, single seed: it does not test multi-knob coupling, and D4's "revert to the offline baseline when adaptation drives the system out of bounds" is not built (`start` IS the baseline, reverting is not). Checks are scalar-only: D2's first-class preference pairs (`A > B`) and D2's own open question — whether a check may itself be tuned — stay open. And the objective remains step-shaped, so this is still derivative-free re-search, not anything with a gradient.
+
+Verified: `372 -> 386 passing`. The addition is `tests/test_calibration_checks.py` (7 tests: a check is named/weighted and pure, `total` composition, `settles`/`ticks`, `says`, `world_has`, `invariant` — including the vacuous-empty case — and `as_check`) and `tests/test_examples_drift.py` (7 tests: frozen degrades, the adapter tracks the target, a stationary world settles after one move, the rate limit bounds adjustments, the first episode never tunes itself, `adapt` is deterministic, and the adapter's scorer IS the offline one). Whole suite green in ~22s; `mkdocs build --strict` clean.
 
 **`loopingrules.reflect` + `loopingrules_reflect`: rules as data, and the one control channel that may move them — hashes, reification, and IR analysis proven total, 2026-11-07.** Two things the substrate could not do, and both come from the same missing move. First, a rule could not be CONTROLLED without being edited: the stigmergic way to "activate" a building block is to attach a component its rule reads, which only works if the rule was authored reading that component — so a controller would have to refactor every rule it controls. Second, one rule could not REASON over another: rules are functions, and `World` stores data, never callables (`world._lower` refuses a Python object), so "rules over rules" was impossible in principle. The move that fixes both is the one `lock`-to-`where` requires: put rules into the blackboard as data, and let the loop — which already knows every rule — be the reader.
 
