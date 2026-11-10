@@ -62,6 +62,35 @@ tick, so it acts on the next one. It settles for the same reason everything
 else does — a controller that keeps re-emitting an *equal* control moves
 nothing.
 
+## Design 1b — the scheduler, and the two scopes of `RuleControl`
+
+`RuleControl` as written controls a *rule*. But a rule is a production — an
+LHS condition and an RHS effect — and one rule may match many parts of the
+blackboard at once, so a controller needs to choose *which* match to act on,
+not merely whether the rule runs. That is the **activation**: a rule plus one
+binding of its LHS. Conflict is therefore resolved among **activations**, and
+`RuleControl` gains a second, transient scope beside its durable one:
+
+```
+RuleControl(hash, binding=None, enabled=True, priority=0)
+# binding=None  -> the whole rule (the durable default, as above)
+# binding=(3,7) -> one activation this tick (transient -- a binding can vanish)
+```
+
+This makes the loop the production system's recognize–act cycle (match →
+resolve → act); resolution scores activations and needs a starvation discipline
+(refraction by consumption or marker, aging, a deterministic tie-break, and
+D4's guards), and it degrades to the frozen default score with a recorded
+`Doubt` when nothing covers the situation. Its mechanism is **proven by the
+first probe** (`loopingrules_forge/q0.py`, pinned by `tests/test_forge_q0.py`),
+which takes the engine-lighter path — the rest, including the engine change, is
+design. It depends on IR-native rules (Design 2, below) to make "would fire"
+decidable, and it is written up in `docs/plan-scheduler.md`. It **relaxes D7's
+one-tick lag** —
+control is resolved *within* the tick rather than at the next tick's top —
+which is the whole point and the thing the probe must earn. It does not change
+D7's precedence rule: the controller still only subtracts or reorders.
+
 ## Design 2 — rules as data (IR-native)
 
 The control channel works with Python rules today (a card is derived by

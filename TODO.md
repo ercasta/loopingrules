@@ -237,6 +237,26 @@ core"), named so they are not lost rather than scheduled.
   coupling, unprobed; (5) a production controller needs monotonicity,
   hysteresis or a rate limit (D4's list) -- D7 adds none, it only pins that
   an oscillator stays `hot`.
+- **The scheduler (recognize-act over activations) is design only, and it rests
+  on IR-native rules.** (`docs/plan-scheduler.md`; extends D7; locked decision
+  14.) The control channel controls a *rule*; a rule with many matches needs a
+  controller to choose *which* match -- the activation `(rule, binding)`.
+  Design: `RuleControl` gains a transient activation scope; the loop becomes
+  match -> resolve -> act; activations are scored and resolved with a
+  starvation discipline (refraction/aging/tie-break/D4 guards); novelty falls
+  back to the frozen score and records a `Doubt`. **Q0 built** -- `loopingrules_
+  forge/q0.py` (pinned by `tests/test_forge_q0.py`) proves match-is-exact,
+  no-ambiguity => identical signature, and starvation/refraction/novelty as a
+  standalone scheduler, **engine untouched**; everything else is design. Open: (1)
+  "would fire" is decidable only once rules are IR-native (D7, locked 13) via
+  the LHS-as-condition reshape; (2) whether the engine materialises activations
+  or a generic matcher rule does (the biggest unbuilt decision -- the engine
+  stays frozen until a probe earns it); (3) whether the unit of resolution is
+  one activation or a maximal non-conflicting set; (4) a fairness/stability
+  argument (none offered, matching `plan-adaptation.md`). The first probe
+  (`q0`) is named in the doc: reshape a couple of real `cards` rules, pin "no
+  ambiguity => identical signature" and "settles", demonstrate starvation and
+  its resolution, and the novelty fallback.
 - **IR-native is decided but the IR has not moved.** (`docs/plan-reflection.md`,
   D7; locked decision 13.) Domains still author Python, and the IR stays in
   `loopingrules_forge`. `r1` proves IR analysis is TOTAL and agrees with
