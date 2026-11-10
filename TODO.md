@@ -244,10 +244,12 @@ core"), named so they are not lost rather than scheduled.
   Design: `RuleControl` gains a transient activation scope; the loop becomes
   match -> resolve -> act; activations are scored and resolved with a
   starvation discipline (refraction/aging/tie-break/D4 guards); novelty falls
-  back to the frozen score and records a `Doubt`. **Q0 built** -- `loopingrules_
-  forge/q0.py` (pinned by `tests/test_forge_q0.py`) proves match-is-exact,
-  no-ambiguity => identical signature, and starvation/refraction/novelty as a
-  standalone scheduler, **engine untouched**; everything else is design. Open: (1)
+  back to the frozen score and records a `Doubt`. **Q0 built**, and its
+  rule-level engine half too: `Loop(schedule=True)` + `Loop.rule(controller=
+  True)` run controllers first, land their `RuleControl` within the tick, and
+  fire ONE eligible rule (pinned by `tests/test_loop_schedule.py`; the default
+  loop is unchanged). **Activation-level control is not** -- the engine cannot
+  see bindings. Open: (1)
   "would fire" is decidable only once rules are IR-native (D7, locked 13) via
   the LHS-as-condition reshape; (2) whether the engine materialises activations
   or a generic matcher rule does (the biggest unbuilt decision -- the engine

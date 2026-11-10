@@ -1,8 +1,11 @@
 # The scheduler: activations, the recognize–act cycle, and resolution
 
 Status: **the first probe is built** (`loopingrules_forge/q0.py`, pinned by
-`tests/test_forge_q0.py`); everything beyond it is design. This is the
-scheduler half of the control channel. D7 (`plan-reflection.md`) gave the
+`tests/test_forge_q0.py`), and the **rule-level engine change** it named is
+built too (`Loop(schedule=True)` + `Loop.rule(controller=True)`, pinned by
+`tests/test_loop_schedule.py`); the **activation-level** half is design,
+because it needs IR-native rules. This is the scheduler half of the control
+channel. D7 (`plan-reflection.md`) gave the
 substrate a way to control a *rule* (`RuleControl`); this doc records where the
 discussion landed on *what* a controller controls, *how* ambiguity among rules
 is resolved, and *what* keeps that resolution from starving. It **extends D7**
@@ -198,10 +201,23 @@ change to `loop.py`):
   The default fallback is the novelty path: no controller had an opinion ⇒ the
   frozen score, and a `Doubt` deposited as ordinary world data.
 
-What it does NOT do: it does not touch the engine; it does not partition
-activations into conflict sets (it picks ONE activation per tick, globally);
-its RHS is a small effect IR, not full `m0`; and no-op activations are not
-handled (every effect here moves the world).
+What `Q0` does NOT do: it does not touch the engine (the engine-level version
+is separate, below); it does not partition activations into conflict sets (it
+picks ONE activation per tick, globally); its RHS is a small effect IR, not
+full `m0`; and no-op activations are not handled (every effect here moves the
+world).
+
+**Engine (built: `Loop(schedule=True)`, pinned by
+`tests/test_loop_schedule.py`).** The rule-level half of the cycle is in the
+engine, opt-in and additive. With `schedule=True`, controller rules
+(`Loop.rule(..., controller=True)`) run first, the tick order is recomputed so
+their `RuleControl` lands **this tick** (closing D7's one-tick lag), and then
+ONE eligible rule fires. The default loop (`schedule=False`) is unchanged, so
+the change is a conservative extension, and the within-tick effect is pinned
+both ways (a controller holds a rule back under `schedule=True`, and does not
+under the default loop). It is **rule-level**: the engine can see a rule's gate
+but not its bindings, so "which part of the blackboard" is exactly the
+IR-native question below.
 
 ## What this does not settle
 
@@ -238,13 +254,12 @@ handled (every effect here moves the world).
 
 ## The next probes
 
-`Q0` proves the mechanism. The next steps, each still a probe first, are the
-ones the build order names and `Q0` deliberately stopped short of:
+The mechanism is proven (`Q0`) and its rule-level half is in the engine. What
+remains, each a probe first:
 
-- **Materialise activations** as derived world data (a generic matcher over
-  `RuleCard` LHS data, or the engine core — the open decision above).
-- **Activation-level `RuleControl` in the loop**, i.e. the *engine* change
-  `Q0` did not make: resolve within the tick.
-- **Conflict sets**, if the tick cost of one-activation-per-tick warrants the
-  hazard graph the plan dropped.
-- **Aging** (the second anti-starvation pole) and **no-op activations**.
+- **Activation-level control** — the engine cannot see bindings; this needs
+  IR-native rules (locked 13) and is the largest unbuilt decision below.
+- **Aging** (the second anti-starvation pole) and **no-op activations** (a
+  chosen rule that writes an equal value).
+- **Conflict sets**, if the tick cost of one-rule-per-tick warrants the hazard
+  graph the plan dropped.

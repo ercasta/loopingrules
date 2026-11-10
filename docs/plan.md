@@ -53,14 +53,18 @@ oscillating controller stays hot; R1 shows the forge IR is analyzable without
 the Python AST, totally, agreeing with `analyze` 12/12. **Nothing is folded
 in** and the IR is not moved into the engine. See `docs/plan-reflection.md`.
 
-**Scheduler status (probe built, Q0):** the control channel's scheduler —
-match → resolve → act over **activations** (a rule plus its binding), with
-`RuleControl` extended to an activation scope, a per-activation score, a
-conflict-resolution discipline (refraction, aging, tie-break, D4's guards), and
-a novelty fallback that records a `Doubt`. `loopingrules_forge/q0.py` (pinned
-by `tests/test_forge_q0.py`) proves three claims — match is exact, no ambiguity
-⇒ identical signature, and starvation/refraction/novelty — as a standalone
-scheduler, **without touching the engine**. The rest is design. See
+**Scheduler status (probe + rule-level engine change built):** the control
+channel's scheduler — match → resolve → act over **activations** (a rule plus
+its binding), with `RuleControl` extended to an activation scope, a
+per-activation score, a conflict-resolution discipline (refraction, aging,
+tie-break, D4's guards), and a novelty fallback that records a `Doubt`.
+`loopingrules_forge/q0.py` (pinned by `tests/test_forge_q0.py`) proves three
+claims — match is exact, no ambiguity ⇒ identical signature, and
+starvation/refraction/novelty. **Rule-level, the cycle is in the engine**:
+`Loop(schedule=True)` + `Loop.rule(..., controller=True)` run controllers
+first, land their `RuleControl` within the tick, and fire ONE eligible rule
+(pinned by `tests/test_loop_schedule.py`); the default loop is unchanged.
+**Activation-level** remains design — it needs IR-native rules. See
 `docs/plan-scheduler.md`.
 
 **Phase 4 status (built):** checks as control, slow timescale.
@@ -132,7 +136,7 @@ The product thesis, stated once and used to judge everything below:
 | **Tools / external world** | Missing. Only the channel seam exists; no tape/cache, no effect fencing. |
 | **Reuse layer** | **Spike built (D6)**: `loopingrules_islands` (`items`/`funds`, probe `i0`) — settles, reuses across two domains, composes across two islands, catches the fabricating antipattern; not folded in yet. |
 | **Reflection / control channel** | **Probe built (D7)**: `loopingrules.reflect` + `r0`/`r1` — a rule over memory + rule-cards changes the schedule with the controlled rules unchanged, and an oscillator is caught; IR analysis is total. Not folded in. |
-| **Scheduler / activation-level control** | **Probe built (Q0, extends D7)**: match → resolve → act over *activations*; `RuleControl` gains a transient activation scope; a per-activation score with a conflict-resolution discipline; a `Doubt` novelty fallback. `q0` proves match-is-exact, no-ambiguity-identity, and starvation/refraction/novelty as a standalone scheduler; **the engine is untouched**. `docs/plan-scheduler.md`. |
+| **Scheduler / activation-level control** | **Probe + rule-level engine change built (extends D7)**: match → resolve → act over *activations*; `RuleControl` gains a transient activation scope; a per-activation score with a conflict-resolution discipline; a `Doubt` novelty fallback. `q0` proves match-is-exact, no-ambiguity-identity, and starvation/refraction/novelty; `Loop(schedule=True)` (controllers first, control lands within the tick, ONE rule fires) is the rule-level engine half. Activation-level needs IR-native rules. `docs/plan-scheduler.md`. |
 | **IR-native rules** | **Probe built (D7)**: `r1` proves the forge IR is analyzable without the Python AST, agreeing with `analyze` 12/12; the IR is not yet an engine core and `analyze`-on-Python is not yet demoted to an audit. |
 | **Modeling** | Missing. No reified actions, no action algebra, no planner; design in `docs/modeling.md`. |
 | **Hybrid learning** | Missing. No three-source loop (rules/examples/feedback), no EA/ILP induction; prior art in `docs/study-guide.md`. |
@@ -242,7 +246,7 @@ Order is dependency-driven. Each phase is independently shippable and testable.
 | 10 | **Modeling**: reified actions (schema + deltas + executor), an action algebra, and a planner over schemas against the forked world | 9 | `modeling.md` |
 | 11 | **Hybrid learning**: the three-source loop (stated rules / examples / feedback), with structure, values and refinement kept on separate artifacts | 7, 10 | `study-guide.md` (D8 pending) |
 | 12 | **Reflection + IR-native**: rule hash and `RuleCard` reification folded in, the control channel (`RuleControl` read by the loop), and the IR moved into a frozen engine core with `analyze` re-targeted onto it and `analyze`-on-Python kept as an audit | 6 | D7 |
-| 13 | **Scheduler**: IR-native rules (LHS/RHS, total analysis), activations as derived data, the recognize–act cycle with activation-level `RuleControl`, and the `Doubt` novelty fallback — **probe built (Q0); the engine change is not** | 6, 12 | D7 + `plan-scheduler.md` |
+| 13 | **Scheduler**: IR-native rules (LHS/RHS, total analysis), activations as derived data, the recognize–act cycle with activation-level `RuleControl`, and the `Doubt` novelty fallback — **probe built (Q0) + the rule-level engine half (`Loop(schedule=True)`); activation-level not** | 6, 12 | D7 + `plan-scheduler.md` |
 
 Phase 1 is the first build (the choice made in discussion). Phases 2 and 3 are
 the ones that make the workflow real; 4-7 are the payoff; 8 is the structure

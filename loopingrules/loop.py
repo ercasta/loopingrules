@@ -81,6 +81,14 @@ exists until a rule writes one) and it may only SUBTRACT or REORDER, never
 manufacture a firing -- `analyze`'s gate still decides dormancy. See
 `loopingrules.reflect`.
 
+`Loop(schedule=True)` moves that channel into the recognize-act cycle
+(`docs/plan-scheduler.md`, probe `q0`). Controller rules -- those registered
+`controller=True` -- run first, the order is recomputed so their writes land
+THIS tick, and then ONE eligible rule fires. It is opt-in and rule-level: the
+engine cannot see a rule's BINDINGS, which is exactly the IR-native question
+`docs/plan-scheduler.md` leaves open, so this is the rule-level half of the
+scheduler, not the activation-level one. The default loop is unchanged.
+
 ## A rule fires by CHANGING something
 
 The loop cannot see inside a rule and does not try. It reads
@@ -207,10 +215,18 @@ def _name_of(fn) -> str:
 class Loop:
     """Rules, in order, over one world."""
 
-    def __init__(self, world=None, budget: int = 200, capacity=None) -> None:
+    def __init__(self, world=None, budget: int = 200, capacity=None,
+                 schedule: bool = False) -> None:
         from .world import World
         self.world = World() if world is None else world
         self.budget = budget
+        # The opt-in recognize-act cycle (see the module note, "Resolve within
+        # the tick"). False is today's loop, unchanged: every rule, in order,
+        # recomputed once at the top. True runs controller rules first, then
+        # ONE eligible rule: the scheduler the q0 probe proved, moved into the
+        # engine -- rule-level, because the engine cannot see a rule's bindings
+        # (`docs/plan-scheduler.md`: activation-level needs IR-native rules).
+        self.schedule = schedule
         self.rules: "list[tuple[str, object]]" = []
         # (rule name, exception) for everything that blew up in the last
         # `run`. The caller drains it; the loop only ever appends.
@@ -226,7 +242,7 @@ class Loop:
 
     # -- registering --------------------------------------------------
 
-    def rule(self, fn=None, *, name=None, priority=0):
+    def rule(self, fn=None, *, name=None, priority=0, controller=False):
         """Register a rule. Bare or called::
 
             @loop.rule
@@ -265,7 +281,8 @@ class Loop:
         would make that trajectory ambiguous, not just `/rules`' listing.
         """
         if fn is None:
-            return lambda f: self.rule(f, name=name, priority=priority)
+            return lambda f: self.rule(f, name=name, priority=priority,
+                                       controller=controller)
         try:
             analysis = analyze.analyze(fn)
             reads = analysis.reads - analysis.negated_reads
@@ -274,6 +291,11 @@ class Loop:
         if reads:
             fn._loopingrules_watches = tuple(reads)
         fn._loopingrules_priority = priority
+        # A controller runs in the CONTROL PHASE of a `schedule=True` tick, so
+        # its `RuleControl` writes are read by the order the act phase uses --
+        # i.e. control lands THIS tick, not the next. Opt-in, and meaningless
+        # under the default loop (see the module note).
+        fn._loopingrules_controller = controller
         # The rule's identity for `reflect.RuleControl` -- a content hash, so
         # a controller can name this rule without holding a reference to a
         # function `World` could never store. A generator may have stamped an
@@ -344,33 +366,62 @@ class Loop:
 
         return sorted(order, key=key)
 
+    def _fire(self, i: int, fired: "list[str]") -> bool:
+        """Call rule `i` exactly as `tick` always has: skip it if its derived
+        gate is closed, catch and record a raise, and append to `fired` iff it
+        moved `revision`. Returns whether it fired."""
+        name, fn = self.rules[i]
+        watches = getattr(fn, "_loopingrules_watches", None)
+        if watches is not None and not self.world.populated(*watches):
+            return False    # dormant -- not even called, see the module note
+        before = self.world.revision
+        raised = None
+        self.world._actor = name
+        try:
+            fn(self.world)
+        except Exception as e:  # noqa: BLE001 -- see the module docstring
+            raised = e
+        finally:
+            self.world._actor = None
+        if raised is not None:
+            self._record(name, raised)
+            return False
+        if self.world.revision != before:
+            fired.append(name)
+            return True
+        return False
+
     def tick(self) -> "list[str]":
         """One pass over every rule, in tick order: call it, done. Returns
         the names of the ones that changed something, in the order they
         ran.
+
+        Under `schedule=True` the pass is the recognize-act cycle instead:
+        controller rules run first (the control phase), the order is
+        recomputed so their `RuleControl` lands THIS tick, then exactly ONE
+        eligible rule fires (the act phase) -- the world re-settles around it
+        and the cycle repeats. With no controller and one eligible rule the
+        two coincide, which is why the schedule is a conservative extension:
+        `schedule=False` (the default) is the loop above, byte for byte.
         """
         self.tick_count += 1
         self.world._tick = self.tick_count
-        fired = []
+        fired: "list[str]" = []
+        if not self.schedule:
+            for i in self._tick_order():
+                self._fire(i, fired)
+            return fired
+        ran = set()
         for i in self._tick_order():
-            name, fn = self.rules[i]
-            watches = getattr(fn, "_loopingrules_watches", None)
-            if watches is not None and not self.world.populated(*watches):
-                continue    # dormant -- not even called, see the module note
-            before = self.world.revision
-            raised = None
-            self.world._actor = name
-            try:
-                fn(self.world)
-            except Exception as e:  # noqa: BLE001 -- see the module docstring
-                raised = e
-            finally:
-                self.world._actor = None
-            if raised is not None:
-                self._record(name, raised)
+            if getattr(self.rules[i][1], "_loopingrules_controller", False):
+                self._fire(i, fired)
+                ran.add(i)
+        for i in self._tick_order():        # recomputed: control lands THIS tick
+            if i in ran or getattr(self.rules[i][1], "_loopingrules_controller",
+                                   False):
                 continue
-            if self.world.revision != before:
-                fired.append(name)
+            if self._fire(i, fired):
+                break                       # ONE rule (that fires) per tick
         return fired
 
     def run(self, budget=None, after_tick=None) -> Settled:
