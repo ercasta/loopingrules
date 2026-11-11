@@ -39,6 +39,7 @@ nav:
   - Examples: examples.md
   - Patterns: patterns.md
   - Modeling: modeling.md
+  - Comparison with SOAR: comparison-soar.md
   - Testing and debugging: testing-debugging.md
   - Contributing: contributing.md
   - Study guide: study-guide.md
