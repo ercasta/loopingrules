@@ -3,10 +3,12 @@
 Status: Phases 1-2 built, and Phase 3's author surface and linter with them;
 the pattern library and the rest are design, apart from the reuse layer's
 first spike (D6) and reflection's two probes (D7). This directory holds the
-roadmap, seven design docs (D1-D7 — the sixth the reuse layer, the seventh
-reflection and the control channel), the scheduler doc that extends D7 and
-resolves conflicts among activations (`plan-scheduler.md` — design only), plus
-`modeling.md` for the modeling half.
+roadmap, ten design docs — D1-D7 as before, plus **D8 the attribute substrate**
+(`plan-attributes.md`), **D9 the stigmergic control network**
+(`plan-control-network.md`), and **D10 knowledge mazes** (`plan-maze.md`) —
+the scheduler doc that extends D7 and resolves conflicts among activations
+(`plan-scheduler.md` — design only), `modeling.md` for the modeling half, and
+`comparison-soar.md` placing the substrate against SOAR.
 Nothing beyond that is a commitment
 to code; each doc ends with the open questions it does *not* settle, in the
 same posture `docs/tuning.md` and `TODO.md` already take.
@@ -89,6 +91,40 @@ something — emit evolved constants as `Knob`s and fit them with `search`/
 control domain, then a controller PATTERN LIBRARY (`docs/plan-reflection.md`,
 D7). The IR fold stays deferred until IR-native runtime is actually needed.
 
+**Attribute-substrate status (to perform, D8):** the substrate is to be
+simplified from entity + typed *component* to entity + **attribute** — a name
+to a value, where a value is a scalar, an entity ref, or a **flat list** of
+those. **A component is an entity** (a shape a ref targets): every component is
+realized as an entity the holder references, a tag the one exception (a flag).
+Attributes are `singular`/`set`/`sequence`; the declared **schema is a JSON
+artifact** and the read/write graph is **derived**, cross-checked, a
+used-but-undeclared name a blocking gap. This is a **re-founding** done as a
+**clean break, with no Python class anywhere**, not a feature: the built engine
+is still component-based and every layer above keys on the component type
+(`analyze`, `RuleCard`, the forge IR, the scheduler, `save`). Nothing here is
+built; the ripple, the cost and the migration order are in
+`docs/plan-attributes.md`. It also makes homoiconicity (locked 13) literal: a
+rule becomes an entity whose attributes *describe it*, so nothing has to
+translate rules into data.
+
+**Control-network status (design, D9):** the direction in discussion — the
+training process grows **scoring rules** that score the *applications* of rules
+(activations), and **control rules** that set **opaque control attributes**, so
+a set attribute steers the next application and the trajectory is altered in
+**multiple steps**; a scoring rule can then be **shared** across everything that
+reads its route, like a decision tree's upper split cutting off a branch. It
+extends D7's control channel and the scheduler's activation resolution — both
+built, at the degenerate one-step case — and the *algorithm* that grows the
+network (EA or other) is left open, to be chosen by a probe. See
+`docs/plan-control-network.md`.
+
+**Knowledge-maze status (design, D10):** the benchmark D9 is to be grown
+against — a **family** of problems whose correct answer is found only by
+applying rules *not coded* to a path, but steered by the control network, with
+mechanical ground truth so fitness and credit can be measured and a held-out
+family so generalization can be. Nothing is built; the first probe is sketched.
+See `docs/plan-maze.md`.
+
 **Modeling status:** design only (`docs/modeling.md`). The model is the
 executable world plus *reified actions* -- schema + effect deltas + executor --
 reasoned over by a planner; **not** an ontology, because OWL/RDF cannot carry
@@ -103,8 +139,9 @@ induction, no three-source adjudication.
 Turn this repository from a substrate plus a research program into a product
 with three parts:
 
-1. **Engine** — `loopingrules/` unchanged: entities, components, rules, one
-   thread, channels. Ships no domain vocabulary.
+1. **Engine** — `loopingrules/`: entities, rules, one thread, channels, and the
+   one planned substitution — the **attribute substrate** for what is a typed
+   component today (`docs/plan-attributes.md`, D8). Ships no domain vocabulary.
 2. **Standard library of reusable patterns** — importable, curated patterns,
    each shipping a *declared tunable surface*.
 3. **Authoring + calibration workflow** — a practical way for an author to
@@ -123,7 +160,8 @@ The product thesis, stated once and used to judge everything below:
 
 | Piece | State |
 |---|---|
-| Engine (`world`/`loop`/`engine`/`save`/`share`/`analyze`) | Complete, stable, no domain vocabulary. Little to do. |
+| Engine (`world`/`loop`/`engine`/`save`/`share`/`analyze`) | Complete, stable, no domain vocabulary — but being **re-founded** on attributes (D8). Little to do until then. |
+| **Attribute substrate** | **To perform (D8)**: entity + **attribute** (value scalar/ref/**list**); **a component is an entity** (a shape a ref targets), a tag a flag; kinds `singular`/`set`/`sequence`; a **JSON** schema checked against derived use. A **clean break**, no Python classes; re-founds `world`, `analyze`, `save`, `RuleCard`, the IR, the scheduler. Nothing built; `docs/plan-attributes.md`. |
 | Design theory | `docs/tuning.md` — rich, but framed as a research program (Experiments 1-7). |
 | Calibration instrument | **Built (Phase 1)** as the package `loopingrules_calibration`: `Knob`/`Scenario`/`Trace`/`replay`/`search` plus `calibrate`/`Report`, replay caching, a per-tick observer, held-out scoring, plateaus/sensitivity. |
 | Worked domains + bridges | `examples/` (`decide`, `cards`, `market`, `quorum`, `trip`, `party`, `planning`, `branching`...) — the material to distil a stdlib from. |
@@ -140,6 +178,8 @@ The product thesis, stated once and used to judge everything below:
 | **IR-native rules** | **Probe built (D7)**: `r1` proves the forge IR is analyzable without the Python AST, agreeing with `analyze` 12/12; the IR is not yet an engine core and `analyze`-on-Python is not yet demoted to an audit. |
 | **Modeling** | Missing. No reified actions, no action algebra, no planner; design in `docs/modeling.md`. |
 | **Hybrid learning** | Missing. No three-source loop (rules/examples/feedback), no EA/ILP induction; prior art in `docs/study-guide.md`. |
+| **Control network (grown scoring + control rules)** | **Design only (D9)**: many scoring rules over activations + control rules setting **opaque control attributes**, multi-step, with shared splits; extends the scheduler, algorithm open. `docs/plan-control-network.md`. |
+| **Knowledge mazes** | **Not built (D10)**: a maze family as the ground-truth benchmark the control network is grown against; first probe sketched. `docs/plan-maze.md`. |
 
 ## Decisions already locked
 
@@ -210,6 +250,42 @@ learning direction):
     bounds) rather than a proof; novelty falls back to the frozen default score
     and records a `Doubt`.
 
+Locked with the attribute / control-network direction (D8-D10):
+
+15. **The substrate is entities and attributes, not entities and components**
+    (D8). An entity carries **attributes** — a name to a value, where a value
+    is a scalar, an entity reference (stored as its plain int id), or a **flat
+    list** of those. There are only entities and attributes: **a component is a
+    shape** (a named attribute set) **that a ref targets**, realized as an
+    **entity** the holder references — every component, including a one-field
+    `Size`. A **tag** is the one exception, a **flag** on the holder. An
+    attribute is one of three **kinds** — `singular`, `set` (deduped,
+    insertion-ordered), `sequence` (ordered, duplicates kept) — and there is
+    **at most one slot per name per entity**. The declared **schema is a JSON
+    artifact** (shapes, attributes, kinds, ref targets); the read/write graph is
+    **derived** and cross-checked, with a used-but-undeclared name a **blocking
+    gap**. The typed component is retired and **no Python class is needed**; the
+    *name* carries the semantics the type carried, so `PRINCIPLES.md`'s "values
+    are primitives only" holds more strictly, since no value is ever structured.
+    This is a **re-founding to perform** (Phase S, a **clean break**) that
+    retargets `analyze`, `RuleCard`, the forge IR and the scheduler onto
+    attribute names.
+16. **Training grows a control network, not one scorer** (D9; extends D7 and
+    the scheduler). The control layer is ordinary rules: **scoring rules** that
+    score the *applications* of rules (activations), and **control rules** that
+    set **opaque control attributes**. A set attribute steers the next
+    application, so the trajectory is altered in **multiple steps**, and a
+    scoring rule high in the network is **shared** by everything that reads its
+    route — the decision-tree upper split. The **algorithm** that grows the
+    network (an EA, or another) is deliberately **not chosen yet**; a probe
+    decides. The network **selects, never rewrites**, and is frozen before it
+    runs (locked 8 and 13, unchanged).
+17. **Knowledge mazes are the benchmark** (D10): a **family** of problems whose
+    correct answer is found only by applying rules not coded to a path, but
+    steered by the control network — with mechanical ground truth, a held-out
+    family, and shared sub-branches so the value of a **shared split** is
+    measurable.
+
 ## Principles carried forward (not up for re-litigation here)
 
 - **No rule may block** (`architecture.md`): external I/O is a deposited
@@ -226,6 +302,10 @@ learning direction):
   but the discipline the rule protected (frozen operators, verification gates,
   freeze-before-tune) is preserved. See `PRINCIPLES.md`, "What is
   machine-derived, and at which layer," and `docs/plan-forge.md`.
+- **Semantics lives in the name, not the value** (`PRINCIPLES.md`; D8): the
+  attribute substrate keeps "values are primitives only" — an attribute's
+  meaning is its *name*, and adding list-valued attributes adds no value-type
+  layer.
 
 ## Phase roadmap
 
@@ -233,7 +313,8 @@ Order is dependency-driven. Each phase is independently shippable and testable.
 
 | Phase | Deliverable | Depends on | Design doc |
 |---|---|---|---|
-| 0 | The design docs, reviewed | — | D1-D6 |
+| 0 | The design docs, reviewed | — | D1-D7 |
+| S | **The attribute substrate** (foundational): entities carry **attributes** (a scalar, an entity ref, or a **flat list**); **a component is an entity** (a shape a ref targets), a tag a flag; kinds `singular`/`set`/`sequence`; a **JSON** schema checked against derived use. A **clean break** with no Python classes: retire the typed-component engine and retarget `world`/`analyze`/`save`/`share`/`RuleCard`/IR/scheduler onto attribute names — **to perform** | 0 | D8 |
 | 1 | **Calibration kit**: `Scenario`/`Knob`/`replay`/`search` promoted to `loopingrules_calibration`, with pluggable trace source, replay caching, train/eval split, mean +/- variance, plateau/sensitivity report | — | D3 |
 | 2 | **Memory**: instrumented change log, read API, `analyze` exception, sharpened signatures | — | D1 |
 | 3 | **Author surface + patterns**: co-located knob declaration + classification, tunability linter, curated patterns each exposing its tunable surface | 1, 2 | D3, D2 |
@@ -244,14 +325,21 @@ Order is dependency-driven. Each phase is independently shippable and testable.
 | 8 | **The forge**: corpus → catalog — **partial**: M0-M2 (IR/gates/freeze) and the EA generator (`evolve`) built; the corpus and LM not | 1, 3 | D5 |
 | 9 | **Reuse layer (D6)**: islands/bridges/conjunction promoted and *folded in*; the spike's debt paid; the cross-island read graph that catches spooky coupling | 3 | D6 |
 | 10 | **Modeling**: reified actions (schema + deltas + executor), an action algebra, and a planner over schemas against the forked world | 9 | `modeling.md` |
-| 11 | **Hybrid learning**: the three-source loop (stated rules / examples / feedback), with structure, values and refinement kept on separate artifacts | 7, 10 | `study-guide.md` (D8 pending) |
+| 11 | **Hybrid learning**: the three-source loop (stated rules / examples / feedback), with structure, values and refinement kept on separate artifacts | 7, 10 | `study-guide.md` (D-number pending) |
 | 12 | **Reflection + IR-native**: rule hash and `RuleCard` reification folded in, the control channel (`RuleControl` read by the loop), and the IR moved into a frozen engine core with `analyze` re-targeted onto it and `analyze`-on-Python kept as an audit | 6 | D7 |
 | 13 | **Scheduler**: IR-native rules (LHS/RHS, total analysis), activations as derived data, the recognize–act cycle with activation-level `RuleControl`, and the `Doubt` novelty fallback — **probe built (Q0) + the rule-level engine half (`Loop(schedule=True)`); activation-level not** | 6, 12 | D7 + `plan-scheduler.md` |
+| 14 | **Control network**: grown **scoring rules** over activations + **control rules** setting **opaque control attributes**, multi-step, with shared splits; the growing algorithm chosen by a probe | S, 13 | D9 |
+| 15 | **Knowledge mazes**: the maze **family** benchmark and its first probe, the ground truth the control network is grown against | 14 | D10 |
 
+Phase S is **foundational**: where it lands it supersedes the component
+vocabulary Phases 1-13 assume, so the phases whose layers it retargets
+(`analyze`, `save`, the IR, the scheduler) must be re-verified after it — the
+"prove the seam below before building above" rule, applied to the seam this
+repo has had longest.
 Phase 1 is the first build (the choice made in discussion). Phases 2 and 3 are
 the ones that make the workflow real; 4-7 are the payoff; 8 is the structure
 authoring layer; 9-11 are the semantic/agentic layer the product thesis finally
-rests on.
+rests on; 14-15 are the control-network direction.
 
 ## Cross-cutting work
 
@@ -281,6 +369,12 @@ rests on.
    planner — not merely run (`modeling.md`).
 6. Learning mixes stated rules, a few examples, and live feedback, with
    conflicts surfaced rather than smoothed (`study-guide.md`).
+7. The substrate is **attributes** — a value a scalar/ref/**list**, a record an
+   entity — and every layer above names a fact by attribute, not by a Python
+   class (D8).
+8. A **control network** is grown offline against a **maze family** and solves
+   held-out mazes it never saw, with a shared scoring rule visibly reused
+   (D9, D10).
 
 ## Open questions carried across docs
 
@@ -306,3 +400,18 @@ rests on.
   generic matcher rule over `RuleCard` LHS data; whether the unit of resolution
   is one activation or a maximal non-conflicting set; and whether the score
   persists or only the decision (D7, `plan-scheduler.md`).
+- Naming convention for a shape and its link attribute (and a set of refs);
+  whether a schema-driven constructor or plain `spawn`+`set` is the idiom; and
+  the exact verb set (`set` on a collection, `clear` vs `unset`) (D8).
+- How the JSON schema is versioned and frozen; how cycles in the ref graph are
+  handled by `save`/`share`; and whether a rule may set an anonymous scalar name
+  no shape declares (D8).
+- Which algorithm grows the control network — GP/GE over the IR with XCS-style
+  credit and library-learned shared splits, or another — to be chosen by a probe
+  (D9).
+- Whether a scoring rule writes a control attribute directly or only a score a
+  separate control rule maps, and whether control attributes share one namespace
+  or are scoped (D9).
+- Whether the maze suite reuses `checks` or needs a goal/optimality term they
+  lack; and whether a maze is its own package, an `examples/` family, or a forge
+  fixture (D10).

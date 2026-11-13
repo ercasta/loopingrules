@@ -50,13 +50,21 @@ they are worth reading once the basics are clear:
   reasoning. See [Contributing](contributing.md).
 
 The forward-looking plan, unlike the above, *is* part of this site: the
-[Roadmap](plan.md) and its seven design documents — [Memory and the change
+[Roadmap](plan.md) and its ten design documents — [Memory and the change
 log](plan-memory.md), [Dataset and scoring](plan-dataset.md), [Calibration
 API and knobs](plan-calibration.md), [Online adaptation](plan-adaptation.md),
-[The forge](plan-forge.md), [Islands and bridges](plan-islands.md), and
-[Reflection and the control channel](plan-reflection.md). Phases 1-2 of the
+[The forge](plan-forge.md), [Islands and bridges](plan-islands.md),
+[Reflection and the control channel](plan-reflection.md), [The attribute
+substrate](plan-attributes.md), [The stigmergic control
+network](plan-control-network.md), and [Knowledge mazes](plan-maze.md) — plus
+[the scheduler](plan-scheduler.md), [Modeling](modeling.md), and
+[the SOAR comparison](comparison-soar.md). Phases 1-2 of the
 roadmap are built — the calibration kit and the change log — and Phase 3's
 author surface, linter and first [pattern](patterns.md) with them; D6
 (islands) and D7 (reflection) each have a first probe and are not folded in.
+D8-D10 are the newest direction: a planned **attribute substrate** (entities
+with attributes, a value or a list of them, retiring the typed component), a
+**stigmergic control network** of grown scoring and control rules, and
+**knowledge mazes** as its benchmark.
 The rest of the pattern library and the roadmap are design. Each document ends
 with what it does *not* settle, in the same posture as `TODO.md`.

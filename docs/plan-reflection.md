@@ -205,7 +205,9 @@ named."
 - **One control per hash, one controller per rule.** Multi-controller
   interaction and multi-knob coupling are unprobed (D4's own open question).
 - **Credit assignment.** How a controller learns *which* rule to move is the
-  calibration kit's scoring plus the forge's search, not this doc.
+  calibration kit's scoring plus the forge's search, not this doc. A grown
+  *network* of scorers (`plan-control-network.md`, D9) is where it becomes the
+  crux.
 - **The engine grew.** `_tick_order` now reads a component. It is opt-in (no
   control exists until a rule writes one) and `PRINCIPLES.md` calls the
   engine frozen; a core change that turns out to be wrong ripples outward.

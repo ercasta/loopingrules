@@ -54,3 +54,6 @@ nav:
       - Islands and bridges: plan-islands.md
       - Reflection and the control channel: plan-reflection.md
       - The scheduler (recognize-act): plan-scheduler.md
+      - The attribute substrate: plan-attributes.md
+      - The stigmergic control network: plan-control-network.md
+      - Knowledge mazes: plan-maze.md

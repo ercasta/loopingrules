@@ -10,7 +10,10 @@ substrate a way to control a *rule* (`RuleControl`); this doc records where the
 discussion landed on *what* a controller controls, *how* ambiguity among rules
 is resolved, and *what* keeps that resolution from starving. It **extends D7**
 and depends on the IR-native decision (locked 13, `plan-forge.md`/D5) for its
-first precondition: total analysis.
+first precondition: total analysis. A grown **network** of scoring and control
+rules — many scorers, opaque control attributes, multi-step, with shared splits
+— generalises this doc's single `argmax` and is written up in
+`plan-control-network.md` (D9).
 
 `Q0` proves the MECHANISM on three claims and nothing more (see *Results*);
 it does not touch the engine. The rest of this doc is still untested prose,

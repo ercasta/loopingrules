@@ -305,3 +305,49 @@ core"), named so they are not lost rather than scheduled.
   md`, D7: "select from a set of controller patterns"). Both answer the
   probe's open question -- does GP scale, or does it need the patterns? The
   IR fold stays deferred until IR-native runtime is actually needed.
+- **The attribute substrate (D8) is a re-founding to PERFORM, and it makes
+  `README.md`, `docs/concepts.md` and `docs/architecture.md` stale by
+  design.** The built engine is still `entity + component`; `docs/plan-
+  attributes.md` says what it becomes, and the `README.md` History entry of
+  2026-11-13 already states the settlement. Both halves are settled: the
+  representation (entities + attributes; a value a scalar/ref/**flat list**;
+  **a component is an entity** -- a shape a ref targets -- with a tag the one
+  exception, a flag; kinds `singular`/`set`/`sequence`; a **JSON** schema
+  checked against derived use, a used-but-undeclared name a blocking gap; refs
+  may dangle) and the migration (**a clean break, no Python classes**, the old
+  component engine retired once the suite is green on the new core). Named
+  rather than half-applied: until the migration lands, the prose that describes
+  components is right about the *code* and wrong about the *plan*. What remains
+  are details -- naming, the verb set, schema versioning, cycles in the ref
+  graph. Phase S in `docs/plan.md`.
+- **The control network (D9) is design only, and the algorithm is deliberately
+  UNCHOSEN.** It extends D7's control channel and the scheduler's activation
+  scoring (both built, at the degenerate one-step case): many **scoring rules**
+  that score the applications of rules, and **control rules** that set
+  **opaque control attributes**, multi-step, with shared splits. The crux is
+  **credit assignment** across a multi-step network -- XCS is the candidate,
+  not a solution -- and the first probe is the maze benchmark (D10). Do not let
+  "grow a network" harden into a chosen algorithm before a probe earns it; this
+  repo has deleted untested prose before (`DECISION_PATTERNS.md`, `cdf98d6`).
+  Open: whether a scoring rule writes a control attribute directly or only a
+  score a separate control rule maps, and whether control attributes share one
+  namespace or are scoped.
+- **Knowledge mazes (D10) are unbuilt, and the first probe is only sketched.**
+  The doc names the shape (a family, mechanical ground truth, a held-out split,
+  shared sub-branches) and the first claims to pin; nothing exists. Open:
+  whether a maze is its own package, an `examples/` family, or a forge fixture;
+  whether the suite reuses `checks` or needs a goal/optimality term they lack;
+  and whether the first probe grows the network with the existing `evolve`
+  (GP over one controller) or waits for D9's network genome.
+- **Next, when resumed (recommended, not started): the attribute substrate
+  (D8).** Both halves are settled -- the representation and the migration
+  (clean break, no classes) -- in `docs/plan-attributes.md`. What is left is a
+  short list of details, named in D8's own open questions and in `docs/plan.md`:
+  the naming convention (shape vs link attribute, plural for a `set` of refs);
+  the constructor idiom (`w.add(e, "size", ...)` vs `spawn` + `set`); the exact
+  verb set (`set` on a collection, `clear` vs `unset`); how the JSON schema is
+  versioned and frozen; cycles in the ref graph; and whether a rule may set an
+  anonymous scalar name no shape declares. Settle those, then start **Phase S**
+  with the `world.py` rewrite -- the seam everything else is ported onto, in the
+  clean-break order D8 gives (`world` -> `analyze` -> `save`/`share` ->
+  `reflect`/IR -> forge/scheduler -> calibration/patterns/islands/examples).
