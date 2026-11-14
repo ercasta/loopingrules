@@ -1,34 +1,35 @@
-"""`examples.shopping` -- the second real domain fed to `loopingrules_patterns.judge`'s
-`Risk`/`RiskTolerance`/`flag_too_risky`, and the tests that actually check
-the claim its own module docstring makes ("What this is testing" /
-"What it settled, once tried"). Convention mirrors `tests/test_examples_
-cards.py`: a `say(loop, line)` helper spawns a `Said`, runs the loop to a
-settle, and hands back every `Reply` text produced."""
+"""`examples.shopping` -- the second real domain fed to the judge's
+`risk_level`/`max_level`/`flag_too_risky`."""
+
+from __future__ import annotations
 
 import pytest
 
 from examples import shopping
-from loopingrules_patterns import judge
+from loopingrules.engine import said
 from loopingrules.loop import Loop
-from loopingrules.engine import Reply, Said
 
 
 def say(loop, line):
     w = loop.world
-    w.spawn(Said("user", line))
+    said(w, "user", line)
     loop.run()
-    return [reply.text for entity, reply in w.each(Reply)
-            if w.destroy(entity) or True]
+    out = [w.get(entity, "text") for entity, _ in w.each("reply")]
+    for entity, _ in w.each("reply"):
+        w.destroy(entity)
+    return out
 
 
 def item(w, name):
-    """The `Item` entity named `name` -- a test-local lookup, not
-    `shopping._find_item`, so these tests exercise public behaviour
-    only."""
-    for entity, it in w.all(shopping.Item):
-        if it.name == name:
+    for entity, _tag, item_name in w.each("item", "name"):
+        if item_name == name:
             return entity
     raise AssertionError("no such item in this world: %r" % name)
+
+
+def _tolerance(w):
+    row = w.first("max_level")
+    return None if row is None else row[1]
 
 
 @pytest.fixture
@@ -38,34 +39,32 @@ def loop():
     return lp
 
 
-# -- install / seeding ----------------------------------------------------
+# -- install / seeding --------------------------------------------------
 
 def test_install_seeds_catalog_with_zero_stock(loop):
     w = loop.world
-    assert len(w.all(shopping.Item)) == len(shopping.DEFAULT_ITEMS)
-    for _entity, stock in w.all(shopping.Stock):
-        assert stock == shopping.Stock(0)
+    assert len(w.each("item")) == len(shopping.DEFAULT_ITEMS)
+    assert all(w.get(entity, "stock") == 0 for entity, _ in w.each("item"))
 
 
 def test_install_seeds_the_judges_risk_tolerance(loop):
-    w = loop.world
-    assert w.the(judge.RiskTolerance) == judge.RiskTolerance(0.6)
+    assert _tolerance(loop.world) == 0.6
 
 
 def test_install_does_not_re_seed_tolerance_on_restore():
     lp = Loop()
     w = lp.world
-    w.spawn(judge.RiskTolerance(0.1))
+    w.set(w.spawn(), "max_level", 0.1)
     shopping.install(lp, tolerance=0.9)
-    assert w.the(judge.RiskTolerance) == judge.RiskTolerance(0.1)
+    assert _tolerance(w) == 0.1
 
 
-# -- hearing ----------------------------------------------------------------
+# -- hearing ------------------------------------------------------------
 
 def test_stock_sets_the_quantity(loop):
     w = loop.world
     say(loop, "stock milk 4")
-    assert w.get(item(w, "milk"), shopping.Stock) == shopping.Stock(4)
+    assert w.get(item(w, "milk"), "stock") == 4
 
 
 def test_stock_rejects_an_unknown_item(loop):
@@ -79,14 +78,14 @@ def test_stock_rejects_a_non_integer_quantity(loop):
 def test_needby_sets_the_deadline(loop):
     w = loop.world
     say(loop, "needby milk 2")
-    assert w.get(item(w, "milk"), shopping.NeededBy) == shopping.NeededBy(2)
+    assert w.get(item(w, "milk"), "needed") == 2
 
 
 def test_a_second_needby_replaces_the_first_rather_than_adding_a_rival(loop):
     w = loop.world
     say(loop, "needby milk 5")
     say(loop, "needby milk 1")
-    assert w.get_all(item(w, "milk"), shopping.NeededBy) == [shopping.NeededBy(1)]
+    assert w.get(item(w, "milk"), "needed") == 1
 
 
 def test_status_reports_stock_deadline_and_list_membership(loop):
@@ -104,68 +103,58 @@ def test_status_omits_deadline_for_an_item_with_none_set(loop):
     assert "needed in" not in line.split("milk: 0 in stock")[1].split(";")[0]
 
 
-# -- the actual experiment: does Risk hold for a deadline, not a spend? -----
+# -- the actual experiment: does the risk shape hold for a deadline? -----
 
 def test_an_item_due_today_is_flagged_urgent(loop):
     w = loop.world
     say(loop, "needby milk 0")
-    assert w.has(item(w, "milk"), judge.TooRisky)
-    assert w.has(item(w, "milk"), shopping.OnList)
+    assert w.has(item(w, "milk"), "too_risky")
+    assert w.has(item(w, "milk"), "on_list")
 
 
 def test_an_item_with_a_distant_deadline_is_not_flagged(loop):
     w = loop.world
     say(loop, "needby milk 7")
-    assert not w.has(item(w, "milk"), judge.TooRisky)
-    assert not w.has(item(w, "milk"), shopping.OnList)
+    assert not w.has(item(w, "milk"), "too_risky")
+    assert not w.has(item(w, "milk"), "on_list")
 
 
 def test_an_item_with_no_deadline_gets_no_risk_at_all(loop):
     w = loop.world
-    assert w.get(item(w, "milk"), judge.Risk) is None
+    assert not w.has(item(w, "milk"), "risk_level")
 
 
 def test_urgency_rises_as_the_deadline_gets_closer(loop):
     w = loop.world
     say(loop, "needby milk 6")
-    far = w.get(item(w, "milk"), judge.Risk).level
+    far = w.get(item(w, "milk"), "risk_level")
     say(loop, "needby milk 1")
-    near = w.get(item(w, "milk"), judge.Risk).level
+    near = w.get(item(w, "milk"), "risk_level")
     assert near > far
 
 
 def test_falling_off_the_list_once_the_deadline_moves_back_out(loop):
     w = loop.world
     say(loop, "needby milk 0")
-    assert w.has(item(w, "milk"), shopping.OnList)
+    assert w.has(item(w, "milk"), "on_list")
     say(loop, "needby milk 7")
-    assert not w.has(item(w, "milk"), shopping.OnList)
+    assert not w.has(item(w, "milk"), "on_list")
 
 
-def test_several_urgent_items_can_still_be_ranked_by_the_same_risk_level_the_judge_thresholds(loop):
-    """The finding named in the module docstring's "What it settled":
-    `flag_too_risky` only ever exposes a boolean, but `Risk.level` itself
-    survives thresholding, so a caller that wants to know WHICH flagged
-    item is most pressing already can, by reading the same fact the judge
-    compared -- no ranking judge needed on top of the threshold one."""
+def test_several_urgent_items_can_still_be_ranked_by_the_same_risk_level(loop):
     w = loop.world
     say(loop, "needby milk 0")
     say(loop, "needby eggs 1")
     say(loop, "needby bread 2")
-    flagged = [(w.get(item(w, name), judge.Risk).level, name)
+    flagged = [(w.get(item(w, name), "risk_level"), name)
                for name in ("milk", "eggs", "bread")]
     for _level, name in flagged:
-        assert w.has(item(w, name), judge.TooRisky), name
+        assert w.has(item(w, name), "too_risky"), name
     ranked_names = [name for _level, name in sorted(flagged, reverse=True)]
     assert ranked_names == ["milk", "eggs", "bread"]
 
 
 def test_shopping_imports_the_judges_vocabulary_rather_than_reinventing_it():
-    """Not a behavioural test -- a documentation pin, the mirror image of
-    `tests/test_patterns_judge.py::test_the_module_imports_no_domain`:
-    checks the ACTUAL import statements name `loopingrules_patterns.judge`,
-    so the reuse claimed in the module docstring is real, not merely a
-    same-shaped component defined twice."""
     import ast
     import inspect
 
