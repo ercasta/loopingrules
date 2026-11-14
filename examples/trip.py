@@ -1,172 +1,59 @@
 """`trip` -- plan a multi-modal journey (train, taxi, subway) as a
-forward-only expansion of ordinary rules, not a shortest-path
-algorithm. Kept here, not shipped, the same as `examples.cards`/
-`examples.shopping` -- see this repo's `README.md`, "Scope."
+forward-only expansion of ordinary rules, not a shortest-path algorithm.
 
-## Why heuristics, not Dijkstra
+## Under the attribute substrate (D8)
 
-A real shortest-path solver keeps exactly the Pareto-optimal frontier
-and proves it never misses a winner. `expand_frontier`, below, is
-deliberately weaker: it prunes a candidate only when an EXISTING
-frontier entry already dominates it outright (no better on cost, no
-better on time), never re-examines a frontier entry once expanded, and
-caps how many hops a plan may take. That is enough to find good
-itineraries fast over a small network, and it is a genuine trade --
-`README.md`'s "no vocabulary above entities and components" test
-would call an actual optimizer a different kind of thing than this
-package's own rules; this is what "forward-only rules, on purpose,
-knowing an optimizer would search better" looks like as code, not a
-disclaimer bolted onto one.
-
-## `Leg`, one shape for three unrelated operators
-
-A `Leg` doesn't know if it is a train, a taxi, or a subway ride --
-`mode` is a label, nothing branches on it. A train's `depart` is a
-real timetable slot; a taxi or a subway run is modeled as always
-available (`depart=-1`, "leaves now, whenever `now` turns out to be"),
-which is a simplification named here rather than hidden: a real subway
-has headways, not zero wait, and this treats every on-demand mode as
-if the average wait were already folded into `duration`.
+A `Stop` is a `stop` entity carrying `name`; a `Leg` is a `leg` entity
+carrying `mode`/`origin`(ref)/`destination`(ref)/`depart`/`duration`/`fare`; a
+`TripRequest` is a `trip_request` entity; a `Frontier` is a `frontier` entity
+whose `path` is a flat list of leg ids. `expanded`/`complete` are flags.
+Refs (`origin`, `destination`, `request`, `stop`, `path`) are declared in
+`World.refs` so `share` remaps them.
 
 ## `dedupe_stops` is a function, not a rule -- on purpose
 
-Three independently-authored networks name their own stops -- a train
-timetable's "Downtown", a taxi service's "downtown", a subway map's
-" DOWNTOWN " -- and `share.load_pack` has no idea, and no business
-having an idea, that these denote the same place; see this package's
-own `share.py`, "no merge/identity hook." Reconciling them is this
-DOMAIN's call, and it is a one-shot cleanup over STATIC reference data,
-not a standing concern: nothing here ever mints a new `Stop` once the
-network is loaded, so there is nothing for a perpetual rule to keep
-watching. Written as a plain function, called once after merging the
-packs, the same way `save.py`/`share.py` operations are plain
-functions rather than rules -- see the conversation this module came
-out of, and `README.md`'s "a domain that wants that pattern writes its
-own components and its own generic reader over them."
-
-## What this does not attempt
-
-No return legs, no timetables beyond one operating day (a `depart`
-before midnight the previous day, or after this one, is not
-represented), no fare rules that vary by demand or time of day, and no
-actual Pareto-frontier maintenance -- a frontier entry that is later
-made obsolete by a better one is only ever pruned going forward
-(future candidates check against it), never retroactively removed.
+`share.load_pack` has no idea that "Downtown"/"downtown"/" DOWNTOWN " denote
+the same place; reconciling them is this DOMAIN's call, a one-shot cleanup
+over static reference data, written as a plain function.
 
 ## The winner is read back through a bridge, not recomputed in place
 
-`best_itinerary`, below, used to pick the winning `Complete` `Frontier`
-itself, by hand, with a bare `min(..., key=score)`. It now does this by
-BRIDGE instead: `nominate_itinerary` projects each `Complete` `Frontier`'s
-own score onto `examples.decide`'s domain-oblivious `Option`/`Score`
-(negated, since this domain minimizes and `decide` maximizes), and
-`decide.pick_winner` -- a rule that has never heard of a `Frontier` or a
-`TripRequest` -- attaches `decide.Winner` back onto the entity that
-earns it. `best_itinerary` reads that tag rather than rederiving the
-score itself; see `examples.decide`'s own docstring for the generic half
-of this and `DECISION_PATTERNS.md`'s `candidate`/`ranked`/`winner`
-vocabulary this narrows.
-
-One real behavior change follows from adopting `decide`'s "refuse rather
-than guess" discipline: an EXACT tie for the best score, which the old
-`min()` broke arbitrarily (first one found wins), now makes
-`best_itinerary` return `None` for that request instead -- nobody is
-crowned winner of a tie nothing here can honestly break. None of this
-module's own worked network ever produces one.
+`nominate_itinerary` projects each `Complete` `Frontier`'s own score onto
+`examples.decide`'s oblivious `occasion`/`score` (negated, since this domain
+minimizes), and `decide.pick_winner` attaches `winner` back.
 """
 
 from __future__ import annotations
 
-import dataclasses
-
 from examples import decide
 from loopingrules import share
-from loopingrules.world import Entity, World
+from loopingrules.world import World
 
 
-@dataclasses.dataclass(frozen=True)
-class Stop:
-    """A named place -- a station, an address, a neighborhood. Identity
-    is the `name`, not the entity id: two `Stop`s with the same
-    (normalized) name denote the same place, reconciled by
-    `dedupe_stops`, below."""
-
-    name: str
+# The declared ref attribute names, so `share` remaps them. (The frontier's
+# stop reference is `at`, not `stop` -- `stop` is the Stop tag flag.)
+REFS = {"origin", "destination", "request", "at", "path"}
 
 
-@dataclasses.dataclass(frozen=True)
-class Leg:
-    """One way to get from `origin` to `destination` -- `mode` is a
-    label a rule may report but never branches on. `depart=-1` means
-    "on demand": always available, `front.time` is used as the
-    departure instant, see `expand_frontier`."""
-
-    mode: str
-    origin: int = share.ref(default=0)
-    destination: int = share.ref(default=0)
-    depart: int = -1           # minutes after midnight, or -1 = on demand
-    duration: int = 0          # minutes
-    fare: float = 0.0
-
-
-@dataclasses.dataclass(frozen=True)
-class TripRequest:
-    """One traveler's question: get from `origin` to `destination`, no
-    earlier than `start_time`, spending no more than `budget`, in at
-    most `max_hops` legs -- scored by `weight_cost`/`weight_time`, a
-    heuristic trade rather than a normalized utility (see
-    `best_itinerary`)."""
-
-    origin: int = share.ref(default=0)
-    destination: int = share.ref(default=0)
-    start_time: int = 0
-    budget: float = 0.0
-    max_hops: int = 3
-    weight_cost: float = 0.5
-    weight_time: float = 0.5
-
-
-@dataclasses.dataclass(frozen=True)
-class Frontier:
-    """One partial (or, once `Complete`, whole) itinerary: sitting at
-    `stop`, at `time`, having spent `cost` over `hops` legs, `path` the
-    `Leg` entity ids taken to get here, in order."""
-
-    request: int = share.ref(default=0)
-    stop: int = share.ref(default=0)
-    time: int = 0
-    cost: float = 0.0
-    hops: int = 0
-    path: tuple = share.ref(default=())
-
-
-@dataclasses.dataclass(frozen=True)
-class Expanded:
-    """This `Frontier` has already tried every `Leg` out of its own
-    stop -- `expand_frontier`'s own "don't fire twice" guard, the
-    consuming idiom `README.md`'s History already prefers over
-    testing a conclusion's absence, restated for a tag that is never
-    detached rather than a component that is destroyed."""
-
-
-@dataclasses.dataclass(frozen=True)
-class Complete:
-    """This `Frontier` has reached its own request's destination."""
+def _spawn(w, tag, **attributes):
+    entity = w.spawn()
+    w.mark(entity, tag)
+    for name, value in attributes.items():
+        w.set(entity, name, value)
+    return entity
 
 
 # -- setup: reconciling independently-authored data, once ---------------
 
 def dedupe_stops(w) -> int:
-    """Unify every `Stop` sharing a normalized name (stripped, cased
-    down) onto the first one seen, rewriting every `Leg`/`TripRequest`/
-    `Frontier` field that pointed at a duplicate -- see the module
-    docstring for why this is a function, run once after merging packs,
-    not a `Loop.rule`. Returns how many duplicates were removed.
-    """
+    """Unify every `stop` sharing a normalized name onto the first one seen,
+    rewriting every leg/trip_request/frontier ref that pointed at a
+    duplicate. Returns how many duplicates were removed."""
     canonical: "dict[str, int]" = {}
     removed = 0
-    for entity, stop in sorted(w.each(Stop), key=lambda pair: pair[0].id):
-        key = stop.name.strip().lower()
+    for entity, _tag, name in sorted(w.each("stop", "name"),
+                                     key=lambda row: row[0].id):
+        key = name.strip().lower()
         if key not in canonical:
             canonical[key] = entity.id
             continue
@@ -177,205 +64,189 @@ def dedupe_stops(w) -> int:
 
 
 def _redirect_stop(w, old_id: int, new_id: int) -> None:
-    for entity, leg in w.each(Leg):
-        changed = {}
-        if leg.origin == old_id:
-            changed["origin"] = new_id
-        if leg.destination == old_id:
-            changed["destination"] = new_id
-        if changed:
-            w.replace(entity, dataclasses.replace(leg, **changed))
-    for entity, request in w.each(TripRequest):
-        changed = {}
-        if request.origin == old_id:
-            changed["origin"] = new_id
-        if request.destination == old_id:
-            changed["destination"] = new_id
-        if changed:
-            w.replace(entity, dataclasses.replace(request, **changed))
-    for entity, front in w.each(Frontier):
-        if front.stop == old_id:
-            w.replace(entity, dataclasses.replace(front, stop=new_id))
+    for entity, _tag, origin, destination in w.each("leg", "origin",
+                                                    "destination"):
+        if origin == old_id:
+            w.set(entity, "origin", new_id)
+        if destination == old_id:
+            w.set(entity, "destination", new_id)
+    for entity, _tag, origin, destination in w.each("trip_request", "origin",
+                                                    "destination"):
+        if origin == old_id:
+            w.set(entity, "origin", new_id)
+        if destination == old_id:
+            w.set(entity, "destination", new_id)
+    for entity, _tag, stop in w.each("frontier", "at"):
+        if stop == old_id:
+            w.set(entity, "at", new_id)
 
 
-def plan_trip(w, request: "Entity") -> "Entity":
-    """Seed the one `Frontier` every plan starts from: sitting at the
-    request's own origin, at its own start time, having spent nothing
-    over zero legs. Call once per `TripRequest`, before `loop.run()`."""
-    req = w.get(request, TripRequest)
-    return w.spawn(Frontier(request.id, req.origin, req.start_time, 0.0, 0, ()))
+def plan_trip(w, request) -> "object":
+    """Seed the one `frontier` every plan starts from: at the request's own
+    origin, at its start time, having spent nothing over zero legs."""
+    q = request.id if hasattr(request, "id") else int(request)
+    origin = w.get(q, "origin")
+    start = w.get(q, "start_time")
+    return _spawn(w, "frontier", request=q, at=origin, time=start,
+                  cost=0.0, hops=0, path=[])
 
 
-# -- the two forward-only rules -------------------------------------------
+# -- the two forward-only rules -----------------------------------------
 
-def _dominated(w, candidate: Frontier) -> bool:
-    """Whether an existing `Frontier`, for the same request and at the
-    same stop, is already at least as good on BOTH cost and time --
-    the one pruning rule this module applies. Not a Pareto frontier:
-    an existing entry worse than `candidate` is never removed, only a
-    future candidate is ever compared against what is here already."""
-    for _, front in w.each(Frontier):
-        if front.request != candidate.request or front.stop != candidate.stop:
+def _dominated(w, request, stop, cost, time) -> bool:
+    """Whether an existing `frontier`, for the same request and stop, is
+    already at least as good on BOTH cost and time."""
+    for _entity, _tag, req, st, c, t in w.each("frontier", "request", "at",
+                                               "cost", "time"):
+        if req != request or st != stop:
             continue
-        if front.cost <= candidate.cost and front.time <= candidate.time:
+        if c <= cost and t <= time:
             return True
     return False
 
 
 def expand_frontier(w) -> None:
-    """For every not-yet-`Expanded` `Frontier`, try every `Leg` out of
-    its own stop -- feasible only if a scheduled `depart` has not
-    already passed and the resulting cost stays within the request's
-    `budget` -- and spawn the extension, unless an existing `Frontier`
-    already dominates it. Marks itself `Expanded` regardless, even if
-    nothing came of it (hop cap reached, no affordable leg): the guard
-    is "tried once," not "produced a child."
-    """
-    for entity, front in w.each(Frontier, without=Expanded):
-        request = w.get(w.entity(front.request), TripRequest)
-        w.attach(entity, Expanded())
-        if request is None or front.hops >= request.max_hops:
+    """For every not-yet-`expanded` frontier, try every `leg` out of its own
+    stop -- feasible only if a scheduled `depart` has not passed and the cost
+    stays within budget -- and spawn the extension unless dominated. Marks
+    itself `expanded` regardless."""
+    for row in w.each("frontier", "request", "at", "time", "cost", "hops",
+                      "path", without="expanded"):
+        entity, _tag, request, stop, time, cost, hops, path = row
+        w.mark(entity, "expanded")
+        req = w.entity(request)
+        if not w.has(req, "max_hops"):
             continue
-        for leg_entity, leg in w.each(Leg):
-            if leg.origin != front.stop:
+        if hops >= w.get(req, "max_hops"):
+            continue
+        budget = w.get(req, "budget")
+        for leg_row in w.each("leg", "origin", "destination", "depart",
+                              "duration", "fare"):
+            leg_entity, _ltag, origin, destination, depart, duration, fare = leg_row
+            if origin != stop:
                 continue
-            depart = front.time if leg.depart < 0 else leg.depart
-            if depart < front.time:
+            leave = time if depart < 0 else depart
+            if leave < time:
                 continue                      # already left
-            cost = front.cost + leg.fare
-            if cost > request.budget:
+            new_cost = cost + fare
+            if new_cost > budget:
                 continue
-            candidate = Frontier(front.request, leg.destination,
-                                 depart + leg.duration, cost,
-                                 front.hops + 1, front.path + (leg_entity.id,))
-            if not _dominated(w, candidate):
-                w.spawn(candidate)
+            if not _dominated(w, request, destination, new_cost,
+                              leave + duration):
+                _spawn(w, "frontier", request=request, at=destination,
+                       time=leave + duration, cost=new_cost, hops=hops + 1,
+                       path=list(path) + [leg_entity.id])
 
 
 def mark_complete(w) -> None:
-    """Tag every `Frontier` that has reached its own request's
-    destination -- `best_itinerary` reads this rather than re-deriving
-    it, the same "compose a tag nobody wrote the composition of" idiom
-    `examples.cards.decide_buy` already uses."""
-    for entity, front in w.each(Frontier, without=Complete):
-        request = w.get(w.entity(front.request), TripRequest)
-        if request is not None and front.stop == request.destination:
-            w.attach(entity, Complete())
+    """Tag every frontier that has reached its own request's destination."""
+    for entity, _tag, request, at in w.each("frontier", "request", "at",
+                                            without="complete"):
+        req = w.entity(request)
+        if w.has(req, "destination") and at == w.get(req, "destination"):
+            w.mark(entity, "complete")
 
 
-def _score(w, front: Frontier) -> float:
-    """`weight_cost * cost + weight_time * elapsed` -- a heuristic
-    trade, not a normalized utility: a `weight_cost`/`weight_time` pair
-    only means what it says when cost (currency) and elapsed (minutes)
-    are read as comparable raw numbers, which they are not, left for
-    whoever builds a `TripRequest` to pick weights that make sense for
-    their own numbers. Shared by `nominate_itinerary`, below -- the ONE
-    place this domain computes a score, so the bridge projects exactly
-    what a hand-rolled `best_itinerary` used to compute directly."""
-    req = w.get(w.entity(front.request), TripRequest)
-    elapsed = front.time - req.start_time
-    return req.weight_cost * front.cost + req.weight_time * elapsed
+def _score(w, front) -> float:
+    """`weight_cost * cost + weight_time * elapsed` -- this domain's ONE
+    score, shared with `nominate_itinerary`."""
+    req = w.entity(w.get(front, "request"))
+    elapsed = w.get(front, "time") - w.get(req, "start_time")
+    return (w.get(req, "weight_cost") * w.get(front, "cost")
+            + w.get(req, "weight_time") * elapsed)
 
 
 def nominate_itinerary(w) -> None:
-    """The bridge's outbound half: project every `Complete` `Frontier`'s
-    own score onto `examples.decide`'s oblivious `Option`/`Score` --
-    `occasion` is the `Frontier`'s own request, so rival itineraries for
-    DIFFERENT requests are never compared against each other. Negated on
-    the way in, since `decide.pick_winner` wants higher-is-better and
-    this domain's own score is a cost+time trade to MINIMIZE. Idempotent
-    for free (`World.attach`'s own dedup), so no "already projected"
-    guard is needed even though this re-attempts every tick."""
-    for entity, front, _complete in w.each(Frontier, Complete):
-        w.attach(entity, decide.Option(front.request))
-        w.attach(entity, decide.Score(-_score(w, front)))
+    """The bridge's outbound half: project every `complete` frontier's own
+    score onto `decide`'s oblivious `occasion`/`score`, negated (this domain
+    minimizes; `decide` maximizes). Idempotent for free (`set`'s own dedup)."""
+    for entity, _tag, _complete in w.each("frontier", "complete"):
+        w.set(entity, "occasion", w.get(entity, "request"))
+        w.set(entity, "score", -_score(w, entity))
 
 
 def install(loop) -> None:
-    """Register every rule, including the bridge's two halves --
-    `nominate_itinerary` (this domain's own projection) and
-    `decide.pick_winner` (the oblivious rule that reads it back), see
-    the module docstring, "The winner is read back through a bridge."
-    Nothing is seeded here -- unlike `examples.cards.install`, there is
-    no fixed catalog this domain ships; a caller builds its own network
-    (see `build_demo_world`, below, for a worked one) and calls
-    `plan_trip` per request."""
+    """Register every rule, including the bridge's two halves."""
     loop.rule(expand_frontier)
     loop.rule(mark_complete)
     loop.rule(nominate_itinerary)
     loop.rule(decide.pick_winner)
 
 
-# -- reading the answer ----------------------------------------------------
+# -- reading the answer -------------------------------------------------
 
-def best_itinerary(w, request: "Entity"):
-    """The `Complete` `Frontier` for this request that `decide.
-    pick_winner` crowned `decide.Winner` -- see the module docstring,
-    "The winner is read back through a bridge," for why this no longer
-    recomputes a score itself. Returns `(frontier, [Leg, ...])`, legs in
-    travel order, or `None` if nothing reached the destination at all,
-    OR if the best score tied and `decide.pick_winner` refused to guess.
-    """
-    for entity, front, _complete, _winner in w.each(
-            Frontier, Complete, decide.Winner):
-        if front.request != request.id:
+def best_itinerary(w, request):
+    """The `complete` frontier for this request that `decide.pick_winner`
+    crowned `winner`. Returns `(frontier, [leg, ...])`, legs in travel order,
+    or `None` if nothing reached the destination, OR if the best score tied
+    and `pick_winner` refused to guess."""
+    q = request.id if hasattr(request, "id") else int(request)
+    for entity, _tag, _complete, _winner in w.each("frontier", "complete",
+                                                   "winner"):
+        if w.get(entity, "request") != q:
             continue
-        legs = [w.get(w.entity(leg_id), Leg) for leg_id in front.path]
-        return front, legs
+        legs = [w.entity(leg_id) for leg_id in w.get(entity, "path")]
+        return entity, legs
     return None
 
 
-# -- a worked, multi-source network, to run this against -------------------
+# -- a worked, multi-source network -------------------------------------
+
+def _stop(w, name):
+    return _spawn(w, "stop", name=name)
+
+
+def _leg(w, mode, origin, destination, depart, duration, fare):
+    return _spawn(w, "leg", mode=mode, origin=origin, destination=destination,
+                  depart=depart, duration=duration, fare=fare)
+
 
 def _train_network():
     w = World()
-    downtown = w.spawn(Stop("Downtown"))
-    airport = w.spawn(Stop("Airport"))
-    lakeside = w.spawn(Stop("Lakeside"))
-    w.spawn(Leg("train", airport.id, downtown.id, 540, 30, 8.0))
-    w.spawn(Leg("train", downtown.id, lakeside.id, 620, 25, 6.0))
+    w.refs = set(REFS)
+    downtown = _stop(w, "Downtown")
+    airport = _stop(w, "Airport")
+    lakeside = _stop(w, "Lakeside")
+    _leg(w, "train", airport, downtown, 540, 30, 8.0)
+    _leg(w, "train", downtown, lakeside, 620, 25, 6.0)
     return w, [downtown, airport, lakeside]
 
 
 def _taxi_network():
     w = World()
-    downtown = w.spawn(Stop("downtown"))
-    airport = w.spawn(Stop("airport"))
-    lakeside = w.spawn(Stop("lakeside"))
-    w.spawn(Leg("taxi", airport.id, downtown.id, -1, 15, 30.0))
-    w.spawn(Leg("taxi", downtown.id, lakeside.id, -1, 12, 25.0))
-    w.spawn(Leg("taxi", airport.id, lakeside.id, -1, 20, 45.0))
+    w.refs = set(REFS)
+    downtown = _stop(w, "downtown")
+    airport = _stop(w, "airport")
+    lakeside = _stop(w, "lakeside")
+    _leg(w, "taxi", airport, downtown, -1, 15, 30.0)
+    _leg(w, "taxi", downtown, lakeside, -1, 12, 25.0)
+    _leg(w, "taxi", airport, lakeside, -1, 20, 45.0)
     return w, [downtown, airport, lakeside]
 
 
 def _subway_network():
     w = World()
-    downtown = w.spawn(Stop(" Downtown "))
-    lakeside = w.spawn(Stop("LAKESIDE"))
-    w.spawn(Leg("subway", downtown.id, lakeside.id, -1, 10, 3.0))
+    w.refs = set(REFS)
+    downtown = _stop(w, " Downtown ")
+    lakeside = _stop(w, "LAKESIDE")
+    _leg(w, "subway", downtown, lakeside, -1, 10, 3.0)
     return w, [downtown, lakeside]
 
 
 def build_demo_world():
-    """Three independently-authored networks (a train operator, a taxi
-    service, a subway line -- each its own `World`, its own `Stop`
-    spellings), packed with `share.dump_pack` and merged into one
-    traveler's `World` with `share.load_pack`, then reconciled with
-    `dedupe_stops`. Returns `(world, stops)` -- `stops` a `{name:
-    Entity}` map keyed by the CANONICAL (lower, stripped) name, for a
-    caller that wants to build a `TripRequest` without knowing which
-    source first minted the `Stop` it ended up with.
-    """
-    registry = {share._name_of(Stop): Stop, share._name_of(Leg): Leg}
+    """Three independently-authored networks, packed and merged into one
+    traveller's world with `share`, then reconciled with `dedupe_stops`.
+    Returns `(world, stops)` -- `stops` keyed by canonical name."""
     world = World()
+    world.refs = set(REFS)
     for build in (_train_network, _taxi_network, _subway_network):
         source, entities = build()
-        legs = [e for e, _ in source.each(Leg)]
+        legs = [e for e, _ in source.each("leg")]
         pack = share.dump_pack(source, entities + legs)
-        problems, _ = share.load_pack(world, pack, registry)
+        problems, _ = share.load_pack(world, pack)
         assert not problems, problems
 
     dedupe_stops(world)
-    stops = {stop.name.strip().lower(): entity
-            for entity, stop in world.each(Stop)}
+    stops = {name.strip().lower(): entity
+             for entity, _tag, name in world.each("stop", "name")}
     return world, stops
