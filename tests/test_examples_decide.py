@@ -1,8 +1,9 @@
-"""`examples.decide` -- a domain-oblivious rule. Deliberately imports
-NOTHING from `examples.trip`: every test here spawns bare entities with
-no domain meaning at all, to pin the claim `decide.py`'s own docstring
-makes -- this rule knows only `Option` and `Score`, nothing about what
-produced either."""
+"""`examples.decide` -- a domain-oblivious rule. Deliberately imports NOTHING
+from `examples.trip`: every test here spawns bare entities with no domain
+meaning at all, to pin the claim `decide.py`'s own docstring makes -- this
+rule knows only `occasion`/`score`, nothing about what produced either."""
+
+from __future__ import annotations
 
 from examples import decide
 from loopingrules.loop import Loop
@@ -12,16 +13,23 @@ def install(loop):
     loop.rule(decide.pick_winner)
 
 
+def _option(world, occasion, score):
+    entity = world.spawn()
+    world.set(entity, "occasion", occasion)
+    world.set(entity, "score", score)
+    return entity
+
+
 def test_the_unique_top_scoring_option_wins():
     lp = Loop()
     w = lp.world
     install(lp)
     occasion = w.spawn()
-    low = w.spawn(decide.Option(occasion.id), decide.Score(1.0))
-    high = w.spawn(decide.Option(occasion.id), decide.Score(2.0))
+    low = _option(w, occasion.id, 1.0)
+    high = _option(w, occasion.id, 2.0)
     lp.tick()
-    assert w.has(high, decide.Winner)
-    assert not w.has(low, decide.Winner)
+    assert w.has(high, "winner")
+    assert not w.has(low, "winner")
 
 
 def test_an_exact_tie_crowns_nobody():
@@ -29,11 +37,11 @@ def test_an_exact_tie_crowns_nobody():
     w = lp.world
     install(lp)
     occasion = w.spawn()
-    a = w.spawn(decide.Option(occasion.id), decide.Score(1.0))
-    b = w.spawn(decide.Option(occasion.id), decide.Score(1.0))
+    a = _option(w, occasion.id, 1.0)
+    b = _option(w, occasion.id, 1.0)
     lp.tick()
-    assert not w.has(a, decide.Winner)
-    assert not w.has(b, decide.Winner)
+    assert not w.has(a, "winner")
+    assert not w.has(b, "winner")
 
 
 def test_a_newer_better_option_overtakes_the_former_winner():
@@ -41,14 +49,14 @@ def test_a_newer_better_option_overtakes_the_former_winner():
     w = lp.world
     install(lp)
     occasion = w.spawn()
-    first = w.spawn(decide.Option(occasion.id), decide.Score(1.0))
+    first = _option(w, occasion.id, 1.0)
     lp.tick()
-    assert w.has(first, decide.Winner)
+    assert w.has(first, "winner")
 
-    second = w.spawn(decide.Option(occasion.id), decide.Score(2.0))
+    second = _option(w, occasion.id, 2.0)
     lp.tick()
-    assert w.has(second, decide.Winner)
-    assert not w.has(first, decide.Winner)
+    assert w.has(second, "winner")
+    assert not w.has(first, "winner")
 
 
 def test_two_occasions_are_resolved_independently():
@@ -57,20 +65,17 @@ def test_two_occasions_are_resolved_independently():
     install(lp)
     a = w.spawn()
     b = w.spawn()
-    a_winner = w.spawn(decide.Option(a.id), decide.Score(5.0))
-    w.spawn(decide.Option(a.id), decide.Score(1.0))
-    b_winner = w.spawn(decide.Option(b.id), decide.Score(1.0))
-    w.spawn(decide.Option(b.id), decide.Score(0.5))
+    a_winner = _option(w, a.id, 5.0)
+    _option(w, a.id, 1.0)
+    b_winner = _option(w, b.id, 1.0)
+    _option(w, b.id, 0.5)
     lp.tick()
-    assert w.has(a_winner, decide.Winner)
-    assert w.has(b_winner, decide.Winner)
+    assert w.has(a_winner, "winner")
+    assert w.has(b_winner, "winner")
 
 
 def test_the_module_imports_no_domain():
-    """Not a behavioural test -- a documentation pin, the same check
-    `tests/test_patterns_judge.py::test_the_module_imports_no_domain`
-    already runs for `judge.py`. Checks the ACTUAL import statements
-    never name a domain module, not just that the docstring claims so."""
+    """Checks the ACTUAL import statements never name a domain module."""
     import ast
     import inspect
 

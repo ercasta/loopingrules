@@ -4,406 +4,288 @@ much it will spend, how much premium over fair value it will tolerate).
 
 ## The actual point: composing tags nobody wrote the composition of
 
-The interesting mechanism here is not the market, it's `decide_buy`
-reading three tags -- `Wanted`, `Affordable`, `FairPriced` -- attached to
-one `Listing` by three rules that share no code and no awareness of each
-other. 
+The interesting mechanism here is not the market, it's `decide_buy` reading
+three flags -- `wanted`, `affordable`, `fair_priced` -- set on one `listing`
+entity by three rules that share no code and no awareness of each other.
 
-## Selling is a deliberate gap, not an oversight
+## Under the attribute substrate (D8)
 
-This agent only ever buys. A `decide_sell` rule would follow the exact
-same tag-then-act shape 
+There are no component classes. A card in the catalog is an entity tagged
+`card_def`, carrying `name`/`rarity`/`value`; the agent's own holdings are
+the `copies` attribute ON that same entity, and a stated goal is the `wants`
+attribute on it. A `listing` is an entity carrying `card` (a reference) and
+`price`. A tag is a flag; a short-lived outcome (`bought`, `bad_command`) is
+its own tagged entity. See `docs/plan-attributes.md`.
 
 ## A fourth tag, projected onto a judge this domain does not own
 
-`tag_risk_level` is like `tag_wanted`/`tag_affordable`/`tag_fair_priced`
-in shape -- recomputed fresh every tick off a `Listing` -- but different
-in kind: it does not attach a boolean this domain reads back itself, it
-projects a fact this domain understands (how much of the room to spend
-this purchase would use) onto `loopingrules_patterns.judge.Risk`, a component this
-domain does not define and a threshold (`RiskTolerance`) it does not own
-either. `judge.flag_too_risky` is the actual judge, and it has never
-heard of a `Listing`, a `Purse`, or a card -- see `judge.py`'s own
-docstring for what this is testing. `decide_buy` reading `without=
-TooRisky` alongside its own three tags is the same composition idiom as
-always: one more independently-produced tag, read by a rule that does
-not know or care which rule produced it.
-
-## Vocabulary
-
-- `CardDef(name, rarity, value)` -- one entity per catalog card, the
-  agent's own idea of what a card is worth. Seeded by `install`, one
-  entity per catalog entry, by NAME -- an entry already present (by name)
-  is never touched: a
-  restored world's own value is a prior tick's conclusion, not something
-  a later `install()` call has any business overwriting.
-- `Copies(count)` -- how many of a card the agent holds, attached to that
-  card's OWN `CardDef` entity (not a separate entity referencing it by
-  id) -- `World.replace()` already keeps this singular for free, the
-  same tool `fs.py` reaches for on `Session`/`BigFloor`.
-- `Wants(qty)` -- how many the agent's goal calls for, attached the same
-  way, created by `hear_want`, absent until then (a goal only exists once
-  stated).
-- `Purse(cash)` -- the agent's money, a singleton entity, seeded once
-  (BigFloor-style: only if none exists yet).
-- `RiskProfile(max_spend_per_trade, min_cash_reserve, max_premium)` -- the
-  agent's tunable risk knobs, singleton, seeded the same way.
-- `Listing(card, price)` -- a card for sale, `card` a `CardDef` entity id
-  (or the live entity -- `attach()` lowers it, see `loopingrules.world`'s
-  own module note). Arrives via `hear_list`; never seeded.
-- `Wanted()` / `Affordable()` / `FairPriced()` -- `@transient` tags on a
-  `Listing`, see above.
-- `loopingrules_patterns.judge.Risk(level, reason)` -- this domain's own claim, `replace`d
-  fresh onto a `Listing` every tick by `tag_risk_level`, of how much of the
-  affordable room the purchase would use. Not this module's own
-  component -- see "A fourth tag," above, and `judge.py`'s own docstring.
-- `loopingrules_patterns.judge.RiskTolerance(max_level)` -- the judge's threshold, seeded
-  by `install` the same BigFloor-style way as `RiskProfile`, but owned by
-  `judge.py`, not by this domain.
-- `Bought(card, price)` / `BadCommand(text, why)` -- short-lived outcome
-  facts, consumed same-or-next tick by a `reply_*` rule. Not
-  `@transient` -- they're gone before a save would ever see them anyway,
-  the same as `fs.py`'s own `Renamed`/`Failed`.
-- `GoalMet()` / `Announced()` -- `GoalMet` is a durable singleton, spawned
-  once every `Wants` is met and never destroyed again; `Announced`,
-  attached to it, is what keeps `reply_goal_met` from saying so twice.
-  Deliberately NOT `@transient`, and NEVER re-derived once true -- a
-  domain that dropped and re-derived this every tick would re-announce
-  "goal met" forever, exactly the hot loop `PRINCIPLES.md`'s "termination
-  is a safety net" section warns a growing ruleset to watch for.
+`tag_risk_level` projects a fact this domain understands (how much of the
+room to spend this purchase would use) onto `loopingrules_patterns.judge`'s
+`risk_level`/`risk_reason`, a convention this domain does not define and a
+threshold (`max_level`) it does not own. `judge.flag_too_risky` is the actual
+judge, and it has never heard of a listing, a purse, or a card.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from loopingrules.engine import reply
+from loopingrules_patterns.judge import flag_too_risky, seed_tolerance
 
-from loopingrules_patterns.judge import Risk, RiskTolerance, TooRisky, flag_too_risky
-from loopingrules.engine import Reply, Said
-from loopingrules.world import transient
-
-
-@dataclass(frozen=True)
-class CardDef:
-    name: str
-    rarity: str
-    value: int
-
-
-@dataclass(frozen=True)
-class Copies:
-    count: int
-
-
-@dataclass(frozen=True)
-class Wants:
-    qty: int
-
-
-@dataclass(frozen=True)
-class Purse:
-    cash: int
-
-
-@dataclass(frozen=True)
-class RiskProfile:
-    max_spend_per_trade: int
-    min_cash_reserve: int
-    max_premium: float
-
-
-@dataclass(frozen=True)
-class Listing:
-    card: int
-    price: int
-
-
-@transient
-@dataclass(frozen=True)
-class Wanted:
-    pass
-
-
-@transient
-@dataclass(frozen=True)
-class Affordable:
-    pass
-
-
-@transient
-@dataclass(frozen=True)
-class FairPriced:
-    pass
-
-
-@dataclass(frozen=True)
-class Bought:
-    card: int
-    price: int
-
-
-@dataclass(frozen=True)
-class BadCommand:
-    text: str
-    why: str
-
-
-@dataclass(frozen=True)
-class GoalMet:
-    pass
-
-
-@dataclass(frozen=True)
-class Announced:
-    pass
-
+# Shape tags and attribute names (used as literals in the rules below, so
+# `analyze` can attribute them; named here for readers and tests).
+CARD_DEF = "card_def"
+LISTING = "listing"
+PURSE = "purse"
+RISK_PROFILE = "risk_profile"
+BOUGHT = "bought"
+BAD_COMMAND = "bad_command"
+GOAL_MET = "goal_met"
 
 DEFAULT_CATALOG = (
-    CardDef("dragon", "rare", 40),
-    CardDef("phoenix", "legendary", 100),
-    CardDef("goblin", "common", 5),
-    CardDef("wolf", "common", 8),
-    CardDef("griffin", "rare", 35),
+    ("dragon", "rare", 40),
+    ("phoenix", "legendary", 100),
+    ("goblin", "common", 5),
+    ("wolf", "common", 8),
+    ("griffin", "rare", 35),
 )
 
 
 def _find_card(w, name: str):
-    """The `CardDef` entity named `name`, case-insensitively, or `None`.
-    Never guesses between two -- `install` never seeds a duplicate name,
-    and nothing else here spawns a `CardDef` at all."""
-    for entity, card_def in w.all(CardDef):
-        if card_def.name.lower() == name.lower():
+    """The `card_def` entity named `name`, case-insensitively, or `None`.
+    Never guesses between two -- `install` never seeds a duplicate name."""
+    for entity, _tag, card_name in w.each("card_def", "name"):
+        if card_name.lower() == name.lower():
             return entity
     return None
 
 
 def _parse_int(text: str):
-    """`int(text)`, or `None` """
+    """`int(text)`, or `None`."""
     try:
         return int(text)
     except ValueError:
         return None
 
 
+def _bad(w, text: str, why: str) -> None:
+    entity = w.spawn()
+    w.mark(entity, "bad_command")
+    w.set(entity, "text", text)
+    w.set(entity, "why", why)
+
+
 # -- hearing -----------------------------------------------------------
 
 def hear_list(w) -> None:
-    """`list <card> <price>` -> a `Listing`, or a `BadCommand` naming
-    what was wrong. Claims (`destroy`s) the line the moment its own verb
-    matches, whether or not what follows parses -- once claimed, it is
-    never left standing for something else to trip over."""
-    for entity, said in w.each(Said):
-        words = said.text.split()
+    """`list <card> <price>` -> a `listing`, or a `bad_command` naming what
+    was wrong. Claims (`destroy`s) the line the moment its own verb matches."""
+    for entity, _tag, text in w.each("said", "text"):
+        words = text.split()
         if not words or words[0].lower() != "list":
             continue
         w.destroy(entity)
         if len(words) != 3:
-            w.spawn(BadCommand(said.text, "usage: list <card> <price>"))
+            _bad(w, text, "usage: list <card> <price>")
             continue
         name, price_text = words[1], words[2]
         card = _find_card(w, name)
         if card is None:
-            w.spawn(BadCommand(said.text, "unknown card %r" % name))
+            _bad(w, text, "unknown card %r" % name)
             continue
         price = _parse_int(price_text)
         if price is None:
-            w.spawn(BadCommand(said.text, "not a price: %r" % price_text))
+            _bad(w, text, "not a price: %r" % price_text)
             continue
-        w.spawn(Listing(card, price))
+        listing = w.spawn()
+        w.mark(listing, "listing")
+        w.set(listing, "card", card)
+        w.set(listing, "price", price)
 
 
 def hear_want(w) -> None:
-    """`want <card> [qty]` (default `qty=1`) -> `Wants(qty)` on that
-    card's own `CardDef` entity, replacing whatever `Wants` it already
-    carried -- a second `want` for the same card updates the goal, it
-    does not add a rival one."""
-    for entity, said in w.each(Said):
-        words = said.text.split()
+    """`want <card> [qty]` (default `qty=1`) -> the `wants` attribute on that
+    card's own `card_def` entity, replacing whatever it carried."""
+    for entity, _tag, text in w.each("said", "text"):
+        words = text.split()
         if not words or words[0].lower() != "want":
             continue
         w.destroy(entity)
         if len(words) not in (2, 3):
-            w.spawn(BadCommand(said.text, "usage: want <card> [qty]"))
+            _bad(w, text, "usage: want <card> [qty]")
             continue
         card = _find_card(w, words[1])
         if card is None:
-            w.spawn(BadCommand(said.text, "unknown card %r" % words[1]))
+            _bad(w, text, "unknown card %r" % words[1])
             continue
         qty = 1
         if len(words) == 3:
             qty = _parse_int(words[2])
             if qty is None or qty < 1:
-                w.spawn(BadCommand(said.text, "not a quantity: %r" % words[2]))
+                _bad(w, text, "not a quantity: %r" % words[2])
                 continue
-        w.replace(card, Wants(qty))
+        w.set(card, "wants", qty)
 
 
 def hear_status(w) -> None:
-    """`status` -> cash, goal progress per wanted card, and whether the
-    goal is met -- said directly, no outcome fact: nothing else in this
-    world ever needs to know status was asked."""
-    for entity, said in w.each(Said):
-        words = said.text.split()
+    """`status` -> cash, goal progress per wanted card, and whether the goal
+    is met -- said directly, no outcome fact."""
+    for entity, _tag, text in w.each("said", "text"):
+        words = text.split()
         if not words or words[0].lower() != "status":
             continue
         w.destroy(entity)
-        purse = w.the(Purse)
-        lines = ["cash: %d" % purse.cash]
-        wanted = sorted(w.each(CardDef, Wants), key=lambda row: row[1].name)
+        purse = w.first("purse")
+        cash = w.get(purse[0], "cash") if purse else 0
+        lines = ["cash: %d" % cash]
+        wanted = sorted(((row[0], row[2], row[3])
+                         for row in w.each("card_def", "name", "wants")),
+                        key=lambda row: row[1])
         if not wanted:
             lines.append("no goal set")
-        for card_entity, card_def, want in wanted:
-            copies = w.get(card_entity, Copies)
-            have = copies.count if copies else 0
-            lines.append("%s: %d/%d" % (card_def.name, have, want.qty))
-        if w.the(GoalMet) is not None:
+        for card_entity, name, want in wanted:
+            have = w.get(card_entity, "copies", 0)
+            lines.append("%s: %d/%d" % (name, have, want))
+        if w.populated("goal_met"):
             lines.append("goal met")
-        w.spawn(Reply("user", "; ".join(lines)))
+        reply(w, "user", "; ".join(lines))
 
 
-# -- composing tags on a Listing, independently -------------------------
+# -- composing flags on a listing, independently -----------------------
 
 def tag_wanted(w) -> None:
-    """`Wanted` iff this listing's card is still short of its `Wants` --
-    both directions, every tick: see the module docstring's on why
-    `LoopCount`'s monotonic `without=` guard is wrong here."""
-    for entity, listing in w.each(Listing):
-        wants = w.get(listing.card, Wants)
+    """`wanted` iff this listing's card is still short of its `wants` --
+    both directions, every tick."""
+    for entity, _tag, card in w.each("listing", "card"):
+        wants = w.get(card, "wants")
         if wants is None:
-            w.detach(entity, Wanted)
+            w.unmark(entity, "wanted")
             continue
-        copies = w.get(listing.card, Copies)
-        have = copies.count if copies else 0
-        if have < wants.qty:
-            w.attach(entity, Wanted())
+        have = w.get(card, "copies", 0)
+        if have < wants:
+            w.mark(entity, "wanted")
         else:
-            w.detach(entity, Wanted)
+            w.unmark(entity, "wanted")
 
 
 def tag_affordable(w) -> None:
-    """`Affordable` iff the price fits inside both the cash-minus-reserve
-    room and the per-trade cap -- both directions, every tick, same
-    reasoning as `tag_wanted`."""
-    purse = w.the(Purse)
-    risk = w.the(RiskProfile)
-    for entity, listing in w.each(Listing):
-        room = purse.cash - risk.min_cash_reserve
-        if listing.price <= room and listing.price <= risk.max_spend_per_trade:
-            w.attach(entity, Affordable())
+    """`affordable` iff the price fits inside both the cash-minus-reserve
+    room and the per-trade cap -- both directions, every tick."""
+    purse = w.first("purse")
+    risk = w.first("risk_profile")
+    if purse is None or risk is None:
+        return
+    cash = w.get(purse[0], "cash")
+    room = cash - w.get(risk[0], "min_cash_reserve")
+    cap = w.get(risk[0], "max_spend_per_trade")
+    for entity, _tag, price in w.each("listing", "price"):
+        if price <= room and price <= cap:
+            w.mark(entity, "affordable")
         else:
-            w.detach(entity, Affordable)
+            w.unmark(entity, "affordable")
 
 
 def tag_fair_priced(w) -> None:
-    """`FairPriced` iff the price is within the risk profile's tolerated
-    premium over the card's own catalog value -- both directions, every
-    tick, same reasoning as `tag_wanted`."""
-    risk = w.the(RiskProfile)
-    for entity, listing in w.each(Listing):
-        card_def = w.get(listing.card, CardDef)
-        if card_def is None:
-            w.detach(entity, FairPriced)
+    """`fair_priced` iff the price is within the risk profile's tolerated
+    premium over the card's own catalog value."""
+    risk = w.first("risk_profile")
+    if risk is None:
+        return
+    premium = w.get(risk[0], "max_premium")
+    for entity, _tag, card, price in w.each("listing", "card", "price"):
+        value = w.get(card, "value")
+        if value is None:
+            w.unmark(entity, "fair_priced")
             continue
-        limit = card_def.value * (1 + risk.max_premium)
-        if listing.price <= limit:
-            w.attach(entity, FairPriced())
+        if price <= value * (1 + premium):
+            w.mark(entity, "fair_priced")
         else:
-            w.detach(entity, FairPriced)
+            w.unmark(entity, "fair_priced")
 
 
 def tag_risk_level(w) -> None:
-    """`loopingrules_patterns.judge.Risk`, `replace`d fresh onto a `Listing` every
-    tick -- see the module docstring's "A fourth tag." `level` is how
-    much of the room this trade may spend (`Purse.cash` minus
-    `RiskProfile.min_cash_reserve`) the price would use, capped at `1.0`;
-    `replace`, not `attach`/`detach`, because `Risk` is meant to stay
-    singular per listing the same way `Copies`/`Purse` do -- unlike
-    `Wanted`/`Affordable`/`FairPriced`, it is not a boolean with an
-    absent-or-present shape."""
-    purse = w.the(Purse)
-    risk = w.the(RiskProfile)
-    for entity, listing in w.each(Listing):
-        room = purse.cash - risk.min_cash_reserve
-        level = 1.0 if room <= 0 else min(1.0, listing.price / room)
-        w.replace(entity, Risk(
-            level,
-            "would use %.0f%% of the %d cash still free to spend" % (
-                level * 100, max(room, 0))))
+    """`risk_level`/`risk_reason`, set fresh onto a listing every tick --
+    see the module docstring's "A fourth tag." `level` is how much of the
+    room this trade may spend the price would use, capped at `1.0`."""
+    purse = w.first("purse")
+    risk = w.first("risk_profile")
+    if purse is None or risk is None:
+        return
+    room = w.get(purse[0], "cash") - w.get(risk[0], "min_cash_reserve")
+    for entity, _tag, price in w.each("listing", "price"):
+        level = 1.0 if room <= 0 else min(1.0, price / room)
+        w.set(entity, "risk_level", level)
+        w.set(entity, "risk_reason",
+              "would use %.0f%% of the %d cash still free to spend"
+              % (level * 100, max(room, 0)))
 
 
-# -- acting --------------------------------------------------------------
+# -- acting -------------------------------------------------------------
 
 def decide_buy(w) -> None:
-    """Every listing carrying all three tags, and not the judge's own
-    `TooRisky`, -> bought. `w.each()` below is materialized once, up
-    front -- so this re-reads `Purse`/`Wants`/`Copies` fresh at the TOP of
-    each iteration and skips (never destroys) a listing this same call
-    has already made stale by an earlier purchase, rather than trusting
-    the snapshot. Two listings that are each affordable ALONE but not
-    TOGETHER do not both buy in one tick -- see the module's own history
-    for why that matters.
-
-    `without=TooRisky` reads a fourth, independently-produced tag the
-    same way it reads the first three -- this rule does not know, or
-    need to know, that `TooRisky` came from a domain-oblivious judge
-    rather than from one of this module's own `tag_*` rules."""
-    for entity, listing, _wanted, _affordable, _fair in w.each(
-            Listing, Wanted, Affordable, FairPriced, without=TooRisky):
-        wants = w.get(listing.card, Wants)
-        copies = w.get(listing.card, Copies)
-        have = copies.count if copies else 0
-        if wants is None or have >= wants.qty:
-            continue    # satisfied by an earlier purchase this same call
-        purse_entity, purse = w.first(Purse)
-        risk = w.the(RiskProfile)
-        if listing.price > purse.cash - risk.min_cash_reserve:
-            continue    # spent by an earlier purchase this same call
-        w.replace(purse_entity, Purse(purse.cash - listing.price))
-        w.replace(listing.card, Copies(have + 1))
+    """Every listing carrying all three flags, and not the judge's own
+    `too_risky`, -> bought. Re-reads the purse/wants/copies fresh at the TOP
+    of each iteration and skips a listing an earlier purchase made stale."""
+    risk = w.first("risk_profile")
+    if risk is None:
+        return
+    reserve = w.get(risk[0], "min_cash_reserve")
+    for (entity, _tag, card, price, _w, _a, _f) in w.each(
+            "listing", "card", "price", "wanted", "affordable", "fair_priced",
+            without="too_risky"):
+        wants = w.get(card, "wants")
+        have = w.get(card, "copies", 0)
+        if wants is None or have >= wants:
+            continue
+        purse = w.first("purse")
+        if purse is None:
+            return
+        cash = w.get(purse[0], "cash")
+        if price > cash - reserve:
+            continue
+        w.set(purse[0], "cash", cash - price)
+        w.set(card, "copies", have + 1)
         w.destroy(entity)
-        w.spawn(Bought(listing.card, listing.price))
+        bought = w.spawn()
+        w.mark(bought, "bought")
+        w.set(bought, "card", card)
+        w.set(bought, "price", price)
 
 
 def check_goal(w) -> None:
-    """Every stated `Wants` met by its own `Copies` -> a `GoalMet`,
-    spawned once and never again -- `w.the(GoalMet) is not None` is the
-    guard, not a `without=` on some entity, because `GoalMet` has none of
-    its own to sit beside."""
-    wanted = w.each(CardDef, Wants)
-    if not wanted or w.the(GoalMet) is not None:
+    """Every stated `wants` met by its own `copies` -> a `goal_met`,
+    spawned once and never again."""
+    wanted = w.each("card_def", "wants")
+    if not wanted or w.populated("goal_met"):
         return
-    for card_entity, _card_def, wants in wanted:
-        copies = w.get(card_entity, Copies)
-        have = copies.count if copies else 0
-        if have < wants.qty:
+    for card_entity, _tag, wants in wanted:
+        if w.get(card_entity, "copies", 0) < wants:
             return
-    w.spawn(GoalMet())
+    entity = w.spawn()
+    w.mark(entity, "goal_met")
 
 
-# -- replying --------------------------------------------------------------
+# -- replying -----------------------------------------------------------
 
 def reply_bought(w) -> None:
-    for entity, bought in w.each(Bought):
+    for entity, _tag, card, price in w.each("bought", "card", "price"):
         w.destroy(entity)
-        card_def = w.get(bought.card, CardDef)
-        name = card_def.name if card_def else "card #%d" % bought.card
-        w.spawn(Reply("user", "bought %s for %d" % (name, bought.price)))
+        name = w.get(card, "name")
+        reply(w, "user", "bought %s for %d"
+              % (name if name else "card #%d" % card, price))
 
 
 def reply_bad_command(w) -> None:
-    for entity, bad in w.each(BadCommand):
+    for entity, _tag, why in w.each("bad_command", "why"):
         w.destroy(entity)
-        w.spawn(Reply("user", "! %s" % bad.why))
+        reply(w, "user", "! %s" % why)
 
 
 def reply_goal_met(w) -> None:
-    """The winning `GoalMet` -> a `Reply`, exactly once -- `without=
-    Announced` is what keeps this from firing again on a settled world
-    that never changes again, the same discipline `reply_help_answer`
-    needs `without=Proposal` for, for an analogous reason (never act on a
-    still-contested/still-unannounced candidate twice)."""
-    for entity, _goal in w.each(GoalMet, without=Announced):
-        w.attach(entity, Announced())
-        w.spawn(Reply("user", "goal met -- every wanted card is in the collection"))
+    """The winning `goal_met` -> a `Reply`, exactly once -- `without=
+    "announced"` keeps this from firing again on a settled world."""
+    for entity, _ in w.each("goal_met", without="announced"):
+        w.mark(entity, "announced")
+        reply(w, "user", "goal met -- every wanted card is in the collection")
 
 
 RULES = (hear_list, hear_want, hear_status,
@@ -414,24 +296,9 @@ RULES = (hear_list, hear_want, hear_status,
 
 
 def install(loop, cash: int = 100, catalog=DEFAULT_CATALOG) -> None:
-    """Register every rule above (each gated automatically on its own
-    reads -- see `loopingrules.loop`'s own module note, "A rule wakes
-    only when something it reads exists"; there is no `watches=` to pass
-    by hand any more), then seed the catalog, `Purse`, `RiskProfile`,
-    and the judge's own `RiskTolerance`.
-
-    `CardDef`/`Copies` are seeded per catalog entry, by NAME -- a name
-    already present is never touched (see the module docstring); this is
-    what lets a catalog grow across versions without a restored world
-    losing a since-added card, unlike a single `world.first(CardDef) is
-    None` check would. `Purse`/`RiskProfile`/`RiskTolerance` are true
-    singletons, seeded BigFloor-style: only if the world does not already
-    carry one -- `RiskTolerance` right alongside the other two even
-    though `loopingrules_patterns.judge` owns its shape, not this module, because
-    `install()` is the one place a fresh `cards` world gets seeded at
-    all, and a `Listing` with no `RiskTolerance` yet would leave `judge.
-    flag_too_risky` abstaining forever (see that rule's own docstring).
-    """
+    """Register every rule above (each gated automatically on its own reads),
+    then seed the catalog, the purse, the risk profile, and the judge's own
+    tolerance."""
     loop.rule(hear_list)
     loop.rule(hear_want)
     loop.rule(hear_status)
@@ -447,14 +314,22 @@ def install(loop, cash: int = 100, catalog=DEFAULT_CATALOG) -> None:
     loop.rule(reply_goal_met)
 
     world = loop.world
-    for card_def in catalog:
-        if _find_card(world, card_def.name) is None:
-            entity = world.spawn(card_def)
-            world.attach(entity, Copies(0))
-    if world.first(Purse) is None:
-        world.spawn(Purse(cash))
-    if world.first(RiskProfile) is None:
-        world.spawn(RiskProfile(max_spend_per_trade=50, min_cash_reserve=0,
-                                 max_premium=0.25))
-    if world.first(RiskTolerance) is None:
-        world.spawn(RiskTolerance(max_level=0.8))
+    for name, rarity, value in catalog:
+        if _find_card(world, name) is None:
+            entity = world.spawn()
+            world.mark(entity, "card_def")
+            world.set(entity, "name", name)
+            world.set(entity, "rarity", rarity)
+            world.set(entity, "value", value)
+            world.set(entity, "copies", 0)
+    if not world.populated("purse"):
+        purse = world.spawn()
+        world.mark(purse, "purse")
+        world.set(purse, "cash", cash)
+    if not world.populated("risk_profile"):
+        risk = world.spawn()
+        world.mark(risk, "risk_profile")
+        world.set(risk, "max_spend_per_trade", 50)
+        world.set(risk, "min_cash_reserve", 0)
+        world.set(risk, "max_premium", 0.25)
+    seed_tolerance(world, 0.8)

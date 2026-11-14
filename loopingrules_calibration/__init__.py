@@ -1,51 +1,29 @@
 """`loopingrules_calibration` -- the author-facing calibration kit.
 
+> **Phase S in progress (D8).** Ported so far: `kit` (`Knob`/`Scenario`/
+> `Trace`/`replay`/`search`/scorers, now naming ATTRIBUTES) and `surface`
+> (`@tunable`/`declared`/`knobs`). `checks`, `adapt`, `linter` and `report`
+> still describe components and are not re-exported until they are ported.
+
 The engine (`loopingrules`) runs a world of rules to a fixpoint but says
 nothing about whether a run is GOOD. When the trajectory is decided by
 parameters the rules READ (`docs/tuning.md`: "a tunable rule never
-hard-codes its threshold; it reads a component"), deciding whether a run is
+hard-codes its threshold; it reads an attribute"), deciding whether a run is
 good -- and searching for the values that make it so -- is a separate job.
-This is that job, and it ships no domain vocabulary: it is the same kind of
-generic machinery `loopingrules.analyze` is, in a second package so the
-engine keeps its "no domain, no channel, no transport" stance.
 
     from loopingrules_calibration import Knob, Scenario, replay, search
 
-    knobs = (Knob(cards.RiskProfile, "max_premium", 0.0, 0.4, steps=5),)
+    knobs = (Knob("max_premium", 0.0, 0.4, steps=5),)
     cases = (Scenario(kwargs=(("cash", 100),), lines=("list dragon 40",)),)
 
     def scorer(trace):
-        return 1.0 if trace.world.populated(cards.Bought) else 0.0
+        return 1.0 if trace.world.populated("bought") else 0.0
 
     best = search(cards.install, cases, knobs, scorer)
 
-Four things, kept apart on purpose:
-
-* **data** -- `Scenario` (an episode) and `Trace` (its result, the unit a
-  scorer reads);
-* **tunables** -- `Knob` (one field of one singleton component, with the
-  range to search, and a `scope` saying whether a runtime controller may
-  move it later);
-* **search** -- `grid`/`search` (an optimizer-free baseline: the objective
-  is piecewise-constant, so gradients are meaningless) and `calibrate`,
-  which reports held-out scores and behavioural plateaus;
-* **objective** -- a `scorer: Trace -> float` supplied by the caller, with a
-  few generic helpers (`settled`, `reply_contains`, `reached`) that compose
-  in ordinary Python.
-
-See `docs/plan-calibration.md` for the design, and `docs/tuning.md` for the
-theory this is the instrument for. A rule declares its own tunable surface
-with `@tunable(Knob(...))`, `knobs(loop)` collects it from the rules a
-domain registered, and `lint` holds those rules to it -- reporting any
-numeric literal that should have read the component instead. What is NOT
-here yet, named so it is not mistaken for settled: the dataset artifact and
-capture channel, and preference pairs (`docs/plan-dataset.md`); and the
-pattern library `docs/plan.md`'s Phase 3 is to distil from `examples/`.
-
-The **objective** now has a vocabulary of its own (Phase 4): `checks.Check`
-names a pure term, `total(*checks)` composes the scorer, and the SAME `Check`
-objects feed a slow-timescale `adapt.Adapter` that re-tunes the knobs between
-episodes as the world drifts (`docs/plan-adaptation.md`).
+A `Knob` names an attribute; the value lives on whichever entity carries it.
+A rule declares its own tunable surface with `@tunable(Knob(...))`, and
+`knobs(loop)` collects it from the rules a domain registered.
 """
 
 from __future__ import annotations
@@ -65,55 +43,24 @@ from .kit import (
     settled,
     write_knobs,
 )
-from .linter import Finding, LintError, LintReport, lint
-from .report import Report, calibrate
-from .checks import (
-    Check,
-    as_check,
-    check,
-    invariant,
-    says,
-    settles,
-    ticks_at_most,
-    total,
-    world_has,
-)
-from .adapt import Adapter, Step, adapt
 from .surface import declared, knobs, runtime_knobs, tunable
 
 __all__ = [
-    "Adapter",
     "Best",
-    "Check",
-    "Finding",
     "Knob",
-    "LintError",
-    "LintReport",
-    "Report",
     "Scenario",
-    "Step",
     "Trace",
-    "adapt",
-    "as_check",
-    "calibrate",
-    "check",
     "declared",
     "grid",
-    "invariant",
     "knobs",
-    "lint",
     "reached",
     "read_knobs",
     "replay",
     "replay_cached",
+    "reply_contains",
     "runtime_knobs",
-    "says",
     "search",
     "settled",
-    "settles",
-    "ticks_at_most",
-    "total",
     "tunable",
-    "world_has",
     "write_knobs",
 ]
