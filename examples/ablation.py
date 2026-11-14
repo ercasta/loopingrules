@@ -53,27 +53,54 @@ from loopingrules_patterns import judge
 
 # -- observing the authored verdict, without acting ----------------------
 
+def _card_def(w, name, value, held):
+    entity = w.spawn()
+    w.mark(entity, "card_def")
+    w.set(entity, "name", name)
+    w.set(entity, "rarity", "rare")
+    w.set(entity, "value", value)
+    w.set(entity, "copies", held)
+    return entity
+
+
+def _market_card(w, name, value, held):
+    entity = w.spawn()
+    w.mark(entity, "card")
+    w.set(entity, "name", name)
+    w.set(entity, "value", value)
+    w.set(entity, "held", held)
+    return entity
+
+
 def _cards_sample(cash, value, qty, held, price, premium=0.25, reserve=0):
     loop = Loop()
     for rule in (cards.tag_wanted, cards.tag_affordable, cards.tag_fair_priced,
                  cards.tag_risk_level, judge.flag_too_risky):
         loop.rule(rule)
     w = loop.world
-    card = w.spawn(cards.CardDef("x", "rare", value), cards.Copies(held))
+    card = _card_def(w, "x", value, held)
     if qty:
-        w.attach(card, cards.Wants(qty))
-    w.spawn(cards.Purse(cash))
-    w.spawn(cards.RiskProfile(max_spend_per_trade=10 ** 9,
-                              min_cash_reserve=reserve, max_premium=premium))
-    w.spawn(judge.RiskTolerance(0.8))
-    listing = w.spawn(cards.Listing(card, price))
+        w.set(card, "wants", qty)
+    purse = w.spawn()
+    w.mark(purse, "purse")
+    w.set(purse, "cash", cash)
+    risk = w.spawn()
+    w.mark(risk, "risk_profile")
+    w.set(risk, "max_spend_per_trade", 10 ** 9)
+    w.set(risk, "min_cash_reserve", reserve)
+    w.set(risk, "max_premium", premium)
+    judge.seed_tolerance(w, 0.8)
+    listing = w.spawn()
+    w.mark(listing, "listing")
+    w.set(listing, "card", card)
+    w.set(listing, "price", price)
     loop.run()
     primitive = {"price": price, "value": value, "held": held,
                  "qty": qty, "cash": cash, "reserve": reserve}
-    tags = {"Wanted": w.has(listing, cards.Wanted),
-            "Affordable": w.has(listing, cards.Affordable),
-            "FairPriced": w.has(listing, cards.FairPriced),
-            "TooRisky": w.has(listing, judge.TooRisky)}
+    tags = {"Wanted": w.has(listing, "wanted"),
+            "Affordable": w.has(listing, "affordable"),
+            "FairPriced": w.has(listing, "fair_priced"),
+            "TooRisky": w.has(listing, "too_risky")}
     label = (tags["Wanted"] and tags["Affordable"] and tags["FairPriced"]
              and not tags["TooRisky"])
     return primitive, tags, label
@@ -83,27 +110,40 @@ def _market_sample(cash, value, qty, held, price, priority, price_rival,
                    other_value, other_qty, other_held, other_priority,
                    premium=0.25, reserve=0):
     """One market world, TWO rival listings for the same card, and one
-    labelled sample per listing -- so the `decide` bridge's `Winner` can
-    actually discriminate (a single listing always wins, which would make
-    the ranking structure inert), and `Strands` is exercised by a second,
-    possibly higher-priority want."""
+    labelled sample per listing."""
     loop = Loop()
     for rule in (market.tag_wanted, market.tag_affordable, market.tag_fair_priced,
                  market.tag_risk, market.tag_strands, market.nominate,
                  judge.flag_too_risky, decide.pick_winner):
         loop.rule(rule)
     w = loop.world
-    card = w.spawn(market.Card("target", value), market.Held(held))
+    card = _market_card(w, "target", value, held)
     if qty:
-        w.attach(card, market.Want(qty, priority))
-    other = w.spawn(market.Card("other", other_value), market.Held(other_held))
+        w.set(card, "want_qty", qty)
+        w.set(card, "want_priority", priority)
+    other = _market_card(w, "other", other_value, other_held)
     if other_qty:
-        w.attach(other, market.Want(other_qty, other_priority))
-    w.spawn(market.Cash(cash))
-    w.spawn(market.Policy(premium, reserve, 0.25))
-    w.spawn(judge.RiskTolerance(0.8))
-    listings = {"a": w.spawn(market.Listing(card, price)),
-                "b": w.spawn(market.Listing(card, price_rival))}
+        w.set(other, "want_qty", other_qty)
+        w.set(other, "want_priority", other_priority)
+    purse = w.spawn()
+    w.mark(purse, "purse")
+    w.set(purse, "cash", cash)
+    policy = w.spawn()
+    w.mark(policy, "policy")
+    w.set(policy, "max_price_ratio", premium)
+    w.set(policy, "min_reserve", reserve)
+    w.set(policy, "sell_premium", 0.25)
+    judge.seed_tolerance(w, 0.8)
+
+    def listing_for(card_entity, listed):
+        entity = w.spawn()
+        w.mark(entity, "listing")
+        w.set(entity, "card", card_entity)
+        w.set(entity, "price", listed)
+        return entity
+
+    listings = {"a": listing_for(card, price),
+                "b": listing_for(card, price_rival)}
     loop.run()
     out = []
     for name, listing in listings.items():
@@ -113,12 +153,12 @@ def _market_sample(cash, value, qty, held, price, priority, price_rival,
                      "rival_price": price_rival if name == "a" else price,
                      "other_value": other_value, "other_qty": other_qty,
                      "other_held": other_held, "other_priority": other_priority}
-        tags = {"Wanted": w.has(listing, market.Wanted),
-                "Affordable": w.has(listing, market.Affordable),
-                "FairPriced": w.has(listing, market.FairPriced),
-                "Winner": w.has(listing, decide.Winner),
-                "TooRisky": w.has(listing, judge.TooRisky),
-                "Strands": w.has(listing, market.Strands)}
+        tags = {"Wanted": w.has(listing, "wanted"),
+                "Affordable": w.has(listing, "affordable"),
+                "FairPriced": w.has(listing, "fair_priced"),
+                "Winner": w.has(listing, "winner"),
+                "TooRisky": w.has(listing, "too_risky"),
+                "Strands": w.has(listing, "strands")}
         label = (tags["Wanted"] and tags["Affordable"] and tags["FairPriced"]
                  and tags["Winner"] and not tags["TooRisky"] and not tags["Strands"])
         out.append((primitive, tags, label))
@@ -414,32 +454,43 @@ def _market_compete(cash, value, price, qty, held, priority, comp_value_a,
                  market.tag_risk, market.tag_strands, judge.flag_too_risky):
         loop.rule(rule)
     w = loop.world
-    card = w.spawn(market.Card("target", value), market.Held(held))
+    card = _market_card(w, "target", value, held)
     if qty:
-        w.attach(card, market.Want(qty, priority))
+        w.set(card, "want_qty", qty)
+        w.set(card, "want_priority", priority)
     primitive = {}
     for index, (comp_value, comp_delta) in enumerate(
             ((comp_value_a, comp_delta_a), (comp_value_b, comp_delta_b),
              (comp_value_c, comp_delta_c))):
         active = index < competitors
-        entity = w.spawn(market.Card("comp%d" % index, comp_value), market.Held(0))
+        entity = _market_card(w, "comp%d" % index, comp_value, 0)
         if active:
-            w.attach(entity, market.Want(1, priority + comp_delta))
+            w.set(entity, "want_qty", 1)
+            w.set(entity, "want_priority", priority + comp_delta)
         primitive["comp%d_value" % index] = comp_value
         primitive["comp%d_qty" % index] = 1 if active else 0
         primitive["comp%d_priority" % index] = (priority + comp_delta) if active else -1
-    w.spawn(market.Cash(cash))
-    w.spawn(market.Policy(premium, reserve, 0.25))
-    w.spawn(judge.RiskTolerance(0.8))
-    listing = w.spawn(market.Listing(card, price))
+    purse = w.spawn()
+    w.mark(purse, "purse")
+    w.set(purse, "cash", cash)
+    policy = w.spawn()
+    w.mark(policy, "policy")
+    w.set(policy, "max_price_ratio", premium)
+    w.set(policy, "min_reserve", reserve)
+    w.set(policy, "sell_premium", 0.25)
+    judge.seed_tolerance(w, 0.8)
+    listing = w.spawn()
+    w.mark(listing, "listing")
+    w.set(listing, "card", card)
+    w.set(listing, "price", price)
     loop.run()
     primitive.update({"price": price, "value": value, "held": held, "qty": qty,
                       "priority": priority, "cash": cash, "reserve": reserve})
-    tags = {"Wanted": w.has(listing, market.Wanted),
-            "Affordable": w.has(listing, market.Affordable),
-            "FairPriced": w.has(listing, market.FairPriced),
-            "TooRisky": w.has(listing, judge.TooRisky),
-            "Strands": w.has(listing, market.Strands)}
+    tags = {"Wanted": w.has(listing, "wanted"),
+            "Affordable": w.has(listing, "affordable"),
+            "FairPriced": w.has(listing, "fair_priced"),
+            "TooRisky": w.has(listing, "too_risky"),
+            "Strands": w.has(listing, "strands")}
     label = (tags["Wanted"] and tags["Affordable"] and tags["FairPriced"]
              and not tags["TooRisky"] and not tags["Strands"])
     return (primitive, tags, label)
@@ -517,14 +568,26 @@ def _ranking_sample(costs, times, weight_cost):
     loop.rule(trip.nominate_itinerary)
     loop.rule(decide.pick_winner)
     w = loop.world
-    request = w.spawn(trip.TripRequest(
-        origin=0, destination=0, start_time=0, budget=10 ** 9, max_hops=9,
-        weight_cost=weight_cost, weight_time=1.0 - weight_cost))
+    request = w.spawn()
+    w.mark(request, "trip_request")
+    w.set(request, "origin", 0)
+    w.set(request, "destination", 0)
+    w.set(request, "start_time", 0)
+    w.set(request, "budget", 10 ** 9)
+    w.set(request, "max_hops", 9)
+    w.set(request, "weight_cost", weight_cost)
+    w.set(request, "weight_time", 1.0 - weight_cost)
     frontiers = []
     for cost, time in zip(costs, times):
-        entity = w.spawn(trip.Frontier(request=request.id, stop=0, time=time,
-                                       cost=float(cost), hops=1, path=()))
-        w.attach(entity, trip.Complete())
+        entity = w.spawn()
+        w.mark(entity, "frontier")
+        w.set(entity, "request", request)
+        w.set(entity, "at", 0)
+        w.set(entity, "time", time)
+        w.set(entity, "cost", float(cost))
+        w.set(entity, "hops", 1)
+        w.set(entity, "path", [])
+        w.mark(entity, "complete")
         frontiers.append(entity)
     loop.run()
     samples = []
@@ -535,7 +598,7 @@ def _ranking_sample(costs, times, weight_cost):
         for slot, other in enumerate(others):
             primitive["rival%d_cost" % slot] = costs[other]
             primitive["rival%d_time" % slot] = times[other]
-        tags = {"Winner": w.has(entity, decide.Winner)}
+        tags = {"Winner": w.has(entity, "winner")}
         samples.append((primitive, tags, tags["Winner"]))
     return samples
 
@@ -581,11 +644,16 @@ def _counting_sample(choices, needed):
     loop = Loop()
     quorum.install(loop, needed=needed)
     w = loop.world
-    motion = w.spawn(quorum.Motion("m"))
+    motion = w.spawn()
+    w.mark(motion, "motion")
+    w.set(motion, "name", "m")
     for choice in choices:
-        w.spawn(quorum.Vote(motion.id, choice))
+        vote = w.spawn()
+        w.mark(vote, "vote")
+        w.set(vote, "motion", motion)
+        w.set(vote, "choice", choice)
     loop.run()
-    passed = w.has(motion, quorum.Passed)
+    passed = w.has(motion, "passed")
     samples = []
     for index, choice in enumerate(choices):
         primitive = {"own": 1 if choice == "for" else 0, "needed": needed}

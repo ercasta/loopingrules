@@ -106,14 +106,24 @@ def _sell_sample(value, held, offer, premium=0.25):
     loop = Loop()
     loop.rule(market.tag_surplus)
     w = loop.world
-    card = w.spawn(market.Card("x", value), market.Held(held))
-    w.spawn(market.Policy(max_price_ratio=0.25, min_reserve=0,
-                          sell_premium=premium))
-    offer_entity = w.spawn(market.Offer(card, offer))
+    card = w.spawn()
+    w.mark(card, "card")
+    w.set(card, "name", "x")
+    w.set(card, "value", value)
+    w.set(card, "held", held)
+    policy = w.spawn()
+    w.mark(policy, "policy")
+    w.set(policy, "max_price_ratio", 0.25)
+    w.set(policy, "min_reserve", 0)
+    w.set(policy, "sell_premium", premium)
+    offer_entity = w.spawn()
+    w.mark(offer_entity, "offer")
+    w.set(offer_entity, "card", card)
+    w.set(offer_entity, "price", offer)
     loop.run()
     primitive = {"offer": offer, "value": value, "held": held,
                  "premium": premium}
-    tags = {"Surplus": w.has(offer_entity, market.Surplus),
+    tags = {"Surplus": w.has(offer_entity, "surplus"),
             "Stock": held >= 1}
     label = tags["Surplus"] and tags["Stock"]
     return primitive, tags, label

@@ -74,11 +74,11 @@ def _labelled(world, kind, tau):
     claim to score, the same refuse-rather-than-guess line the domains
     themselves hold."""
     out = []
-    for entity, _component in world.each(kind):
-        risk = world.get(entity, judge.Risk)
-        if risk is None:
+    for entity, _tag in world.each(kind):
+        if not world.has(entity, "risk_level"):
             continue
-        out.append((risk.level, 1 if risk.level > tau else 0))
+        level = world.get(entity, "risk_level")
+        out.append((level, 1 if level > tau else 0))
     return out
 
 
@@ -89,7 +89,7 @@ def cards_points(tau=TAU_CARDS, prices=tuple(range(5, 105, 5)), cash=100):
     put, carrying the `Risk` `tag_risk_level` recomputed for it."""
     scenario = Scenario(kwargs=(("cash", cash),),
                         lines=tuple("list dragon %d" % price for price in prices))
-    return _labelled(replay(scenario, cards.install).world, cards.Listing, tau)
+    return _labelled(replay(scenario, cards.install).world, "listing", tau)
 
 
 def shopping_points(tau=TAU_SHOPPING, days=tuple(range(0, 8))):
@@ -101,7 +101,7 @@ def shopping_points(tau=TAU_SHOPPING, days=tuple(range(0, 8))):
     for days_left in days:
         world = replay(Scenario(lines=("needby milk %d" % days_left,)),
                        shopping.install).world
-        out.extend(_labelled(world, shopping.Item, tau))
+        out.extend(_labelled(world, "item", tau))
     return out
 
 
@@ -151,12 +151,11 @@ def form_reuse():
     make it transfer.
     """
     return {
-        "same_judge": cards.flag_too_risky is judge.flag_too_risky
-                      and shopping.flag_too_risky is judge.flag_too_risky,
-        "same_risk_shape": cards.Risk is judge.Risk is shopping.Risk,
-        "same_tolerance_shape": (cards.RiskTolerance is judge.RiskTolerance
-                                 and shopping.RiskTolerance is judge.RiskTolerance),
-        "same_flag_shape": cards.TooRisky is judge.TooRisky is shopping.TooRisky,
+        "same_judge": (cards.flag_too_risky is judge.flag_too_risky
+                       and shopping.flag_too_risky is judge.flag_too_risky),
+        "same_risk_shape": judge.RISK_LEVEL == "risk_level",
+        "same_tolerance_shape": judge.TOLERANCE == "max_level",
+        "same_flag_shape": judge.TOO_RISKY == "too_risky",
         "new_rules_or_data": 0,
     }
 

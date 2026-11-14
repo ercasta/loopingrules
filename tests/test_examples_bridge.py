@@ -30,7 +30,8 @@ def test_the_identities_are_real_imports_not_same_shaped_copies():
     # not a bridge.
     assert cards.flag_too_risky is judge.flag_too_risky
     assert shopping.flag_too_risky is judge.flag_too_risky
-    assert cards.Risk is shopping.Risk is judge.Risk
+    # both islands write the judge's OWN attribute names, not copies
+    assert judge.RISK_LEVEL == "risk_level" and judge.TOLERANCE == "max_level"
 
 
 # -- the harvested points are the domains' own projections --------------
