@@ -1,73 +1,41 @@
-"""loopingrules -- an entity-component world, a loop that runs rules over
+"""loopingrules -- an entity-ATTRIBUTE world, a loop that runs rules over
 it, and one thread to run a session on.
 
     from loopingrules import Engine, Loop, World
 
-* `loopingrules.world` -- entities (identity, no data) and components: plain
-  `@dataclasses.dataclass` instances, no base class, holding only
-  `None`/`bool`/`int`/`float`/`str` and `list`/`dict`/`tuple` of those --
-  another entity is referenced by its plain id, never a live handle. An
-  entity may carry SEVERAL components of one type. Every write also lands
-  in a transient, in-memory change log (`World.changes`), which a rule may
-  read to condition on what has HAPPENED, not only on what is true now --
-  see `docs/plan-memory.md`; it is never saved.
-* `loopingrules.loop` -- call every rule, in order, until a whole pass changes
-  nothing. A rule is a function of one `World` that writes to it directly
-  -- `spawn`/`attach`/`replace`/`detach`/`remove`/`destroy` -- and
-  `Loop.tick` is the only thing that ever calls one. Registering a rule
-  runs `loopingrules.analyze` over it and stays uncalled on any tick where
-  none of the component types it reads exist yet; it may also declare
-  `priority=` to run ahead of another rule, regardless of which was
-  registered first.
-* `loopingrules.memory` -- SHORT-TERM MEMORY: `remember` promotes selected
-  changes out of the transient change log and into ordinary, durable
-  `Remembered` components, and `forget` drops them again past a tuned
-  `MemoryPolicy` -- so "we already tried this" survives the marker that
-  recorded it. See `docs/plan-memory.md`; the declared tunable surface
-  lives in `loopingrules_patterns.memory`.
-* `loopingrules.reflect` -- REFLECTION: `reify` deposits a `RuleCard` per
-  rule (its reads/writes, derived by `analyze`), so one rule can read
-  another; `RuleControl` is the engine's one CONTROL CHANNEL, a component
-  the loop reads to disable or reprioritise a rule WITHOUT editing it. See
-  `docs/plan-reflection.md`.
-* `loopingrules.engine` -- ONE thread that runs the loop, and the channels
-  attached to it. `Said(name, "...")` in from whichever channel it
-  arrived on; `Reply(user, "...")` out to every channel there is.
-* `loopingrules.save` -- the world as JSONL (one record per line), and back.
-* `loopingrules.share` -- a NAMED SUBSET of entities and components, portable
-  between strangers' worlds -- unlike `save`, which only restores into an
-  empty world with every id intact, this remaps ids on import and needs a
-  component field marked `share.ref()` to know which of its values are
-  another entity's id, not an ordinary number.
+> **Phase S in progress (D8).** The substrate is being re-founded from
+> entity + typed *component* to entity + **attribute** (`docs/plan-
+> attributes.md`): a value is a scalar, an entity reference, or a flat
+> list; a component is a shape a reference targets, not a class; and the
+> whole vocabulary is names. `world.py` is ported (the seam); `analyze`,
+> `loop`, `save`/`share`, `reflect`/IR, the forge, the scheduler and
+> every example follow in that order. Until they land, this package
+> exports only the seam and the modules above it are still the old
+> component engine on disk, not re-exported here.
 
-That is the whole of `loopingrules`: entities and components, nothing else in this
-package's own vocabulary. `harneskills` is the worked door onto it --
-`harneskills.repl`, `harneskills.serve` and `harneskills.client` are
-channels built on top of `Engine`, and `harneskills.examples.fs` is a
-domain built on top of `World` and `Loop` alone -- neither of which this
-package knows exists.
+* `loopingrules.world` -- entities (identity, no data) and **attributes**:
+  a `(name, value)` slot, at most one per name per entity, whose value is
+  a scalar (`None`/`bool`/`int`/`float`/`str`), another entity (stored as
+  its plain int id), or a **flat list** of those -- no dict, no tuple, no
+  nesting. The verbs are `set`/`unset` (singular), `add`/`remove` (a
+  deduped set), `append`/`pop` (an ordered sequence) and `mark`/`unmark`
+  (a flag); the declared KINDS live in the JSON schema, not here. Every
+  write also lands in a transient, in-memory change log
+  (`World.changes`), which a rule may read to condition on what has
+  HAPPENED, not only on what is true now -- see `docs/plan-memory.md`; it
+  is never saved.
 
-There used to be a `loopingrules.facts` here too -- a `fact`/`state`/`deny`
-vocabulary for relations-as-components, and `loopingrules.arbitration`/
-`loopingrules.request`, two generic readers built on it. Removed rather than
-ported once the rewrite above landed: `Relation` subclassed a `Component`
-base class this package no longer has, nothing in this repository ever
-used any of the three, and the standing argument holds without the code
--- a domain that wants "several values," interning, or a generic
-decision needs writes its own components and its own queries, the way
-`harneskills.examples.fs` already does. `DECISION_PATTERNS.md` keeps the
-design note; see this package's own `README.md`, "Facts/arbitration/
-request removed," for the removal itself.
+The rest of the package, once ported, keeps its shape: `loop` calls every
+rule until nothing changes; `engine` runs one thread with channels;
+`save`/`share` persist a world; `memory`/`reflect` promote the change log
+and reify rules; `patterns`/`calibration` are the author workflow.
 """
 
 from __future__ import annotations
 
-from . import engine, loop, memory, reflect, save, share, world
-from .engine import Engine
-from .loop import Loop
-from .world import Change, World
+from . import world
+from .world import MISSING, Change, Entity, World
 
 __version__ = "0.1.0"
 
-__all__ = ["Change", "Engine", "Loop", "World", "engine", "loop", "memory",
-          "reflect", "save", "share", "world", "__version__"]
+__all__ = ["Change", "Entity", "MISSING", "World", "world", "__version__"]
