@@ -33,7 +33,7 @@ def test_a_question_is_deduped_by_existence_not_by_a_queue():
     loop = Loop()
     party.install(loop, scope="scoped", **party._OUTDOOR)
     loop.run()
-    kinds = sorted(checked.kind for _e, checked in loop.world.all(party.Checked))
+    kinds = sorted(kind for _e, _t, kind in loop.world.each("checked", "kind"))
     assert kinds == ["backup", "weather"]
 
 

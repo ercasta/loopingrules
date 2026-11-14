@@ -79,52 +79,15 @@ objective (the joint tuning), not to re-condition the data.
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass
 
 from loopingrules.loop import Loop
-from loopingrules.world import transient
 
 
 # -- the rule world (the identical computation `opinions` does fast) -----
-
-@dataclass(frozen=True)
-class Situation:
-    x1: float
-    x2: float
-
-
-@dataclass(frozen=True)
-class AlphaCal:
-    bias: float
-
-
-@dataclass(frozen=True)
-class BetaCal:
-    bias: float
-
-
-@dataclass(frozen=True)
-class Gate:
-    w_alpha: float
-    w_beta: float
-    theta: float
-
-
-@dataclass(frozen=True)
-class Alpha:
-    value: float
-
-
-@dataclass(frozen=True)
-class Beta:
-    value: float
-
-
-@transient
-@dataclass(frozen=True)
-class Verdict:
-    pass
-
+# Under the attribute substrate (D8): a `situation` entity carries `x1`/`x2`
+# and its own `alpha`/`beta` opinions; the calibrations are singleton
+# `alpha_cal`/`beta_cal` entities carrying `bias`; the gate is a `gate`
+# entity; `verdict` is a flag.
 
 def _clamp(v: float) -> float:
     return 0.0 if v < 0.0 else (1.0 if v > 1.0 else v)
@@ -141,24 +104,35 @@ def _opinion_gain(signal: float, bias: float, gain: float) -> float:
 
 
 def alpha_judge(w) -> None:
-    cal = w.the(AlphaCal)
-    for entity, situation in w.each(Situation):
-        w.replace(entity, Alpha(_opinion(situation.x1, cal.bias)))
+    cal = w.first("alpha_cal")
+    if cal is None:
+        return
+    bias = w.get(cal[0], "bias")
+    for entity, _tag, x1 in w.each("situation", "x1"):
+        w.set(entity, "alpha", _opinion(x1, bias))
 
 
 def beta_judge(w) -> None:
-    cal = w.the(BetaCal)
-    for entity, situation in w.each(Situation):
-        w.replace(entity, Beta(_opinion(situation.x2, cal.bias)))
+    cal = w.first("beta_cal")
+    if cal is None:
+        return
+    bias = w.get(cal[0], "bias")
+    for entity, _tag, x2 in w.each("situation", "x2"):
+        w.set(entity, "beta", _opinion(x2, bias))
 
 
 def gate_decide(w) -> None:
-    gate = w.the(Gate)
-    for entity, _situation, alpha, beta in w.each(Situation, Alpha, Beta):
-        if gate.w_alpha * alpha.value + gate.w_beta * beta.value >= gate.theta:
-            w.attach(entity, Verdict())
+    gate = w.first("gate")
+    if gate is None:
+        return
+    w_alpha = w.get(gate[0], "w_alpha")
+    w_beta = w.get(gate[0], "w_beta")
+    theta = w.get(gate[0], "theta")
+    for entity, _tag, alpha, beta in w.each("situation", "alpha", "beta"):
+        if w_alpha * alpha + w_beta * beta >= theta:
+            w.mark(entity, "verdict")
         else:
-            w.detach(entity, Verdict)
+            w.unmark(entity, "verdict")
 
 
 RULES = (alpha_judge, beta_judge, gate_decide)
@@ -170,9 +144,17 @@ def install(loop, alpha_bias=0.5, beta_bias=0.5,
     loop.rule(beta_judge)
     loop.rule(gate_decide)
     world = loop.world
-    world.spawn(AlphaCal(alpha_bias))
-    world.spawn(BetaCal(beta_bias))
-    world.spawn(Gate(w_alpha, w_beta, theta))
+    alpha = world.spawn()
+    world.mark(alpha, "alpha_cal")
+    world.set(alpha, "bias", alpha_bias)
+    beta = world.spawn()
+    world.mark(beta, "beta_cal")
+    world.set(beta, "bias", beta_bias)
+    gate = world.spawn()
+    world.mark(gate, "gate")
+    world.set(gate, "w_alpha", w_alpha)
+    world.set(gate, "w_beta", w_beta)
+    world.set(gate, "theta", theta)
 
 
 # -- the fast path (same function, no Loop) ------------------------------
@@ -196,10 +178,14 @@ def run_world(loop, situations):
     what the rules do."""
     world = loop.world
     for x1, x2 in situations:
-        world.spawn(Situation(x1, x2))
+        entity = world.spawn()
+        world.mark(entity, "situation")
+        world.set(entity, "x1", x1)
+        world.set(entity, "x2", x2)
     loop.run()
-    return [world.has(entity, Verdict)
-            for entity, _s, _a, _b in world.each(Situation, Alpha, Beta)]
+    return [world.has(entity, "verdict")
+            for entity, _tag, _a, _b in world.each("situation", "alpha",
+                                                   "beta")]
 
 
 # -- labels: the local tasks, and the hidden global objective ------------
