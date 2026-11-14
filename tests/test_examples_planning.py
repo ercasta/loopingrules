@@ -24,11 +24,11 @@ def test_the_choice_point_proposes_both_remedies_and_picks_the_cheaper():
     p.install(loop, rain=0.9, rain_threshold=0.5, max_checks=4)
     loop.run()
     world = loop.world
-    kinds = sorted(remedy.kind for _e, remedy in world.all(p.Remedy))
+    kinds = sorted(kind for _e, _t, kind in world.each("remedy", "kind"))
     assert kinds == ["backup", "tent"]
-    winners = [world.get(entity, p.Remedy).kind for entity, _w in world.all(p.Winner)]
+    winners = [world.get(entity, "kind") for entity, _t in world.each("winner")]
     assert winners == ["tent"]                      # cost 30 beats the hall's 50
-    assert [t.cost for _e, t in world.all(p.TentUsed)] == [30]
+    assert [world.get(e, "tent_used") for e, _t in world.each("tent_used")] == [30]
 
 
 def test_the_chain_still_settles_with_no_scheduler():
@@ -46,7 +46,7 @@ def test_a_high_threshold_calls_a_drizzle_clear_and_books_unprotected():
     loop.run()
     # The agent saw `Clear`, so it booked -- but it drizzled and the outdoor
     # venue has no remedy: a confident, invalid plan.
-    assert any(True for _e, _pl in loop.world.all(p.Planned))
+    assert loop.world.populated("planned")
     assert p.is_valid(loop.world) is False
 
 
@@ -55,8 +55,8 @@ def test_a_small_check_budget_cuts_the_chain_before_the_remedy():
     p.install(loop, rain=0.9, rain_threshold=0.5, max_checks=1)
     loop.run()
     world = loop.world
-    assert world.all(p.Remedy) == []                # never got to the choice
-    assert not any(True for _e, _pl in world.all(p.Planned))
+    assert world.each("remedy") == []               # never got to the choice
+    assert not world.populated("planned")
 
 
 # -- tuning beats the naive settings -------------------------------------

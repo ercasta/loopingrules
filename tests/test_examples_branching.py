@@ -7,7 +7,6 @@ budget silently refuses)."""
 import pytest
 
 from examples import branching as b
-from examples.decide import Winner
 from loopingrules.loop import Loop
 
 
@@ -24,7 +23,7 @@ def _run(**kwargs):
 
 
 def _asked(world):
-    return sorted(checked.kind for _e, checked in world.all(b.Checked))
+    return sorted(kind for _e, _t, kind in world.each("checked", "kind"))
 
 
 # -- the branch is two levels --------------------------------------------
@@ -32,22 +31,22 @@ def _asked(world):
 def test_the_tent_branch_opens_a_second_choice():
     world, _settled = _run(guests=4, rain=0.9, prefer_relocate=0.0, max_checks=4)
     assert _asked(world) == ["cover", "tent_size", "weather"]   # depth 2
-    assert [t.name for _e, t in world.all(b.TentUsed)] == ["popup"]
+    assert [world.get(e, "tent_used") for e, _t in world.each("tent_used")] == ["popup"]
     assert b.is_valid(world) is True
 
 
 def test_the_same_pick_winner_resolves_both_levels():
     world, _settled = _run(guests=4, rain=0.9, prefer_relocate=0.0, max_checks=4)
-    kinds = sorted(world.get(entity, b.Remedy).kind
-                   for entity, _w in world.all(Winner))
+    kinds = sorted(world.get(entity, "kind")
+                   for entity, _t in world.each("winner"))
     assert kinds == ["tent", "tent_option"]        # one winner per question
 
 
 def test_the_relocate_branch_is_shallow():
     world, _settled = _run(guests=4, rain=0.9, prefer_relocate=40.0, max_checks=4)
     assert _asked(world) == ["cover", "weather"]   # depth 1
-    assert [x for _e, x in world.all(b.Backup)]     # the hall
-    assert world.all(b.TentUsed) == []
+    assert [world.get(e, "backup") for e, _t in world.each("backup")]  # the hall
+    assert world.each("tent_used") == []
     assert b.is_valid(world) is True
 
 
@@ -62,7 +61,7 @@ def test_a_too_small_depth_budget_refuses():
     world, _settled = _run(guests=4, rain=0.9, prefer_relocate=40.0, max_checks=1)
     # The weather check used the whole budget, no remedy was reached.
     assert _asked(world) == ["weather"]
-    assert world.all(b.Planned) == []
+    assert not world.populated("planned")
     assert b.is_valid(world) is False
 
 

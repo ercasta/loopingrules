@@ -1,168 +1,60 @@
-"""`planning` -- Experiment 6: (b) a finding that raises a CHOICE among
-next questions, and (c) tuning the investigation's thresholds against
-TRAJECTORY examples.
+"""`planning` -- Experiment 6: a finding that raises a CHOICE among next
+questions, and tuning the investigation's thresholds against TRAJECTORY
+examples.
 
-## (b) A choice point, resolved locally -- still no scheduler
-
-`party` chained linearly (weather -> backup). Here the weather finding
-raises a CHOICE: an outdoor venue on a rainy day can be made safe by an
-indoor BACKUP venue or by renting a TENT. Several rules PROPOSE remedies --
-`propose_backup` and `propose_tent` -- each attaching `examples.decide`'s
-`Option(occasion)`/`Score(value)` to a candidate; `decide.pick_winner` (the
-same oblivious rule `examples.trip` uses) attaches `Winner` to the cheapest;
-`resolve_remedy` applies it. The choice is a LOCAL conflict resolution at
-one decision point, not an omniscient scheduler -- exactly the "resolve only
-where scopes overlap" line.
-
-## (c) Tuning the investigation against trajectory examples
-
-`Policy(rain_threshold, max_checks)` is the tunable surface -- components
-the rules read, per `docs/tuning.md`'s design rule ("a tunable rule never
-hard-codes its threshold; it reads a component"):
-
-- `rain_threshold` -- how rainy it must look before a remedy is sought. A
-  THRESHOLD that stands in for scope: too high and the agent calls a drizzly
-  day "clear" and skips the remedy.
-- `max_checks` -- how many checks may run at all. Too low and the chain is
-  cut off before the remedy; too high only wastes.
-
-The objective is a TRAJECTORY score, not a final number:
-`valid * 2 - 0.5 * checks` -- reach a sound plan, cheaply. `tuning.search`
-grids the two knobs against a handful of scenarios and picks the best.
-
-## What this found
-
-- **The choice point works, with no scheduler.** On a rainy outdoor booking
-  both a backup and a tent are proposed; the cheaper (the tent) wins and is
-  applied -- `decide.pick_winner` reused verbatim from the option/score
-  bridge.
-- **The knobs are the trajectory.** `max_checks = 1` cuts the chain after
-  the weather check, so no remedy is ever sought and the plan is refused;
-  a `rain_threshold` above the actual drizzle declares it clear and books an
-  unprotected venue (INVALID). `tuning.search` finds a setting that is valid
-  on every scenario at minimum checks.
-- **The surface has plateaus.** Several thresholds are equally good (any
-  value below the lightest rain, and above zero) -- reported as a
-  behavioural equivalence class, per `docs/tuning.md`, not as one number.
+Under the attribute substrate (D8): a `venue`/`choice`/`question`/`checked`/
+`remedy` is a tagged entity; budget/forecast/tent/policy are singletons;
+findings (`rain`/`clear`/`backup`/`tent_used`) are flags/an attribute on the
+choice. The remedy candidates ride `examples.decide`'s `occasion`/`score`,
+unmodified.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import loopingrules_calibration as tuning
-from examples.decide import Option, Score, Winner, pick_winner
+from examples.decide import pick_winner
 from loopingrules.loop import Loop
-
-
-# -- facts and knobs -----------------------------------------------------
-
-@dataclass(frozen=True)
-class Venue:
-    name: str
-    cost: int
-    indoor: bool
-
-
-@dataclass(frozen=True)
-class Budget:
-    amount: int
-
-
-@dataclass(frozen=True)
-class Forecast:
-    rain: float
-
-
-@dataclass(frozen=True)
-class Tent:
-    cost: int
-
-
-@dataclass(frozen=True)
-class Choice:
-    venue: int
-
-
-@dataclass(frozen=True)
-class Policy:
-    rain_threshold: float
-    max_checks: int
-
-
-# -- questions, findings, outcome ---------------------------------------
-
-@dataclass(frozen=True)
-class Question:
-    kind: str            # "weather" | "remedy"
-
-
-@dataclass(frozen=True)
-class Checked:
-    kind: str
-
-
-@dataclass(frozen=True)
-class Rain:
-    pass
-
-
-@dataclass(frozen=True)
-class Clear:
-    pass
-
-
-@dataclass(frozen=True)
-class Remedy:
-    kind: str            # "backup" | "tent"
-    subject: int         # a venue id (backup) or a tent cost (tent)
-
-
-@dataclass(frozen=True)
-class Backup:
-    venue: int
-
-
-@dataclass(frozen=True)
-class TentUsed:
-    cost: int
-
-
-@dataclass(frozen=True)
-class Planned:
-    venue: int
-
-
-@dataclass(frozen=True)
-class Rejected:
-    why: str
 
 
 # -- helpers -------------------------------------------------------------
 
 def _pending_or_done(w, kind) -> bool:
-    if any(question.kind == kind for _e, question in w.all(Question)):
-        return True
-    return any(checked.kind == kind for _e, checked in w.all(Checked))
+    for _e, _t, k in w.each("question", "kind"):
+        if k == kind:
+            return True
+    for _e, _t, k in w.each("checked", "kind"):
+        if k == kind:
+            return True
+    return False
 
 
 def _budget_spent(w) -> bool:
-    policy = w.the(Policy)
-    return len(w.all(Checked)) >= policy.max_checks
+    policy = w.first("policy")
+    max_checks = w.get(policy[0], "max_checks", 0) if policy else 0
+    return len(w.each("checked")) >= max_checks
 
 
 def _remedy_pending(w) -> bool:
-    return any(question.kind == "remedy" for _e, question in w.all(Question))
+    for _e, _t, k in w.each("question", "kind"):
+        if k == "remedy":
+            return True
+    return False
 
 
 def _has_candidate(w, choice_id, kind) -> bool:
-    for entity, remedy in w.all(Remedy):
-        if remedy.kind != kind:
+    for entity, _t, rkind, candidate_id in w.each("remedy", "kind", "subject"):
+        if rkind != kind:
             continue
-        option = w.get(entity, Option)
-        if option is not None and option.occasion == choice_id:
+        if w.get(entity, "occasion") == choice_id:
             return True
     return False
+
+
+def _spawn_kind(w, tag, kind):
+    entity = w.spawn()
+    w.mark(entity, tag)
+    w.set(entity, "kind", kind)
+    return entity
 
 
 # -- raising and answering, then the CHOICE point -----------------------
@@ -170,122 +62,141 @@ def _has_candidate(w, choice_id, kind) -> bool:
 def raise_weather(w) -> None:
     if _pending_or_done(w, "weather") or _budget_spent(w):
         return
-    for _e, choice in w.all(Choice):
-        venue = w.get(choice.venue, Venue)
-        if venue is not None and not venue.indoor:
-            w.spawn(Question("weather"))
+    for _e, _t, venue_id in w.each("choice", "venue"):
+        if not w.get(venue_id, "indoor", False):
+            _spawn_kind(w, "question", "weather")
             return
 
 
 def answer_weather(w) -> None:
-    policy = w.the(Policy)
-    for entity, question in w.each(Question):
-        if question.kind != "weather":
+    policy = w.first("policy")
+    threshold = w.get(policy[0], "rain_threshold", 0.0) if policy else 0.0
+    forecast = w.first("forecast")
+    rain = w.get(forecast[0], "rain", 0.0) if forecast else 0.0
+    for entity, _t, kind in w.each("question", "kind"):
+        if kind != "weather":
             continue
-        forecast = w.the(Forecast)
         w.destroy(entity)
-        w.spawn(Checked("weather"))
-        risky = forecast is not None and forecast.rain > policy.rain_threshold
-        for choice_entity, _choice in w.all(Choice):
+        _spawn_kind(w, "checked", "weather")
+        risky = rain > threshold
+        for choice_entity, _ct in w.each("choice"):
             if risky:
-                w.attach(choice_entity, Rain())
+                w.mark(choice_entity, "rain")
             else:
-                w.attach(choice_entity, Clear())
+                w.mark(choice_entity, "clear")
 
 
 def raise_remedy(w) -> None:
-    """The finding (`Rain`) raises a CHOICE of next question."""
+    """The finding (`rain`) raises a CHOICE of next question."""
     if _pending_or_done(w, "remedy") or _budget_spent(w):
         return
-    for entity, _choice in w.all(Choice):
-        if w.has(entity, Rain):
-            w.spawn(Question("remedy"))
+    for entity, _t in w.each("choice"):
+        if w.has(entity, "rain"):
+            _spawn_kind(w, "question", "remedy")
             return
+
+
+def _propose(w, choice_entity, kind, subject, cost) -> None:
+    remedy = w.spawn()
+    w.mark(remedy, "remedy")
+    w.set(remedy, "kind", kind)
+    w.set(remedy, "subject", subject)
+    w.set(remedy, "occasion", choice_entity.id)
+    w.set(remedy, "score", float(-cost))
 
 
 def propose_backup(w) -> None:
     if not _remedy_pending(w):
         return
-    budget = w.the(Budget)
-    for choice_entity, _choice in w.all(Choice):
-        if not w.has(choice_entity, Rain) or _has_candidate(w, choice_entity.id, "backup"):
+    budget = w.first("budget")
+    amount = w.get(budget[0], "amount", 0) if budget else 0
+    for choice_entity, _ct in w.each("choice"):
+        if not w.has(choice_entity, "rain") or _has_candidate(w, choice_entity.id,
+                                                               "backup"):
             continue
-        for venue_entity, venue in w.all(Venue):
-            if venue.indoor and venue.cost <= budget.amount:
-                w.spawn(Remedy("backup", venue_entity.id),
-                        Option(choice_entity.id), Score(float(-venue.cost)))
+        for venue_entity, _vt, indoor, cost in w.each("venue", "indoor", "cost"):
+            if indoor and cost <= amount:
+                _propose(w, choice_entity, "backup", venue_entity.id, cost)
                 return
 
 
 def propose_tent(w) -> None:
     if not _remedy_pending(w):
         return
-    budget = w.the(Budget)
-    tent = w.the(Tent)
-    for choice_entity, _choice in w.all(Choice):
-        if not w.has(choice_entity, Rain) or _has_candidate(w, choice_entity.id, "tent"):
+    budget = w.first("budget")
+    amount = w.get(budget[0], "amount", 0) if budget else 0
+    tent = w.first("tent")
+    if tent is None:
+        return
+    cost = w.get(tent[0], "cost")
+    for choice_entity, _ct in w.each("choice"):
+        if not w.has(choice_entity, "rain") or _has_candidate(w, choice_entity.id,
+                                                               "tent"):
             continue
-        if tent is not None and tent.cost <= budget.amount:
-            w.spawn(Remedy("tent", tent.cost),
-                    Option(choice_entity.id), Score(float(-tent.cost)))
+        if cost <= amount:
+            _propose(w, choice_entity, "tent", cost, cost)
             return
 
 
 def resolve_remedy(w) -> None:
-    for entity, question in w.each(Question):
-        if question.kind != "remedy":
+    for entity, _t, kind in w.each("question", "kind"):
+        if kind != "remedy":
             continue
         w.destroy(entity)
-        w.spawn(Checked("remedy"))
-        for choice_entity, _choice in w.all(Choice):
+        _spawn_kind(w, "checked", "remedy")
+        for choice_entity, _ct in w.each("choice"):
             chosen = None
-            for candidate, remedy in w.all(Remedy):
-                option = w.get(candidate, Option)
-                if (option is not None and option.occasion == choice_entity.id
-                        and w.has(candidate, Winner)):
-                    chosen = remedy
+            for candidate, _rt, rkind, subject in w.each("remedy", "kind",
+                                                          "subject"):
+                if (w.get(candidate, "occasion") == choice_entity.id
+                        and w.has(candidate, "winner")):
+                    chosen = (rkind, subject)
                     break
             if chosen is None:
                 continue
-            if chosen.kind == "backup":
-                w.attach(choice_entity, Backup(chosen.subject))
+            if chosen[0] == "backup":
+                w.set(choice_entity, "backup", chosen[1])
             else:
-                w.attach(choice_entity, TentUsed(chosen.subject))
+                w.set(choice_entity, "tent_used", chosen[1])
 
 
 # -- the decision --------------------------------------------------------
 
 def finalize(w) -> None:
-    if w.first(Question) is not None:      # a NEGATED read -- see party.py
+    if w.first("question") is not None:      # a NEGATED read
         return
-    for entity, choice in w.each(Choice, without=(Planned, Rejected)):
-        venue = w.get(choice.venue, Venue)
-        budget = w.the(Budget)
-        if venue is None:
-            w.attach(entity, Rejected("no such venue"))
+    budget = w.first("budget")
+    amount = w.get(budget[0], "amount", 0) if budget else 0
+    for row in w.each("choice", "venue", without=("planned", "rejected")):
+        entity, _t, venue_id = row
+        if not w.has(venue_id, "indoor"):
+            w.set(entity, "rejected", "no such venue")
             continue
-        if budget is None or venue.cost > budget.amount:
-            w.attach(entity, Rejected("over budget"))
+        indoor = w.get(venue_id, "indoor")
+        cost = w.get(venue_id, "cost")
+        if cost > amount:
+            w.set(entity, "rejected", "over budget")
             continue
-        safe = (venue.indoor or w.has(entity, Clear)
-                or w.has(entity, Backup) or w.has(entity, TentUsed))
+        safe = (indoor or w.has(entity, "clear") or w.has(entity, "backup")
+                or w.has(entity, "tent_used"))
         if safe:
-            w.attach(entity, Planned(choice.venue))
+            w.set(entity, "planned", venue_id)
         else:
-            w.attach(entity, Rejected("weather not handled"))
+            w.set(entity, "rejected", "weather not handled")
 
 
 def is_valid(w) -> bool:
-    """Ground truth, from the FACTS, independent of the policy: is the
-    booking actually sound? Any rain on an outdoor venue needs a remedy."""
-    budget = w.the(Budget)
-    forecast = w.the(Forecast)
-    for entity, choice in w.all(Choice):
-        venue = w.get(choice.venue, Venue)
-        if venue is None or venue.cost > budget.amount:
+    """Ground truth, from the FACTS, independent of the policy."""
+    budget = w.first("budget")
+    amount = w.get(budget[0], "amount", 0) if budget else 0
+    forecast = w.first("forecast")
+    rain = w.get(forecast[0], "rain", 0.0) if forecast else 0.0
+    for entity, _t in w.each("choice"):
+        venue_id = w.get(entity, "venue")
+        if not w.has(venue_id, "cost") or w.get(venue_id, "cost") > amount:
             return False
-        if not venue.indoor and forecast is not None and forecast.rain > 0.0:
-            if not (w.has(entity, Backup) or w.has(entity, TentUsed)):
+        if not w.get(venue_id, "indoor", False) and rain > 0.0:
+            if not (w.has(entity, "backup") or w.has(entity, "tent_used")):
                 return False
     return True
 
@@ -306,25 +217,40 @@ def install(loop, venues=(("hall", 50, True), ("garden", 40, False)),
     world = loop.world
     venue_entities = {}
     for name, cost, indoor in venues:
-        venue_entities[name] = world.spawn(Venue(name, cost, indoor))
-    world.spawn(Budget(budget))
-    world.spawn(Forecast(rain))
-    world.spawn(Tent(tent))
-    world.spawn(Policy(rain_threshold, max_checks))
-    world.spawn(Choice(venue_entities[choice].id))
+        entity = world.spawn()
+        world.mark(entity, "venue")
+        world.set(entity, "name", name)
+        world.set(entity, "cost", cost)
+        world.set(entity, "indoor", indoor)
+        venue_entities[name] = entity
+    b = world.spawn()
+    world.mark(b, "budget")
+    world.set(b, "amount", budget)
+    f = world.spawn()
+    world.mark(f, "forecast")
+    world.set(f, "rain", rain)
+    t = world.spawn()
+    world.mark(t, "tent")
+    world.set(t, "cost", tent)
+    p = world.spawn()
+    world.mark(p, "policy")
+    world.set(p, "rain_threshold", rain_threshold)
+    world.set(p, "max_checks", max_checks)
+    c = world.spawn()
+    world.mark(c, "choice")
+    world.set(c, "venue", venue_entities[choice])
 
 
 KNOBS = (
-    tuning.Knob(Policy, "rain_threshold", 0.0, 1.0, steps=6),
-    tuning.Knob(Policy, "max_checks", 1, 5, steps=5, integer=True),
+    tuning.Knob("rain_threshold", 0.0, 1.0, steps=6),
+    tuning.Knob("max_checks", 1, 5, steps=5, integer=True),
 )
 
 
 def score_replay(replay) -> float:
-    """A TRAJECTORY score: reach a sound plan (`valid`), cheaply (`checks`).
-    Nothing here reads a 'correct number' -- only the shape of the run."""
+    """A TRAJECTORY score: reach a sound plan (`valid`), cheaply (`checks`)."""
     world = replay.world
-    return (2.0 if is_valid(world) else 0.0) - 0.5 * len(world.all(Checked))
+    return (2.0 if is_valid(world) else 0.0) - 0.5 * len(world.each("checked"))
 
 
 def scenarios():
@@ -348,7 +274,7 @@ def evaluate(values, cases=None):
         rows.append({
             "kwargs": scenario.kwargs,
             "valid": is_valid(replay.world),
-            "checks": len(replay.world.all(Checked)),
+            "checks": len(replay.world.each("checked")),
             "score": score,
         })
     return {"total": total, "rows": rows}
@@ -356,8 +282,7 @@ def evaluate(values, cases=None):
 
 def report():
     """The trajectory numbers: the default knobs, the tuned ones, and two
-    naive settings -- too high a rain threshold (misses the drizzle) and too
-    small a check budget (cuts the chain before the remedy)."""
+    naive settings."""
     cases = scenarios()
     best = tuning.search(install, cases, KNOBS, score_replay)
     return {

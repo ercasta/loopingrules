@@ -1,15 +1,9 @@
 """`examples.adapters` -- the representation-adapter probe, and
-`examples.trade`, the oblivious ownership island it maps onto.
+`examples.trade`, the oblivious ownership island it maps onto."""
 
-Pins both mechanics (the move rule, the overdraft refusal, the
-no-double-spend re-read; the seed-only projection and the authoritative
-absorb) and findings (ownership round-trips on magnitude; the adapter must
-invent the holder and the money-thing `cards` elides; policy has no home).
-Findings are pinned as SHAPE, not as one frozen snapshot, so the probe
-stays honest if a domain default changes."""
+from __future__ import annotations
 
 import ast
-import dataclasses
 import inspect
 
 from examples import adapters, cards, trade
@@ -23,7 +17,27 @@ def _trade_loop():
 
 
 def _amounts(w):
-    return [holding.amount for _entity, holding in w.all(trade.Holding)]
+    return [w.get(entity, "amount") for entity, _ in w.each("holding")]
+
+
+def _holding(w, holder, thing, amount):
+    entity = w.spawn()
+    w.mark(entity, "holding")
+    w.set(entity, "holder", holder)
+    w.set(entity, "thing", thing)
+    w.set(entity, "amount", amount)
+    return entity
+
+
+def _movement(w, holder, thing, delta, agreed=False):
+    entity = w.spawn()
+    w.mark(entity, "movement")
+    w.set(entity, "holder", holder)
+    w.set(entity, "thing", thing)
+    w.set(entity, "delta", delta)
+    if agreed:
+        w.mark(entity, "agreed")
+    return entity
 
 
 # -- trade: oblivious, and never in the market ---------------------------
@@ -43,8 +57,8 @@ def test_trade_moves_an_amount_between_opaque_things():
     loop = _trade_loop()
     w = loop.world
     holder, thing = w.spawn(), w.spawn()
-    w.spawn(trade.Holding(holder.id, thing.id, 10))
-    w.spawn(trade.Movement(holder.id, thing.id, +5), trade.Agreed())
+    _holding(w, holder.id, thing.id, 10)
+    _movement(w, holder.id, thing.id, +5, agreed=True)
     loop.run()
     assert _amounts(w) == [15]
 
@@ -53,7 +67,7 @@ def test_trade_creates_a_holding_the_first_time_a_pair_is_touched():
     loop = _trade_loop()
     w = loop.world
     holder, thing = w.spawn(), w.spawn()
-    w.spawn(trade.Movement(holder.id, thing.id, +3), trade.Agreed())
+    _movement(w, holder.id, thing.id, +3, agreed=True)
     loop.run()
     assert _amounts(w) == [3]
 
@@ -62,39 +76,36 @@ def test_trade_refuses_a_movement_that_would_overdraw():
     loop = _trade_loop()
     w = loop.world
     holder, thing = w.spawn(), w.spawn()
-    w.spawn(trade.Holding(holder.id, thing.id, 10))
-    w.spawn(trade.Movement(holder.id, thing.id, -25), trade.Agreed())
+    _holding(w, holder.id, thing.id, 10)
+    _movement(w, holder.id, thing.id, -25, agreed=True)
     loop.run()
     assert _amounts(w) == [10]
-    assert [r for _entity, r in w.all(trade.Refused)] == [
-        trade.Refused(holder.id, thing.id, -25)]
-    assert w.all(trade.Movement) == []          # consumed, not retried
+    assert [(w.get(e, "holder"), w.get(e, "thing"), w.get(e, "delta"))
+            for e, _ in w.each("refused")] == [(holder.id, thing.id, -25)]
+    assert w.each("movement") == []          # consumed, not retried
 
 
 def test_trade_needs_agreed_before_it_moves():
     loop = _trade_loop()
     w = loop.world
     holder, thing = w.spawn(), w.spawn()
-    w.spawn(trade.Holding(holder.id, thing.id, 10))
-    w.spawn(trade.Movement(holder.id, thing.id, +5))    # proposed, not agreed
+    _holding(w, holder.id, thing.id, 10)
+    _movement(w, holder.id, thing.id, +5)    # proposed, not agreed
     loop.run()
     assert _amounts(w) == [10]
-    assert len(w.all(trade.Movement)) == 1              # still just proposed
+    assert len(w.each("movement")) == 1      # still just proposed
 
 
 def test_trade_does_not_double_spend_a_holding_within_one_call():
-    # Two losses of 6 against a holding of 10: each ALONE is affordable,
-    # neither TOGETHER is. The re-read at the top of `apply_movements` is
-    # what makes the second one refuse rather than reach 6 - 6 = -2.
     loop = _trade_loop()
     w = loop.world
     holder, thing = w.spawn(), w.spawn()
-    w.spawn(trade.Holding(holder.id, thing.id, 10))
-    w.spawn(trade.Movement(holder.id, thing.id, -6), trade.Agreed())
-    w.spawn(trade.Movement(holder.id, thing.id, -6), trade.Agreed())
+    _holding(w, holder.id, thing.id, 10)
+    _movement(w, holder.id, thing.id, -6, agreed=True)
+    _movement(w, holder.id, thing.id, -6, agreed=True)
     loop.run()
     assert _amounts(w) == [4]
-    assert len(w.all(trade.Refused)) == 1
+    assert len(w.each("refused")) == 1
 
 
 # -- the adapter: cards <-> trade ----------------------------------------
@@ -107,19 +118,21 @@ def test_adapter_round_trips_cards_ownership_losslessly():
 
 def test_adapter_invents_the_holder_and_money_thing_cards_never_had():
     loop, w = adapters.cards_world(cash=100)
-    assert w.all(adapters.Agent) == [] and w.all(adapters.Coin) == []
+    assert w.each("agent") == [] and w.each("coin") == []
     adapters.install(loop)
-    assert len(w.all(adapters.Agent)) == 1
-    assert len(w.all(adapters.Coin)) == 1
-    # and cards' own shape still has no holder field to recover it into
-    assert not any(f.name == "holder" for f in dataclasses.fields(cards.Copies))
+    assert len(w.each("agent")) == 1
+    assert len(w.each("coin")) == 1
+    # and cards' own shape is names now, with no holder field to recover it
+    assert not hasattr(cards, "Copies")
 
 
 def test_adapter_projects_cards_state_onto_trade_holdings():
     loop, w = adapters.cards_world(cash=70, held={"dragon": 2})
     adapters.install(loop)
     loop.run()
-    holdings = {(h.holder, h.thing): h.amount for _e, h in w.all(trade.Holding)}
+    holdings = {(h, t): amount
+                for _e, _tag, h, t, amount in w.each("holding", "holder",
+                                                     "thing", "amount")}
     agent, coin = adapters._agent(w), adapters._coin(w)
     dragon = adapters._card_entity(w, "dragon")
     assert holdings[(agent.id, coin.id)] == 70
@@ -127,11 +140,8 @@ def test_adapter_projects_cards_state_onto_trade_holdings():
 
 
 def test_a_purchase_in_the_canonical_shape_lands_in_cards_own_representation():
-    # Two `Movement`s + `Agreed` performed the buy; NO card rule decided or
-    # executed it -- only the adapter and `trade`. The effect lands back in
-    # cards' own `Purse`/`Copies`.
     w = adapters.demo_purchase(card_name="dragon", price=40, cash=100)
-    assert w.the(cards.Purse) == cards.Purse(60)
+    assert w.get(w.first("purse")[0], "cash") == 60
     assert adapters.snapshot(w)["copies"]["dragon"] == 1
 
 
