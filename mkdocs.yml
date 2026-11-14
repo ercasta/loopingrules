@@ -58,3 +58,5 @@ nav:
       - The attribute substrate: plan-attributes.md
       - The stigmergic control network: plan-control-network.md
       - Knowledge mazes: plan-maze.md
+      - The user experience (no-code authoring): plan-ux.md
+      - Architectural decisions (UX discussion): decisions.md
