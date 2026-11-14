@@ -159,18 +159,29 @@ unresolvable term an honest gap?* **Probe (S1):** a structured directive drives 
 deterministic trajectory; an unknown term abstains. **Kill/reshape:** if the
 schema cannot express the `ux.md` examples without ad-hoc shapes, reshape it.
 
-### U3 — The island library
+### U3 — The island library — **S3 probe built**
 
 **Deliverable.** Shipped islands, each with a **terminology index**: an
 evaluation/ranking island (generalising `judge`/`decide`), a **scoping** island
 (which candidates), a **procedure-following** island (a cursor over steps), and a
-**graph** island (paths, dominance — `trip` already *is* one).
+**graph** island (paths, dominance — `trip` already *is* one). **Still to
+build:** the terminology index and the shipped islands themselves (only the
+ambiguity probe has landed).
 
 **The seam.** *Reuse across two domains* (the D6 bar) *and* a grown policy
 resolving ambiguity among islands. **Probes:** S2 (calibrate a lexicon;
 held-out generalises) + S3 (grow the disambiguation policy among ambiguous
-islands; a `Doubt` when none covers). **Kill/reshape:** if islands do not reuse
-across domains, the reuse layer (D6) is wrong.
+islands) — **S3 built**. **Kill/reshape:** if islands do not reuse across
+domains, the reuse layer (D6) is wrong.
+
+**S3 result** (`loopingrules_ux.s3`, pinned by `tests/test_ux_s3.py`): two
+chooser islands both write `want` (a real conflict); the controller picks one by
+context via `RuleControl`; growth finds the context-dependent `afford_first`
+(arbitrage iff the best-spread deal is affordable, else bargain), beating every
+fixed choice and generalising (held-out +210 vs +175 / +40). **Finding (the
+grain):** *which ISLAND* is a **rule-level** choice (`RuleControl`); *which
+DEAL* — S5's choice — is a **binding**, needing control attributes. The two
+probes together pin both mechanisms.
 
 ### U4 — Tools
 
@@ -231,9 +242,10 @@ Each is a milestone, not a feature; each has a kill/reshape criterion (above).
   deterministically; an unparseable one abstains.
 - **S2 — calibrate the lexicon.** Fit token → attribute constants with `search`;
   held-out generalises; a wrong lexicon degrades.
-- **S3 — grow the disambiguation policy.** `evolve` / the control network picks
-  the right island among ambiguous ones; beats a fixed default on held-out; a
-  `Doubt` when none covers.
+- **S3 — the disambiguation policy** *(built: `loopingrules_ux.s3`)*. Two islands
+  both handle a term; the controller picks one by context via `RuleControl`;
+  growth finds `afford_first`, beating every fixed choice (held-out +210 vs
+  +175 / +40). Pins that *which island* is a **rule-level** choice.
 - **S4 — the LM as last-resort tool.** Only the residual; output coerced and
   round-trip-checked before entering the world.
 - **S5 — the cross-island controller** *(built: `loopingrules_ux.s5`)*. Two

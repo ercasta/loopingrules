@@ -689,10 +689,13 @@ missing is the controller and the declared interfaces.
 - **S2 — calibrate the lexicon.** Kernel fixed; fit token → attribute constants
   from a few examples with `search`; held-out examples generalise; a wrong
   lexicon degrades. Pins *values-from-search* for parsing.
-- **S3 — grow the disambiguation policy.** Candidates + `evolve`/the control
-  network pick the right parse among ambiguous ones; beats a fixed default on
-  held-out; records a `Doubt` when nothing covers. Pins *structure-from-
-  generation* for the policy.
+- **S3 — the disambiguation policy** *(built: `loopingrules_ux.s3`, pinned by
+  `tests/test_ux_s3.py`)*. Two islands both write `want`; a controller picks one
+  by context via `RuleControl`; growth finds the context-dependent
+  `afford_first`, beating every fixed choice (held-out +210 vs +175 / +40).
+  Finding: *which island* is a rule-level choice (`RuleControl`); *which deal*
+  (S5) is a binding, needing control attributes. Pins *structure-from-generation*
+  for the policy.
 - **S4 — the LM as last-resort tool.** Only the residual, called through the
   tool convention, output coerced + round-trip-checked before entering the world.
 - **S5 — the cross-island controller** *(built: `loopingrules_ux.s5`, pinned by
