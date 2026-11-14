@@ -179,7 +179,7 @@ def reify(loop) -> list:
     loop runs. Returns `[(entity, card)]`.
     """
     world = loop.world
-    seen = {world.get(entity, "hash") for entity, _ in world.each(CARD, "hash")}
+    seen = {h for _e, _t, h in world.each(CARD, "hash")}
     placed = []
     for _name, fn in loop.rules:
         card = card_for(fn)
