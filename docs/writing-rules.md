@@ -32,7 +32,7 @@ def watch_first(w): ...
   that rule. It is the one control channel above the shared world, and it may
   only *subtract* or *reorder* — the derived gate still decides dormancy, so
   enabling a rule cannot make it fire on reads it does not have. See
-  [Reflection and the control channel](plan-reflection.md).
+  [Reflection and the control channel](archived-old/plan-reflection.md).
 - `loop.install(fn, *args)` hands the loop to a domain's own installer, which
   registers its rules and seeds its entities.
 

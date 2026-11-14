@@ -13,7 +13,7 @@ It ships **no domain, no channel and no transport**. Everything you would
 build on top of it (a file assistant, a trading agent, a trip planner) is a
 set of rules and components that live in your own code. The
 [`examples/`](examples.md) directory holds worked ones, and two sibling
-packages build on the engine: [`loopingrules_calibration`](plan-calibration.md)
+packages build on the engine: [`loopingrules_calibration`](archived-old/plan-calibration.md)
 tunes a domain's declared knobs, and [`loopingrules_patterns`](patterns.md)
 ships curated patterns once a second domain depends on them.
 
@@ -49,22 +49,19 @@ they are worth reading once the basics are clear:
 - `git log` is unusually informative here: commit messages carry the
   reasoning. See [Contributing](contributing.md).
 
-The forward-looking plan, unlike the above, *is* part of this site: the
-[Roadmap](plan.md) and its ten design documents — [Memory and the change
-log](plan-memory.md), [Dataset and scoring](plan-dataset.md), [Calibration
-API and knobs](plan-calibration.md), [Online adaptation](plan-adaptation.md),
-[The forge](plan-forge.md), [Islands and bridges](plan-islands.md),
-[Reflection and the control channel](plan-reflection.md), [The attribute
-substrate](plan-attributes.md), [The stigmergic control
-network](plan-control-network.md), and [Knowledge mazes](plan-maze.md) — plus
-[the scheduler](plan-scheduler.md), [Modeling](modeling.md), and
-[the SOAR comparison](comparison-soar.md). Phases 1-2 of the
-roadmap are built — the calibration kit and the change log — and Phase 3's
-author surface, linter and first [pattern](patterns.md) with them; D6
-(islands) and D7 (reflection) each have a first probe and are not folded in.
-D8-D10 are the newest direction: a planned **attribute substrate** (entities
-with attributes, a value or a list of them, retiring the typed component), a
-**stigmergic control network** of grown scoring and control rules, and
-**knowledge mazes** as its benchmark.
-The rest of the pattern library and the roadmap are design. Each document ends
-with what it does *not* settle, in the same posture as `TODO.md`.
+The forward-looking work *is* part of this site: [Plan U — the user
+experience](plan-ux.md), and its reasoning in the [architectural
+decisions](decisions.md) (ADR-1…ADR-8). Both consolidate the earlier design
+docs — the roadmap (`plan.md`), the D1–D10 documents (`plan-memory` …
+`plan-maze`), `plan-scheduler`, `modeling`, `comparison-soar`, `tuning`, the
+study guide and plan, and the notes that started this (`ux.md`,
+`changes-to-perform.md`, `review.md`, `learn to reconstruct.md`) — which are
+kept for provenance under `archived-old/`. The [handoff](handoff.md) says where
+the work stands.
+
+The guide above still describes the **component** substrate the port retired
+(entities carrying typed `@dataclass` components). The engine was re-founded on
+**attributes** — entities carrying named values, a value a scalar, an entity
+reference, or a flat list; a "component" a tagged entity — on the
+`attribute-substrate` branch, now merged to `main`. Reconciling this guide to
+that substrate is part of Plan U (phase U0).

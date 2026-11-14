@@ -8,7 +8,9 @@ stratification of experiments, and revising an earlier decision is normal.
 
 Status: **consolidated into [`plan-ux.md`](plan-ux.md).** ADR-1…ADR-4 are
 **settled**; ADR-5…ADR-8 stay **proposed** until a probe disagrees. Nothing here
-is a commitment to code.
+is a commitment to code. The design docs the ADRs reference (D5–D10,
+`plan-*.md`, `modeling.md`, `comparison-soar.md`) now live under
+`archived-old/`.
 
 ---
 

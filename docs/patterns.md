@@ -3,7 +3,7 @@
 `loopingrules` ships no domain vocabulary — that is the engine's whole
 stance. But some vocabulary is worth sharing across domains, and
 `loopingrules_patterns` is where it lives: a small, curated library of
-**patterns**, each exposing a [declared tunable surface](plan-calibration.md).
+**patterns**, each exposing a [declared tunable surface](archived-old/plan-calibration.md).
 A pattern is importable, oblivious to the domain that installs it, and
 calibratable by the same kit as any other rule.
 

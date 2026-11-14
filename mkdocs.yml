@@ -29,7 +29,7 @@ markdown_extensions:
       permalink: true
 nav:
   - Home: index.md
-  - Handoff (attribute-substrate port): handoff.md
+  - Handoff: handoff.md
   - Getting started: getting-started.md
   - Core concepts: concepts.md
   - Architecture: architecture.md
@@ -39,24 +39,8 @@ nav:
   - Rule analysis: analysis.md
   - Examples: examples.md
   - Patterns: patterns.md
-  - Modeling: modeling.md
-  - Comparison with SOAR: comparison-soar.md
   - Testing and debugging: testing-debugging.md
   - Contributing: contributing.md
-  - Study guide: study-guide.md
-  - Study plan (8-16 h): study-plan.md
-  - Plan:
-      - Roadmap: plan.md
-      - Memory and the change log: plan-memory.md
-      - Dataset and scoring: plan-dataset.md
-      - Calibration API and knobs: plan-calibration.md
-      - Online adaptation: plan-adaptation.md
-      - The forge (corpus to catalog): plan-forge.md
-      - Islands and bridges: plan-islands.md
-      - Reflection and the control channel: plan-reflection.md
-      - The scheduler (recognize-act): plan-scheduler.md
-      - The attribute substrate: plan-attributes.md
-      - The stigmergic control network: plan-control-network.md
-      - Knowledge mazes: plan-maze.md
-      - The user experience (no-code authoring): plan-ux.md
-      - Architectural decisions (UX discussion): decisions.md
+  - Plan U:
+      - The UX plan: plan-ux.md
+      - Architectural decisions: decisions.md

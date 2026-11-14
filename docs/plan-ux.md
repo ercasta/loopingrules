@@ -9,7 +9,9 @@ to `docs/handoff.md` §6. Nothing here is a commitment to code: **every phase is
 probe with a kill/reshape criterion**, in the repo's posture.
 
 Read `docs/decisions.md` first — this plan is its execution, and the ADRs carry
-the reasoning.
+the reasoning. The design docs it builds on and revises (D5–D10,
+`plan-scheduler.md`, `plan-attributes.md`, `modeling.md`) now live under
+`docs/archived-old/`.
 
 ## 1. The thesis, stated once
 

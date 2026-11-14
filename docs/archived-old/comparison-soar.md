@@ -35,7 +35,7 @@ discipline.
 
 | Dimension | SOAR | LoopingRules | Where |
 |---|---|---|---|
-| Working memory | WME graph: id–attr–value triples | ECS: entities + entity-attached components (relations are int refs; edges declared in the catalog) | `world.py`, [Core concepts](concepts.md), [The forge](plan-forge.md) |
+| Working memory | WME graph: id–attr–value triples | ECS: entities + entity-attached components (relations are int refs; edges declared in the catalog) | `world.py`, [Core concepts](../concepts.md), [The forge](plan-forge.md) |
 | Procedural knowledge | productions (opaque rules) | Python functions of `World`, **reified as `RuleCard` data** | `reflect.py` |
 | Match | **RETE**, incremental, all instantiations | re-run the query each tick; gate is `analyze`'s *over-approximation*; exact match only in the `q0` probe | `analyze.py`, `loopingrules_forge/q0.py` |
 | Default cycle | mandatory decision procedure: input → elaboration → decision → application → output | **every rule, in order, to a fixpoint** (`revision` stops moving) | `loop.py` |
