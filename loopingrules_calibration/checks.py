@@ -106,10 +106,10 @@ def says(text: str, weight: float = 1.0) -> Check:
                  else 0.0, weight)
 
 
-def world_has(kind, weight: float = 1.0) -> Check:
-    """1.0 if the settled world carries `kind` anywhere."""
-    return Check("has:%s" % kind.__name__,
-                 lambda trace: 1.0 if trace.world.populated(kind) else 0.0,
+def world_has(name: str, weight: float = 1.0) -> Check:
+    """1.0 if the settled world carries the ATTRIBUTE `name` anywhere."""
+    return Check("has:%s" % name,
+                 lambda trace: 1.0 if trace.world.populated(name) else 0.0,
                  weight)
 
 

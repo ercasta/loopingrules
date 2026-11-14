@@ -60,9 +60,10 @@ def test_says_reads_output_only():
 
 def test_world_has_reads_the_settled_world():
     world = World()
-    world.spawn(Thing(1))
-    assert checks.world_has(Thing)(_trace(world=world)) == 1.0
-    assert checks.world_has(Thing)(_trace()) == 0.0
+    marker = world.spawn()
+    world.mark(marker, "thing")
+    assert checks.world_has("thing")(_trace(world=world)) == 1.0
+    assert checks.world_has("thing")(_trace()) == 0.0
 
 
 def test_invariant_is_vacuous_when_nothing_was_observed():

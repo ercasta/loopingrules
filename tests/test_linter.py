@@ -4,13 +4,15 @@ tunable rule that reads its knob is clean, one that hard-codes a threshold is
 flagged at the right site, a comparison of two literals is not a threshold, an
 unanalyzable knobbed rule is reported (never passed as clean), and a
 suppression is accepted only with a reason.
+
+Under the attribute substrate (D8) a "reading" is a tagged entity carrying
+`value`; a "threshold" is a singleton carrying `level`.
 """
 
-import dataclasses
+from __future__ import annotations
 
 import pytest
 
-from loopingrules_patterns import judge
 from loopingrules import analyze
 from loopingrules.loop import Loop
 from loopingrules_calibration import (
@@ -22,83 +24,68 @@ from loopingrules_calibration import (
     runtime_knobs,
     tunable,
 )
+from loopingrules_patterns import judge
 
 
-@dataclasses.dataclass(frozen=True)
-class Threshold:
-    level: float
-
-
-@dataclasses.dataclass(frozen=True)
-class Reading:
-    value: float
-
-
-@dataclasses.dataclass(frozen=True)
-class Over:
-    pass
-
-
-_LIMIT = Knob(Threshold, "level", 0.0, 1.0, steps=5)
+_LIMIT = Knob("level", 0.0, 1.0, steps=5)
 
 
 @tunable(_LIMIT)
 def hard_coded(w):
-    for entity, reading in w.each(Reading):
-        if reading.value > 0.6:
-            w.attach(entity, Over())
+    for entity, _t, value in w.each("reading", "value"):
+        if value > 0.6:
+            w.mark(entity, "over")
 
 
 @tunable(_LIMIT)
 def reads_knob(w):
-    tolerance = w.the(Threshold)
-    for entity, reading in w.each(Reading):
-        if reading.value > tolerance.level:
-            w.attach(entity, Over())
+    for entity, _t, value in w.each("reading", "value"):
+        if value > w.first("level")[1]:
+            w.mark(entity, "over")
 
 
 @tunable(_LIMIT)
 def sentinel(w):
-    for entity, reading in w.each(Reading):
-        if reading.value == 0:
-            w.attach(entity, Over())
+    for entity, _t, value in w.each("reading", "value"):
+        if value == 0:
+            w.mark(entity, "over")
 
 
 @tunable(_LIMIT)
 def two_literals(w):
-    for entity, reading in w.each(Reading):
-        if reading.value > 0.6:
-            w.attach(entity, Over())
-        if reading.value < 0.2:
-            w.attach(entity, Over())
+    for entity, _t, value in w.each("reading", "value"):
+        if value > 0.6:
+            w.mark(entity, "over")
+        if value < 0.2:
+            w.mark(entity, "over")
 
 
 @tunable(_LIMIT)
 def only_literal_comparison(w):
     if 1 < 2:
-        for entity, reading in w.each(Reading):
-            w.attach(entity, Over())
+        for entity, _t, value in w.each("reading", "value"):
+            w.mark(entity, "over")
 
 
 @tunable(_LIMIT)
 def bool_compare(w):
-    for entity, reading in w.each(Reading):
-        if reading.value > True:
-            w.attach(entity, Over())
+    for entity, _t, value in w.each("reading", "value"):
+        if value > True:
+            w.mark(entity, "over")
 
 
 @tunable(_LIMIT)
 def unlintable(w):
     other = w                       # store the world parameter: outside the dialect
-    other.spawn(Over())
+    other.spawn()
 
 
 def plain(w):
     """No declared surface, but a hard-coded threshold -- which the linter is
     not entitled to flag, because the rule never claimed to be tunable."""
-    for entity, reading in w.each(Reading):
-        if reading.value > 0.6:
-            w.attach(entity, Over())
+    for entity, _t, value in w.each("reading", "value"):
+        if value > 0.6:
+            w.mark(entity, "over")
 
 
 # -- analyze.literals -----------------------------------------------------
@@ -108,12 +95,12 @@ def test_literals_reports_a_numeric_threshold_at_its_real_line():
     assert len(sites) == 1
     site = sites[0]
     assert site.value == 0.6
-    assert site.expression == "reading.value > 0.6"
+    assert site.expression == "value > 0.6"
     assert site.file.endswith("test_linter.py")
     assert site.line > 0                     # a real line, decorator-aware
 
 
-def test_literals_is_empty_when_the_rule_reads_its_knob_component():
+def test_literals_is_empty_when_the_rule_reads_its_knob():
     assert analyze.literals(reads_knob) == ()
 
 
@@ -147,13 +134,13 @@ def test_a_rule_with_no_declaration_has_an_empty_surface():
 
 
 def test_stacked_tunable_keeps_declaration_order():
-    first = Knob(Reading, "value", 0.0, 1.0)
-    second = Knob(Threshold, "level", 0.0, 1.0)
+    first = Knob("value", 0.0, 1.0)
+    second = Knob("level", 0.0, 1.0)
 
     @tunable(first)
     @tunable(second)
     def stacked(w):
-        w.each(Reading)
+        w.each("reading")
 
     assert declared(stacked) == (second, first)
 
@@ -178,7 +165,7 @@ def test_knobs_collects_from_a_loop_and_dedupes():
 
 
 def test_runtime_knobs_keeps_only_the_runtime_scope():
-    live = Knob(Threshold, "level", 0.0, 1.0, steps=5, scope="runtime")
+    live = Knob("level", 0.0, 1.0, steps=5, scope="runtime")
     assert runtime_knobs((_LIMIT, live)) == (live,)
     assert runtime_knobs((_LIMIT,)) == ()
 
@@ -191,7 +178,7 @@ def test_lint_flags_a_hard_coded_threshold_at_the_right_site():
     finding = report.findings[0]
     assert finding.rule == "test_linter.hard_coded"
     assert finding.literal == 0.6
-    assert finding.expression == "reading.value > 0.6"
+    assert finding.expression == "value > 0.6"
     assert finding.file.endswith("test_linter.py")
     assert finding.knobs == (_LIMIT,)
     assert not report.clean
@@ -222,7 +209,6 @@ def test_lint_reports_a_knobbed_rule_it_cannot_see_as_unlintable():
 
 
 def test_lint_flags_a_sentinel_zero_without_an_explicit_excuse():
-    # The chosen posture: NO silent auto-exclusions, not even for 0.
     report = lint([sentinel])
     assert [finding.literal for finding in report.findings] == [0]
     assert not report.clean
@@ -276,7 +262,7 @@ def test_lint_markdown_names_the_site_the_literal_and_the_knob():
     assert "Hard-coded thresholds" in text
     assert "test_linter.py" in text
     assert "0.6" in text
-    assert "Threshold.level" in text
+    assert "level" in text
 
 
 # -- the real bridge rule the linter is meant to defend -------------------

@@ -50,10 +50,8 @@ oscillation lives) and it does not test multi-knob coupling or pull-back.
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass
 
 from loopingrules.loop import Loop
-from loopingrules.world import transient
 
 from loopingrules_calibration import (
     Adapter,
@@ -72,39 +70,22 @@ from loopingrules_calibration import (
 
 
 # -- the rule world ------------------------------------------------------
+# Under the attribute substrate (D8): a `signal` entity carries `x` and its
+# ground-truth `label`; `choice` is a flag; the policy is a singleton `cut`.
 
-@dataclass(frozen=True)
-class Signal:
-    x: float
-
-
-@dataclass(frozen=True)
-class Label:
-    chosen: int          # ground truth: SHOULD this example be chosen
-
-
-@transient
-@dataclass(frozen=True)
-class Choice:
-    pass
-
-
-@dataclass(frozen=True)
-class Policy:
-    cut: float
-
-
-@tunable(Knob(Policy, "cut", 0.0, 1.0, steps=11, scope="runtime"))
+@tunable(Knob("cut", 0.0, 1.0, steps=11, scope="runtime"))
 def choose(w) -> None:
-    """Choose everything at or above `Policy.cut`. The one knob is READ, never
-    hard-coded, so the linter is quiet and the surface is real (`docs/
-    plan-calibration.md`)."""
-    policy = w.the(Policy)
-    for entity, signal in w.each(Signal):
-        if signal.x >= policy.cut:
-            w.attach(entity, Choice())
+    """Choose everything at or above the singleton `cut`. The one knob is
+    READ, never hard-coded, so the linter is quiet and the surface is real."""
+    policy = w.first("cut")
+    if policy is None:
+        return
+    ceiling = policy[1]
+    for entity, _t, x in w.each("signal", "x"):
+        if x >= ceiling:
+            w.mark(entity, "choice")
         else:
-            w.detach(entity, Choice)
+            w.unmark(entity, "choice")
 
 
 # -- the check: ONE object, used offline and online ----------------------
@@ -115,11 +96,11 @@ def agreement(trace) -> float:
     pole (D2 (a)), read off the settled world. This is the term the objective
     is dominated by, and the SAME object the adapter's scorer is built from."""
     world = trace.world
-    rows = list(world.each(Signal, Label))
+    rows = list(world.each("signal", "label"))
     if not rows:
         return 0.0
-    correct = sum(1 for entity, _signal, label in rows
-                  if world.has(entity, Choice) == bool(label.chosen))
+    correct = sum(1 for entity, _t, label in rows
+                  if world.has(entity, "choice") == bool(label))
     return correct / len(rows)
 
 
@@ -148,8 +129,12 @@ def install(loop, target=0.5, seed=0, samples=SAMPLES) -> None:
     loop.rule(choose)
     world = loop.world
     for x, chosen in episode_data(target, seed):
-        world.spawn(Signal(x), Label(chosen))
-    world.spawn(Policy(0.5))
+        entity = world.spawn()
+        world.mark(entity, "signal")
+        world.set(entity, "x", x)
+        world.set(entity, "label", chosen)
+    policy = world.spawn()
+    world.set(policy, "cut", 0.5)
 
 
 def stream(count=24, start=0.30, end=0.70, seed=7):
