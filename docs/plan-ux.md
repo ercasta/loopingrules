@@ -1,6 +1,6 @@
 # Plan U — the user experience: authored islands, resolved anchors, a grown control network
 
-Status: **design.** This consolidates `docs/decisions.md` (ADR-1…ADR-8, the UX
+Status: **design.** This consolidates `docs/decisions.md` (ADR-1…ADR-9, the UX
 discussion) into a plan. It builds on **Phase S** — the attribute substrate
 (`plan-attributes.md`, largely built on the `attribute-substrate` branch) — and
 on design docs D5 (the forge), D6 (islands), D7 (reflection), D9 (the control
@@ -15,9 +15,10 @@ the reasoning. The design docs it builds on and revises (D5–D10,
 
 ## 1. The thesis, stated once
 
-> The engine is a tiny **fixpoint** kernel; the substance is a **library of
+> The engine is a tiny **enumerating** kernel; the substance is a **library of
 > islands** (clusters of rules keyed by terminology); structured input **anchors**
-> onto islands; and a **grown control network** resolves the ambiguities
+> onto islands; and a **grown control network** **scores every candidate
+> application and selects one per step** (ADR-9), resolving the ambiguities
 > (non-confluence) that a person cannot feasibly rule by hand.
 
 Everything is entities (ADR-4): input, rules, and examples are the same kind of
@@ -36,10 +37,14 @@ A term's definers decide what computation is needed (ADR-8):
 
 The third row is the whole reason for the growth algorithm: the resolution is a
 **policy over (context × ambiguity)**, whose space is combinatorial, so a human
-"manually creating rules for the control network" is infeasible. Without
-ambiguity the system is just fixpoint computation. And **ambiguity is
-non-confluence** (`plan-scheduler.md`), so the control network matters exactly
-where the fixpoint is order-sensitive.
+"manually creating rules for the control network" is infeasible. **Ambiguity is
+non-confluence** (`plan-scheduler.md`) — order-sensitive resolution — and under
+ADR-9 that is the *normal* case, not the exception: the kernel **enumerates**
+candidate applications and the network **scores/excludes and selects one per
+step**, so order is semantic. The trichotomy above therefore describes *where the
+scores are non-trivial* (no candidate → gap; trivial → fixpoint-equivalent;
+contested → learned), not three engine modes — the mechanism is uniform, and the
+fixpoint is the confluence optimization, not the default.
 
 ## 2. What it revises
 
@@ -74,7 +79,7 @@ input (structures)            islands (the library)              examples
   what must appear   compose rules + control  ◄── grown by the control network
                           │
                           ▼
-                  a frozen trajectory over the fixpoint kernel
+                  a frozen trajectory of selected applications
 ```
 
 - **The kernel** (ADR-4): the thin, fixed set of rules that lower to primitives;
@@ -105,7 +110,7 @@ above"). Phases are independent enough to ship and test on their own.
 
 | Phase | Deliverable | Depends | Design |
 |---|---|---|---|
-| **U0** | The decisions (ADR-1…8) + this plan + prose reconciliation | S | `decisions.md` |
+| **U0** | The decisions (ADR-1…9) + this plan + prose reconciliation | S | `decisions.md` |
 | **U1** | **Walking skeleton**: a grown rule-level controller composing two real islands, guided by a structured anchor, scored by a mechanical example | U0 | this doc |
 | **U2** | **The anchor schema + resolution**: structured input; term → island; gaps | U1 | ADR-8 |
 | **U3** | **The island library**: evaluation/ranking, scoping, procedure-following, graph — each terminology-indexed | U1 | D6, ADR-6 |
@@ -116,7 +121,7 @@ above"). Phases are independent enough to ship and test on their own.
 
 ### U0 — The decisions *(design)*
 
-`docs/decisions.md` (ADR-1…8) and this plan; reconcile the prose that still says
+`docs/decisions.md` (ADR-1…9) and this plan; reconcile the prose that still says
 "components," and reconcile D5/D6/D9 and `plan.md`'s locked 8/11. **Not a code
 phase.** Probe: a review that the ADRs are coherent and the revisions in §2 are
 accepted.

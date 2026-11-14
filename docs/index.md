@@ -51,7 +51,7 @@ they are worth reading once the basics are clear:
 
 The forward-looking work *is* part of this site: [Plan U — the user
 experience](plan-ux.md), and its reasoning in the [architectural
-decisions](decisions.md) (ADR-1…ADR-8). Both consolidate the earlier design
+decisions](decisions.md) (ADR-1…ADR-9). Both consolidate the earlier design
 docs — the roadmap (`plan.md`), the D1–D10 documents (`plan-memory` …
 `plan-maze`), `plan-scheduler`, `modeling`, `comparison-soar`, `tuning`, the
 study guide and plan, and the notes that started this (`ux.md`,

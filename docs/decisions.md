@@ -6,15 +6,15 @@ it does *not* settle, kept as we go. This is a **draft**: entries are numbered,
 marked **proposed** or **settled**, and revised freely — this repository is a
 stratification of experiments, and revising an earlier decision is normal.
 
-Status: **consolidated into [`plan-ux.md`](plan-ux.md).** ADR-1…ADR-4 are
-**settled**; ADR-5…ADR-8 stay **proposed** until a probe disagrees. Nothing here
-is a commitment to code. The design docs the ADRs reference (D5–D10,
+Status: **consolidated into [`plan-ux.md`](plan-ux.md).** ADR-1…ADR-4 and ADR-9
+are **settled**; ADR-5…ADR-8 stay **proposed** until a probe disagrees. Nothing
+here is a commitment to code. The design docs the ADRs reference (D5–D10,
 `plan-*.md`, `modeling.md`, `comparison-soar.md`) now live under
 `archived-old/`.
 
 ---
 
-## ADR-1 — The schema is the model; text is coerced into it
+## ADR-1 — The schema is the coordinate system; the rules are the model; text is coerced into it
 
 Status: **settled** (the frame the rest hangs off).
 
@@ -26,7 +26,8 @@ structure need not be Python — but no authoring surface exists yet, and no
 surface exists for turning a user's text into something an agent can act on.
 
 **Decision.** The agent's "language" is not a bespoke syntax; it is its
-**entity-attribute schema**. A piece of text is understood exactly insofar as
+**entity-attribute schema** — the *coordinate system* of the models it speaks
+(ADR-9). A piece of text is understood exactly insofar as
 it can be **coerced** into that schema — into entities and attributes the agent
 knows. Both kinds of text are coercions of the same kind:
 
@@ -365,6 +366,13 @@ mode **contributes concepts**, not a call: graph contributes `node`/`edge`/
 `path`/`dominance`. A domain that says "train X goes from A to B" never says
 "graph", yet solving it needs graph reasoning — the mode supplies it.
 
+**Refined (ADR-9).** A thinking mode is not a separate kind of thing: it *is* a
+**model** (a coordinate system + the operations that act in it), distinguished
+only by **generality** — a narrow, domain-independent interface that opens a
+broad gate. So "which modes exist" is a *derived* property of the library, not a
+declared category, and the "structural key" below is the rule's derived
+**model-span**.
+
 **Activation = the dormancy gate.** A mode is **resident**; its rules fire when
 the world carries the shapes they read, so activation *is* `analyze`'s gate
 opening. No call is made; concepts compose on the blackboard. This is the line
@@ -377,7 +385,8 @@ return — a resident, **steerable**, interleaved mode.
   (ADR-2 level 4) to a mode;
 - **structural** — the domain's *shape pattern* matches (e.g. `leg` references
   `stop` twice — a self-relation ⇒ a graph signature), independent of words. The
-  robust key, because the schema is the model (ADR-1).
+  robust key, because the schema is the coordinate system (ADR-1/ADR-9); its
+  precise content is the rule's derived **model-span**.
 
 So the library is **indexed**, and a domain retrieves the modes whose signatures
 match — never "explore all possible agents".
@@ -592,6 +601,10 @@ kind of computation is required:
 | **one** (or several, *confluent*) | unambiguous | **fixpoint** — deterministic rules suffice |
 | **several, non-confluent** | **ambiguous** | the **control network** resolves it |
 
+*(ADR-9 refines this: the mechanism is uniform — the kernel **enumerates**
+candidate applications and the network **scores/selects one** — so the trichotomy
+describes where the scores are non-trivial, not three engine modes.)*
+
 **Ambiguity is non-confluence** (`plan-scheduler.md`: where rules settle, order
 does not change the fixpoint; where they conflict, order *is* semantic). So the
 control network is needed **exactly** where the fixpoint is order-sensitive — and
@@ -610,6 +623,98 @@ it away.
 **Open.** How a *new* agent/island is admitted (gates + a probe); whether anchors
 are per-bundle or global; and the **growth algorithm itself** (D9, deliberately
 chosen by a probe).
+
+---
+
+## ADR-9 — Models, rules, and sequential application
+
+Status: **settled** (the view the plan presupposes, stated).
+
+**Context.** `ADR-1` asserts "the schema is the model" but never defines *model*
+or *rule*; `ADR-7` fixes a rule's *form* but not its *meaning*; and `ADR-8`'s
+trichotomy (gap / fixpoint / control) frames the engine as a **fixpoint** with a
+controller for the exceptional ambiguous case. The discussion this consolidates
+(`docs/model_spaces.md`, the working notes) forces the underlying view: what a
+model is, what a rule is, and why composition needs a control network at all.
+Stating it revises the engine's identity.
+
+**Decision.**
+
+1. **A model is a coordinate system plus the operations and relations that act in
+   it.** The schema is the *coordinate system*; the *model* is the rules over it.
+   This retires ADR-1's slogan "the schema is the model" (the schema is where a
+   model is *expressed*, not what a model *is*).
+
+2. **A rule is an operation**: identity + the *derived* projections
+   (`reads`/`writes`/`destroys`, and `models`) + a body (ADR-7). A **joint
+   operation** is a rule whose reads span **≥2 models** — a *derived* property
+   (`models`), never authored. So "rule" is one noun; "joint" is a descriptor of
+   its model-span.
+
+3. **Rules are authored; so are the examples.** The author declares the vocabulary
+   and the patterns *and* supplies the examples; the system fits values and grows
+   conditions over them (ADR-2). Cross-model operations are authored, because
+   their existence is a human claim that two imperfect models interact — and
+   growth never invents concepts (ADR-8). A word that spans several models is
+   therefore not a defect: it **names** a joint operation, and mapping it to that
+   operation is coercion (ADR-1).
+
+4. **The rule language is first-order over entities; composition is temporal.** A
+   rule binds entities (LHS), guards, and writes entities (RHS) — no term is a
+   rule. Apparent higher-order structure is *stigmergic*: an output entity a
+   later rule reads (ADR-4's lowering-as-derivation). Recursion is **deferred
+   re-firing** — a pending entity the next step consumes (the `circuits.Call` /
+   `ToolRequest` idiom) — not nesting.
+
+5. **The engine is an enumerating kernel plus a selecting network; it is
+   sequential, not a fixpoint.** Each step: **enumerate** candidate applications
+   (rules whose authored `guard` holds, instantiated over the entities present) →
+   **score** each — the network's verdict is `score ∈ ℝ ∪ {exclude}` → **select**
+   the non-excluded maximum, ties by canonical precedence → **apply** it. **Order
+   is semantic.** The fixpoint is the degenerate case where all candidates
+   commute — i.e. where the scores do not matter.
+
+**Rationale.** Models are imperfect and overlap. A single universal operation
+set — a group or a vector space — requires totality, type-consistency, and
+consistency; heterogeneous models fail all three, so cross-model operations are
+*authored bridges*, not derivations. What replaces orthogonality is **declared
+overlap**: make the interferences explicit (as joint operations / interfaces)
+rather than accidental. Selection among **applications** unifies ADR-8's two
+mechanisms — "which rule" (S3's `RuleControl`) and "which binding" (S5's control
+attributes) are both "which application" — so the grain the probes "pinned apart"
+is an implementation detail, not a design law. **Exclusion** has two sources and
+needs no second mechanism: the authored `guard` (structural, frozen) and the
+learned scorer verdict (contextual). "Select, never rewrite" holds — excluding is
+selecting, and both sources are frozen before run.
+
+**The trichotomy survives as content, not mechanism.** No candidate ⇒ gap;
+trivial scores ⇒ fixpoint-equivalent; contested scores ⇒ learned. The mechanism
+is uniform — **score every candidate** — and the network drives *every* step, not
+an exception handler for ambiguity. This is a *stronger* justification for D9
+than ADR-8's: order mattering (non-confluence) is the normal case, and learning
+is needed only where the scores are non-trivial.
+
+**Consequences.**
+
+- **ADR-1** (slogan, above): schema = coordinate system; rules = the model.
+- **ADR-6**: a "thinking mode" is just a model, distinguished only by *derived*
+  generality; the "structural key" is the rule's derived **model-span**.
+- **The engine's identity** changes from "a tiny **fixpoint** kernel" to "an
+  **enumerating** kernel plus a **selecting** network" (revises `plan-ux.md` §1
+  and `handoff.md` §2).
+- **Versioning** of the interfaces a rule spans stays **optional** — identity is
+  name + structural hash; a version only if an author wants one.
+
+**Open.** The cost of **join enumeration** (a two-frame rule is the cross-product
+of matching entities — grounded and finite, but a real cost center); the
+canonical **tie-break** precedence; the network's exact **features** (a function
+of application × context); and whether a "step" is **one** application or a
+selected **set fired to closure** (ADR-9 takes one; a selected set is the
+confluence optimization).
+
+**Revises.** ADR-1 (slogan), ADR-4 (the kernel is an *enumerator*, not a
+fixpoint), ADR-6 (mode = model), ADR-8 (the trichotomy is content); `plan-ux.md`
+§1 and `handoff.md` §2.
 
 ---
 
@@ -714,8 +819,8 @@ missing is the controller and the declared interfaces.
 
 ## Open decisions queued (not yet written)
 
-9. Is the schema declared, derived, or both?
-10. The **batteries**: the command schema + metarules, and where they live.
-11. **Tools**: the convention, the render/parse manifest, the adapter stdlib.
-12. Packaging details: how a bundle declares its **interfaces**, and how joint
+10. Is the schema declared, derived, or both?
+11. The **batteries**: the command schema + metarules, and where they live.
+12. **Tools**: the convention, the render/parse manifest, the adapter stdlib.
+13. Packaging details: how a bundle declares its **interfaces**, and how joint
     examples are represented. (ADR-5 fixes the shape; this is the format.)

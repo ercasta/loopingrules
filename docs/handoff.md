@@ -17,7 +17,7 @@ retargeted onto attribute **names**.
   `loopingrules_forge` spike and `loopingrules_reflect.r1`. That is the one red
   piece, and it is deliberately deferred (see §6).
 - **Docs** (this is the "clean slate"): the guide, plus **`decisions.md`**
-  (ADR-1…ADR-8, the reasoning) and **`plan-ux.md`** (Plan U, the roadmap). Every
+  (ADR-1…ADR-9, the reasoning) and **`plan-ux.md`** (Plan U, the roadmap). Every
   other doc — the D1–D10 design docs, `tuning`, the study guide/plan, `modeling`,
   `comparison-soar`, and the notes that started this (`ux.md`,
   `changes-to-perform.md`, `review.md`, `learn to reconstruct.md`) — is kept for
@@ -25,16 +25,17 @@ retargeted onto attribute **names**.
 
 ## 2. What Plan U is, in one paragraph
 
-> The engine is a tiny **fixpoint** kernel; the substance is a **library of
+> The engine is a tiny **enumerating** kernel; the substance is a **library of
 > islands** (clusters of rules keyed by terminology); structured input
-> **anchors** onto islands; and a **grown control network** resolves the
+> **anchors** onto islands; and a **grown control network** **scores every
+> candidate application and selects one per step** (ADR-9), resolving the
 > **ambiguities** (non-confluence) a person cannot feasibly rule by hand.
 
 Everything is entities, so there is no separate authoring pipeline. A term's
 definers decide what is needed: **none** → a gap (ask, never induce); **one or
 confluent** → a **fixpoint** (plain rule execution); **several, non-confluent** →
 the **control network** resolves it. That last case is the entire reason the
-growth algorithm exists. See `plan-ux.md` §1 and `decisions.md` ADR-1…ADR-8.
+growth algorithm exists. See `plan-ux.md` §1 and `decisions.md` ADR-1…ADR-9.
 
 ## 3. The two probes, and what they settled
 
@@ -57,7 +58,9 @@ growth algorithm exists. See `plan-ux.md` §1 and `decisions.md` ADR-1…ADR-8.
 | **which island** (S3) | a **rule** | `RuleControl` (rule-level on/off) |
 | **which deal** (S5) | a **binding** | **control attributes** (and, later, IR-native activations) |
 
-Both are "the network **selects**, never rewrites" (locked 8). S3 is the one
+Both are "the network **selects**, never rewrites" (locked 8). *(ADR-9 revises
+the framing: both are one act — selecting among **applications** — so the
+rule/binding split is an implementation detail, not a design law.)* S3 is the one
 that justifies growth at all: two islands handling one term is exactly the
 ambiguity that no hand-written control rule can cover.
 
@@ -100,7 +103,7 @@ turns S5/S3's stand-in islands into the library everything else indexes into.
 
 - `docs/plan-ux.md` — Plan U: thesis, phases U0–U7, probes, invariants, open
   questions.
-- `docs/decisions.md` — ADR-1…ADR-8, with rationale and what each revises.
+- `docs/decisions.md` — ADR-1…ADR-9, with rationale and what each revises.
 - `loopingrules_ux/s5.py`, `s3.py` and `tests/test_ux_s5.py`, `test_ux_s3.py` —
   the two probes.
 - `docs/archived-old/` — the design forest this direction grew out of and
