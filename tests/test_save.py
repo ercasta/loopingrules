@@ -1,65 +1,36 @@
 """What the state file promises: the same world, ids and all, next time.
 
-⚠ The `__loopingrules_save__`/`module:factory(arg)` mechanism this file used
-to test (a class minted by `loopingrules.facts.relation()` naming its own
-factory so `save` could find it) is gone along with `facts.py` itself --
-see this package's own `README.md`, "Facts/arbitration/request removed."
-`_kind()` only ever resolves `module:ClassName` now.
+Under the attribute substrate (D8) there is no class to rebuild and no
+`module:ClassName` record: a state line is an entity and a dict of its
+ATTRIBUTE NAMES to values. Transience is a NAME (`world.transient`), not a
+`@transient` class.
 """
 
-import dataclasses
+from __future__ import annotations
+
 import json
-from typing import Any
 
 import pytest
 
 from loopingrules import save
-from loopingrules.world import World, transient
-
-
-@dataclasses.dataclass(frozen=True)
-class Folder:
-    path: str
-
-
-@dataclasses.dataclass(frozen=True)
-class Contents:
-    by_name: dict = dataclasses.field(default_factory=dict)
-
-
-@dataclasses.dataclass(frozen=True)
-class Entry:
-    folder: int
-    name: str
-
-
-@dataclasses.dataclass(frozen=True)
-class Stale:
-    pass
-
-
-@dataclasses.dataclass(frozen=True)
-class Odd:
-    value: Any
-
-
-@transient
-@dataclasses.dataclass(frozen=True)
-class Scratch:
-    value: int
+from loopingrules.world import World
 
 
 def peopled():
-    """A world shaped like the fs domain's: a folder holding entries, each
-    pointing back at it, and an index keyed by name."""
+    """A world shaped like the fs domain's: a folder holding entries that
+    point back at it, and a flat list of their ids kept on the folder."""
     w = World()
-    folder = w.spawn(Folder("/tmp/notes"))
-    by_name = {}
+    folder = w.spawn()
+    w.set(folder, "path", "/tmp/notes")
+    ids = []
     for name in ("a.txt", "b.bin"):
-        by_name[name] = w.spawn(Entry(folder, name)).id
-    w.attach(folder, Contents(by_name))
-    w.attach(w.entity(by_name["a.txt"]), Stale())
-    return w, folder, by_name
+        entry = w.spawn()
+        w.set(entry, "folder", folder)          # a reference
+        w.set(entry, "name", name)
+        ids.append(entry.id)
+    w.set(folder, "names", ids)                 # a flat list of references
+    w.mark(w.entity(ids[0]), "stale")
+    return w, folder, ids
 
 
 def roundtrip(w):
@@ -72,83 +43,44 @@ def roundtrip(w):
 # --- the round trip ---------------------------------------------------
 
 def test_everything_comes_back_with_the_same_ids():
-    w, folder, by_name = peopled()
+    w, folder, ids = peopled()
     back = roundtrip(w)
     assert [e.id for e in back.entities()] == [e.id for e in w.entities()]
-    assert back.get(folder, Folder) == Folder("/tmp/notes")
-    assert (back.has(back.entity(by_name["a.txt"]), Stale)
-           and not back.has(back.entity(by_name["b.bin"]), Stale))
+    assert back.get(folder, "path") == "/tmp/notes"
+    assert back.has(back.entity(ids[0]), "stale")
+    assert not back.has(back.entity(ids[1]), "stale")
 
 
 def test_a_reference_still_points_at_the_same_entity():
-    w, folder, by_name = peopled()
+    w, folder, ids = peopled()
     back = roundtrip(w)
-    # The relationship, and the hand-kept index that holds entities as
-    # values, are the two ways this can go wrong. Both are the point --
-    # and both are now plain ints, not handles, so there is no `.world`
-    # left to check: the whole reason a stored reference cannot silently
-    # point into the wrong world is that it never held one.
-    assert back.get(back.entity(by_name["b.bin"]), Entry).folder == folder.id
-    assert back.get(folder, Contents).by_name == by_name
+    assert back.get(back.entity(ids[1]), "folder") == folder.id
+    assert back.get(folder, "names") == ids
 
 
 def test_the_counter_resumes_above_every_restored_id():
     w, _, _ = peopled()
     back = roundtrip(w)
-    # A world that started counting at 1 again would hand a new entity an
-    # id a component is still pointing at.
     assert back.spawn().id == 4
 
 
 def test_a_destroyed_highest_entity_does_not_free_its_id():
-    w, _, by_name = peopled()
-    w.destroy(w.entity(by_name["b.bin"]))
+    w, _, ids = peopled()
+    w.destroy(w.entity(ids[1]))
     assert roundtrip(w).spawn().id == 4
 
 
-def test_a_component_is_rebuilt_without_calling_its_init():
-    # A dataclass's constructor takes its fields in declaration order, but
-    # rebuilding never calls it -- the fields are what comes back.
-    w, _, by_name = peopled()
-    entry = roundtrip(w).get(w.entity(by_name["a.txt"]), Entry)
-    assert (entry.name, entry.folder) == ("a.txt", 1)
-
-
 @pytest.mark.parametrize("value", [
-    None, True, 17, 1.5, "text", [], [1, "two", None], {"k": [1, 2]},
-    (1, 2), {"nested": {"deep": (1, [2, 3])}}])
-def test_the_field_types_a_component_may_hold(value):
+    None, True, 17, 1.5, "text", [], [1, "two", None]])
+def test_the_value_types_a_world_may_hold(value):
     w = World()
-    entity = w.spawn(Odd(value))
-    assert roundtrip(w).get(entity, Odd).value == value
-
-
-def test_a_tuple_comes_back_a_tuple():
-    w = World()
-    entity = w.spawn(Odd((1, 2)))
-    assert isinstance(roundtrip(w).get(entity, Odd).value, tuple)
+    entity = w.spawn()
+    w.set(entity, "value", value)
+    assert roundtrip(w).get(entity, "value") == value
 
 
 def test_an_empty_world_round_trips_to_an_empty_world():
     assert len(roundtrip(World())) == 0
-
-
-# --- what it refuses to pretend ---------------------------------------
-#
-# ⚠ A set, an arbitrary object, or a dict with a non-string key are
-# already refused by `World.attach` itself now -- see `test_world.py` --
-# so `save.dump` never even sees them. The one thing left that is
-# genuinely THIS format's own business is `$tuple`, its own reserved
-# marker for a value `World` already accepted.
-
-
-def test_a_reserved_KEY_is_named_not_mangled():
-    w = World()
-    w.spawn(Odd({"$tuple": 3}))
-    with pytest.raises(save.SaveError) as raised:
-        save.dump(w)
-    assert "may not start with '$'" in str(raised.value)
-    assert "Odd.value" in str(raised.value)
 
 
 def test_loading_wants_an_empty_world():
@@ -158,21 +90,6 @@ def test_loading_wants_an_empty_world():
 
 
 # --- surviving the file itself ----------------------------------------
-
-def test_a_component_whose_class_is_gone_is_skipped_and_named():
-    w, folder, _ = peopled()
-    records = save.dump(w)
-    folder_record = next(r for r in records
-                         if r.get("entity") == folder.id
-                         and r.get("type", "").endswith(":Folder"))
-    folder_record["type"] = "loopingrules.world:NoSuchThing"
-    back = World()
-    problems = save.load(back, records)
-    assert len(problems) == 1 and "NoSuchThing" in problems[0]
-    # The entity keeps everything else it carried.
-    assert back.get(folder, Contents) is not None
-    assert back.get(folder, Folder) is None
-
 
 def test_a_state_file_from_another_version_is_not_guessed_at():
     records = save.dump(World())
@@ -209,18 +126,15 @@ def test_writing_makes_the_directory_and_replaces_atomically(tmp_path):
 
 
 def test_written_and_read_back_is_the_same_world(tmp_path):
-    w, folder, by_name = peopled()
+    w, folder, ids = peopled()
     path = str(tmp_path / "world.json")
     save.write(w, path)
     back = World()
     assert save.read(back, path) == []
-    assert back.get(back.entity(by_name["a.txt"]), Entry).folder == folder.id
+    assert back.get(back.entity(ids[0]), "folder") == folder.id
 
 
 def test_the_file_is_the_same_bytes_on_every_platform(tmp_path):
-    # Text mode would turn every \n into \r\n on Windows, and a state file
-    # whose bytes depend on which machine wrote it is one you cannot
-    # compare. Only bites on Windows; the guard belongs here anyway.
     w, _, _ = peopled()
     path = tmp_path / "world.json"
     save.write(w, str(path))
@@ -229,61 +143,49 @@ def test_the_file_is_the_same_bytes_on_every_platform(tmp_path):
 
 
 def test_one_line_per_record_is_what_makes_it_JSONL():
-    w, folder, by_name = peopled()
+    w, folder, ids = peopled()
     records = save.dump(w)
-    # Header, plus one line per component instance -- Folder, Contents,
-    # two Entry, one Stale -- nothing nested inside another.
+    # Header, plus one line per entity that carries a durable attribute --
+    # the folder, and the two entries -- nothing nested inside another.
     assert records[0] == {"version": save.VERSION, "next": w._next}
-    assert len(records) == 1 + 5
+    assert len(records) == 1 + 3
 
 
-# --- @transient: real data, but never written down ---------------------
+# --- transience is a name ----------------------------------------------
 
-def test_dump_skips_every_transient_instance():
+def test_dump_skips_every_transient_name():
     w, folder, _ = peopled()
-    w.attach(folder, Scratch(1))
-    w.attach(folder, Scratch(2))
+    w.transient = {"scratch"}
+    w.set(folder, "scratch", 1)
     records = save.dump(w)
-    assert not any(r.get("type", "").endswith(":Scratch") for r in records)
-    assert any(r.get("type", "").endswith(":Folder") for r in records)
+    folder_record = next(r for r in records if r.get("entity") == folder.id)
+    assert "scratch" not in folder_record["attributes"]
+    assert "path" in folder_record["attributes"]
 
 
-def test_a_component_left_after_filtering_still_writes_normally():
+def test_a_transient_alongside_durable_ones_writes_normally():
     w, folder, _ = peopled()
-    w.attach(folder, Scratch(1))          # transient, alongside durable ones
+    w.transient = {"scratch"}
+    w.set(folder, "scratch", 1)
     back = roundtrip(w)
-    assert back.get(folder, Folder) == Folder("/tmp/notes")
-    assert back.get_all(folder, Scratch) == []
+    assert back.get(folder, "path") == "/tmp/notes"
+    assert not back.has(folder, "scratch")
 
 
-def test_an_entity_whose_only_components_were_transient_does_not_survive():
+def test_an_entity_whose_only_attributes_were_transient_does_not_survive():
     w = World()
-    scratch_only = w.spawn(Scratch(1))
-    w.spawn(Odd("kept"))                   # something durable to compare against
+    w.transient = {"scratch"}
+    scratch_only = w.spawn()
+    w.set(scratch_only, "scratch", 1)
+    durable = w.spawn()
+    w.set(durable, "kept", "yes")
     back = roundtrip(w)
     assert scratch_only.id not in [e.id for e in back.entities()]
 
 
 def test_a_genuinely_bare_entity_still_round_trips_as_bare():
-    # The case `test_an_entity_whose_only_components_were_transient...`
-    # above must NOT be confused with: an entity that never carried
-    # anything is real information ("this exists, nothing said about it
-    # yet"), not disposable scratch, so it keeps its `{"entity": id}`
-    # record even though `world.components()` returns `[]` for both.
     w = World()
     bare = w.spawn()
     back = roundtrip(w)
     assert bare.id in [e.id for e in back.entities()]
-    assert back.components(back.entity(bare.id)) == []
-
-
-def test_a_type_that_names_a_NON_CLASS_is_a_problem_not_a_crash():
-    """The promise is that a bad state file costs you the component, not
-    the session."""
-    world = World()
-    problems = save.load(world, [
-        {"version": save.VERSION, "next": 2},
-        {"entity": 1, "type": "loopingrules.save:VERSION", "fields": {}},
-    ])
-    assert len(problems) == 1 and "not a class" in problems[0]
-    assert len(world) == 1, "the entity survives, having lost that component"
+    assert back.attributes(back.entity(bare.id)) == {}

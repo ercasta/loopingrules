@@ -74,29 +74,36 @@ asker: carry the channel off the `Said` you consumed.
 
 from __future__ import annotations
 
-import dataclasses
 import queue
 import threading
 
 from . import save
 
 
-@dataclasses.dataclass(frozen=True)
-class Said:
-    """A line arriving on a channel. What a person typed, before anything
-    has decided it means something."""
-
-    channel: str
-    text: str
+# Under the attribute substrate (D8) a "component" is a tag entity: a
+# `Said`/`Reply` is an entity carrying `channel` and `text`, marked with a
+# flag naming the shape. `said()`/`reply()` are the constructors.
+SAID = "said"
+REPLY = "reply"
 
 
-@dataclasses.dataclass(frozen=True)
-class Reply:
-    """Something to say back on a channel. The one thing a prompt prints
-    unasked -- see `harneskills.repl`."""
+def said(world, channel: str, text: str):
+    """Deposit a `Said` -- the tag entity a line arriving on a channel
+    becomes, before anything has decided it means something."""
+    entity = world.spawn()
+    world.mark(entity, SAID)
+    world.set(entity, "channel", channel)
+    world.set(entity, "text", text)
+    return entity
 
-    channel: str
-    text: str
+
+def reply(world, channel: str, text: str):
+    """Deposit a `Reply` -- something to say back on a channel."""
+    entity = world.spawn()
+    world.mark(entity, REPLY)
+    world.set(entity, "channel", channel)
+    world.set(entity, "text", text)
+    return entity
 
 
 BROADCAST = "user"
@@ -186,18 +193,21 @@ class Engine:
         settled world can say that.
         """
         world = self.loop.world
-        for entity, reply in world.each(Reply):
+        for entity, _ in world.each(REPLY):
+            channel = world.get(entity, "channel")
+            text = world.get(entity, "text")
             world.destroy(entity)
-            self.to(reply.channel, {"reply": {"channel": reply.channel,
-                                              "text": reply.text}})
+            self.to(channel, {"reply": {"channel": channel, "text": text}})
         for name, error in self.loop.errors:
             self.to_all({"error": {"text": "%s: %s: %s"
                                     % (name, type(error).__name__, error)}})
         self.loop.errors.clear()
         if unheard:
-            for entity, heard in world.each(Said):
+            for entity, _ in world.each(SAID):
+                channel = world.get(entity, "channel")
+                text = world.get(entity, "text")
                 world.destroy(entity)
-                self.to(heard.channel, {"unheard": {"text": heard.text}})
+                self.to(channel, {"unheard": {"text": text}})
 
     def settle(self) -> None:
         """Run to quiescence, say what was said, then write the world down.
@@ -220,7 +230,7 @@ class Engine:
 
     def _do(self, channel, kind: str, text) -> None:
         if kind == "say":
-            self.loop.world.spawn(Said(channel.name, text))
+            said(self.loop.world, channel.name, text)
             self.settle()
         elif kind == "get":
             self.to(channel.name, {"world": save.dump(self.loop.world)})

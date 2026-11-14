@@ -192,7 +192,7 @@ from __future__ import annotations
 import collections
 
 from . import analyze
-from .reflect import RuleControl, identity, rule_name
+from .reflect import control_map, identity, rule_name
 
 Settled = collections.namedtuple("Settled", "ticks hot")
 
@@ -339,7 +339,7 @@ class Loop:
         declared priority into account immediately, not from whenever it
         happened to be appended.
 
-        `reflect.RuleControl` is read here, at the top of the tick: a rule
+        `reflect.control_map` is read here, at the top of the tick: a rule
         whose hash carries `enabled=False` is dropped from the order and
         never called, and a control's `priority` overrides the rule's own.
         A control written DURING this tick therefore takes effect on the
@@ -347,21 +347,19 @@ class Loop:
         history, and it settles for the same reason: a controller that keeps
         re-emitting an equal control moves nothing and the world stops.
         """
-        controls = {}
-        for _entity, control in self.world.each(RuleControl):
-            controls[control.hash] = control
+        controls = control_map(self.world)
         order = []
         for i, (_name, fn) in enumerate(self.rules):
-            control = controls.get(getattr(fn, "_loopingrules_hash", None))
-            if control is not None and not control.enabled:
+            found = controls.get(getattr(fn, "_loopingrules_hash", None))
+            if found is not None and not found[0]:
                 continue
             order.append(i)
 
         def key(i):
             fn = self.rules[i][1]
-            control = controls.get(getattr(fn, "_loopingrules_hash", None))
-            if control is not None:
-                return (-control.priority, i)
+            found = controls.get(getattr(fn, "_loopingrules_hash", None))
+            if found is not None:
+                return (-found[1], i)
             return (-getattr(fn, "_loopingrules_priority", 0), i)
 
         return sorted(order, key=key)

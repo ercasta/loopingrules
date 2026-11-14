@@ -1,91 +1,79 @@
-"""Static analysis of a rule: which component types it reads, which it
-writes -- derived from its own source, not declared by hand. This is the
-answer to two things at once: `PRINCIPLES.md`'s named, previously
-unsolved gap ("declare `watches` too narrow... there is no way to catch
-this from here") -- solved now by removing the hand-written declaration
-rather than checking it, since `Loop.rule` calls `analyze()` itself at
-registration time and uses the result AS a rule's gate (see
-`loopingrules.loop`'s own module note, "A rule wakes only when something
-it reads exists") -- and a "map" of which rules touch which components,
-without inventing a language to get one.
+"""Static analysis of a rule: which ATTRIBUTES it reads, which it writes --
+derived from its own source, not declared by hand. This is the answer to
+two things at once: `PRINCIPLES.md`'s named, previously unsolved gap
+("declare `watches` too narrow... there is no way to catch this from
+here") -- solved by removing the hand-written declaration rather than
+checking it, since `Loop.rule` calls `analyze()` itself at registration
+time and uses the result AS a rule's gate (see `loopingrules.loop`, "A
+rule wakes only when something it reads exists") -- and a "map" of which
+rules touch which attributes, without inventing a language to get one.
+
+## Attribute names, not component classes
+
+Under the attribute substrate (`docs/plan-attributes.md`, D8) a rule names
+a fact with a **string literal** -- `w.get(e, "cash")`, `w.each("card",
+"tags")` -- where the component engine named a class. This walk is the
+same walk; the thing it resolves is a `str`, never a `module.__dict__`
+lookup. A name is a read when the method reads it, a write when the method
+writes it. `spawn`/`destroy` keep their old shape: creating an entity
+touches no NAME (`spawn` contributes no read or write), and destroying an
+entity names no name either -- `Analysis.destroys` records only that the
+rule CAN destroy entities, the same honest limit as before.
 
 ## Why AST analysis of plain Python, not a new DSL
 
 A rule is already narrow by convention (`loopingrules.loop`'s own
 docstring): a plain function of one `World`, and every write or query it
-makes goes through one of eleven named methods, always called on that one
+makes goes through one of the named methods, always called on that one
 parameter. `PRINCIPLES.md` also already establishes that rules never call
 each other -- "no rule calls another, the only channel between them is
 what gets deposited into the shared `World`." So the one thing left to
 resolve, to get a sound map out of plain Python, is a same-module helper
 a rule calls that ALSO touches the world -- `examples.cards._find_card(w,
-name)`, which calls `w.all(CardDef)` inside it, is exactly this shape,
-and the positive test below is built against it.
+name)`, which calls `w.all("card_def")` inside it, is exactly this shape,
+and the positive test is built against it.
 
 ## The dialect, and refusing what falls outside it
 
 This module does not try to analyze arbitrary Python soundly -- that is
 not possible in general (`getattr`, a callable stored in a variable, a
-decorator that hides the real signature). It analyzes exactly the
-dialect this codebase's rules already happen to be written in: the world
-parameter is used only as the receiver of one of the methods below, or
-passed positionally/by keyword straight into a plain function defined in
-the SAME module (recursed into, one level at a time, arbitrarily deep).
-The moment the world parameter is used any other way -- stored in a
-variable, forwarded through `*args`, passed to an imported function, a
-starred call, a component argument that is not a literal `Kind(...)` or
-a bare `Kind` name -- this raises `Opaque` rather than silently
-under-reporting. A rule that trips this either gets rewritten to fit the
-dialect, or is carried in a report's own `opaque` set, honestly labeled
-"unknown," never folded into "reads/writes nothing." That is the same
-refuse-rather-than-guess discipline every parse boundary in this
-codebase already applies (`examples.cards._parse_int`, `_find_card`);
-this module just applies it to source code instead of a typed line.
+decorator that hides the real signature). It analyzes exactly the dialect
+this codebase's rules already happen to be written in: the world parameter
+is used only as the receiver of one of the methods below, or passed
+positionally/by keyword straight into a plain function defined in the SAME
+module (recursed into, one level at a time, arbitrarily deep). The moment
+the world parameter is used any other way -- stored in a variable,
+forwarded through `*args`, passed to an imported function, a starred call,
+an attribute-name argument that is not a string literal -- this raises
+`Opaque` rather than silently under-reporting. A rule that trips this
+either gets rewritten to fit the dialect, or is carried in a report's own
+`opaque` set, honestly labeled "unknown," never folded into "reads/writes
+nothing."
 
 ## Reading the change log
 
-`w.changes(changed=SomeType)` (`world.py`'s change log -- see
-`docs/plan-memory.md`) is a read whose genuinely-read type, if any, is the
-`changed=` argument. When that argument is a literal component type, it is
-attributed as a read, so a rule that only reacts to changes of one type
-keeps a correct gate; with no `changed=` at all it contributes no read and
-the rule falls back to "called every tick", the safe default, while a
-non-literal `changed=` cannot be attributed and is `Opaque` -- the same
-refuse-rather-than-guess treatment every other non-literal component
-argument gets. `w.recent(n)` reads the log too but names no type, so it is
-the same safe fallback.
-
-`destroy(entity)` is a deliberate, named exception to "every write is
-attributed to a Kind": it takes no component-type argument at all, so
-nothing here claims to know which types an entity it destroys was
-carrying. `Analysis.destroys` records only that the rule CAN destroy
-entities -- a real limit on the map, not a silent one.
-
-## The cross-module exceptions are gone
-
-`loopingrules.world` used to carry `reply`/`propose` (and `arbitrate`/
-`census`) as cross-module helpers, and this module used to special-case
-them. They were removed from `loopingrules.world` in a simplification, so
-that special case is gone too: a domain spawns its own `Reply` (from
-`loopingrules.engine`) directly, and every call a rule makes into another
-module raises `Opaque` rather than being followed. This module no longer
-imports `Reply` at all.
+`w.changes(changed="cash")` (see `docs/plan-memory.md`) is a read whose
+genuinely-read name, if any, is the `changed=` argument: when that
+argument is a string literal it is attributed as a read, so a rule that
+only reacts to changes of one attribute keeps a correct gate; with no
+`changed=` at all it contributes no read and the rule falls back to
+"called every tick", the safe default, while a non-literal `changed=`
+cannot be attributed and is `Opaque`. `w.recent(n)` reads the log too but
+names no attribute, so it is the same safe fallback.
 
 ## What a rule hard-codes
 
-`literals(fn)` reports the other thing the map wants to see: every
-comparison in `fn` of a non-literal expression against a NUMERIC literal
-(`<`, `<=`, `>`, `>=`, `==`, `!=`), as `Literal(file, line, value,
+`literals(fn)` reports every comparison in `fn` of a non-literal
+expression against a NUMERIC literal, as `Literal(file, line, value,
 expression)` records. `docs/tuning.md`'s design rule -- "a tunable rule
-never hard-codes its threshold; it reads a component" -- is the reason: the
-same AST walk that derives reads can point at the literal a tunable rule
-should have turned into a read. This module reports the sites and stops;
-whether a given literal is a threshold that SHOULD have been a knob or a
-genuinely structural constant is a judgment only the author can make, so
-the policy -- and every suppression, with its reason -- lives in the
-calibration package's linter (`loopingrules_calibration.linter`), not here.
-`literals` refuses exactly as `analyze` does: a rule this module cannot see
-raises `Opaque`; it never silently reports "no literals".
+never hard-codes its threshold; it reads an attribute" -- is the reason:
+the same AST walk that derives reads can point at the literal a tunable
+rule should have turned into a read. This module reports the sites and
+stops; whether a given literal is a threshold that SHOULD have been a knob
+or a genuinely structural constant is a judgment only the author can make,
+so the policy -- and every suppression, with its reason -- lives in the
+calibration package's linter, not here. `literals` refuses exactly as
+`analyze` does.
 """
 
 from __future__ import annotations
@@ -97,51 +85,47 @@ import textwrap
 from typing import Dict, Set
 
 
+# Which world methods read which names, and where the name sits in the
+# call. `entity`-first methods (get/has/set/unset/...) name from index 1;
+# the entity-less readers (each/first/all/the/populated) start at 0.
 READS = {"each", "get", "all", "the", "first"}
-EXISTENCE_READS = {"has", "get_all", "populated"}
-WRITES_INSTANCE = {"attach", "replace", "spawn"}   # args are `Kind(...)` calls
-WRITES_KIND = {"detach"}                            # args are bare `Kind` names
-WRITES_VALUE = {"remove"}                           # one arg, a `Kind(...)` call
+EXISTENCE_READS = {"has", "populated"}
+WRITES = {"set", "unset", "add", "remove", "append", "pop", "mark", "unmark"}
 
 
 class Opaque(Exception):
     """Raised the moment a rule (or a helper it calls) uses its world
     parameter in a way this module cannot statically account for. Carries
-    the rule's own qualified name and a human reason -- refuse rather
-    than guess, the same discipline every parse boundary in this codebase
-    already applies. See the module docstring's "the dialect.\""""
+    the rule's own qualified name and a human reason -- refuse rather than
+    guess, the same discipline every parse boundary in this codebase
+    already applies. See the module docstring's "the dialect"."""
 
 
 class Analysis:
     """One rule's own reads and writes, derived, not declared.
 
-    `negated_reads` is a subset of `reads`: every type this rule's own
-    source tests for ABSENCE (`if not w.each(Kind):`, `w.first(Kind) is
-    None`, `len(w.each(Kind)) == 0`, ...) rather than presence. `Loop.
-    rule` gates a rule on `reads - negated_reads`, never on `reads`
-    itself -- a rule reacting to a type NOT existing (`test_engine.py`'s
-    own `pong`, spawning a fresh `Ping` exactly when none is left, is
-    the case that found this) would otherwise be gated on the one
-    condition that guarantees it has nothing to do, going structurally
-    dormant precisely when it most needs to run. A type appearing BOTH
-    ways (iterated somewhere, tested for absence somewhere else) is
-    still excluded everywhere, conservatively -- this module cannot
-    tell, from one rule's source, whether the two uses are independent
-    branches or entangled, so it refuses to gate on it at all rather
-    than guess which occurrence is safe."""
+    `reads`/`writes` are ATTRIBUTE NAMES (strings). `negated_reads` is a
+    subset of `reads`: every name this rule's own source tests for ABSENCE
+    (`if not w.each("x"):`, `w.first("x") is None`, `len(w.each("x")) ==
+    0`, `not w.has(e, "x")`, `not w.populated("x")`) rather than presence.
+    `Loop.rule` gates a rule on `reads - negated_reads`, never on `reads`
+    itself -- a rule reacting to a name NOT existing (`test_engine.py`'s
+    own `pong`, spawning a fresh `Ping` exactly when none is left, is the
+    case that found this) would otherwise be gated on the one condition
+    that guarantees it has nothing to do. A name appearing BOTH ways is
+    excluded everywhere, conservatively.
+    """
 
     def __init__(self) -> None:
-        self.reads: Set[type] = set()
-        self.negated_reads: Set[type] = set()
-        self.writes: Set[type] = set()
+        self.reads: Set[str] = set()
+        self.negated_reads: Set[str] = set()
+        self.writes: Set[str] = set()
         self.destroys: bool = False
 
     def __repr__(self) -> str:
         return "Analysis(reads=%r, negated_reads=%r, writes=%r, destroys=%r)" % (
-            sorted(k.__name__ for k in self.reads),
-            sorted(k.__name__ for k in self.negated_reads),
-            sorted(k.__name__ for k in self.writes),
-            self.destroys)
+            sorted(self.reads), sorted(self.negated_reads),
+            sorted(self.writes), self.destroys)
 
     def __eq__(self, other) -> bool:
         if not isinstance(other, Analysis):
@@ -159,10 +143,10 @@ _CACHE: "dict" = {}
 
 
 def analyze(fn) -> Analysis:
-    """Statically derive what component types `fn` -- a rule, a plain
-    function of one `World` -- reads and writes. Raises `Opaque` the
-    moment `fn`, or a same-module helper it calls with the world
-    parameter, falls outside the dialect the module docstring names.
+    """Statically derive what attributes `fn` -- a rule, a plain function
+    of one `World` -- reads and writes. Raises `Opaque` the moment `fn`,
+    or a same-module helper it calls with the world parameter, falls
+    outside the dialect the module docstring names.
 
     Cached BY FUNCTION OBJECT: the derivation depends only on `fn`'s own
     source, and no caller mutates the returned `Analysis` (callers only
@@ -197,8 +181,6 @@ def _is_numeric_literal(node) -> bool:
             and not isinstance(node.value, bool))
 
 
-# The comparison operators `docs/plan-calibration.md`'s linter names
-# (`<`, `<=`, `>`, `>=`, `==`), plus `!=`, which is the same shape.
 _COMPARE_OPS = (ast.Lt, ast.LtE, ast.Gt, ast.GtE, ast.Eq, ast.NotEq)
 
 
@@ -209,9 +191,9 @@ def literals(fn) -> tuple:
     two literals (`1 < 2`) or of two expressions (`a > b`) is not one of
     these -- only a threshold against a value built at runtime is.
 
-    Raises `Opaque` exactly as `analyze` does: a rule this module cannot see
-    cannot be checked for literals either, so the caller must tell "no
-    literals" apart from "not looked at" -- see `docs/plan-calibration.md`.
+    Raises `Opaque` exactly as `analyze` does: a rule this module cannot
+    see cannot be checked for literals either, so the caller must tell "no
+    literals" apart from "not looked at".
     """
     analyze(fn)                     # same refusal, and it fills the cache
     tree = _source_tree(fn)
@@ -239,27 +221,28 @@ def literals(fn) -> tuple:
 
 
 class Report:
-    """`component_map()`'s own result: for every component type seen,
-    which rules (by qualified name) read it and which write it -- plus
-    `opaque`, the rules this could not analyze at all, each with why.
-    A type absent from `opaque` and absent from both `reads`/`writes`
-    was never mentioned by any rule given; a rule name present in
-    `opaque` is deliberately absent from `reads`/`writes` too, even for
-    the part of it that WAS resolved before the point it wasn't -- a
-    partial map is worse here than an honest "unknown.\""""
+    """`attribute_map()`'s own result: for every attribute name seen, which
+    rules (by qualified name) read it and which write it -- plus `opaque`,
+    the rules this could not analyze at all, each with why. A name absent
+    from `opaque` and absent from both `reads`/`writes` was never mentioned
+    by any rule given; a rule name present in `opaque` is deliberately
+    absent from `reads`/`writes` too, even for the part of it that WAS
+    resolved before the point it wasn't -- a partial map is worse here than
+    an honest "unknown."
+    """
 
     def __init__(self) -> None:
-        self.reads: Dict[type, Set[str]] = {}
-        self.writes: Dict[type, Set[str]] = {}
+        self.reads: Dict[str, Set[str]] = {}
+        self.writes: Dict[str, Set[str]] = {}
         self.destroys: Set[str] = set()
         self.opaque: Dict[str, str] = {}
 
     def __repr__(self) -> str:
-        return "Report(reads=%d kinds, writes=%d kinds, opaque=%r)" % (
+        return "Report(reads=%d names, writes=%d names, opaque=%r)" % (
             len(self.reads), len(self.writes), self.opaque)
 
 
-def component_map(*functions) -> Report:
+def attribute_map(*functions) -> Report:
     """Build a `Report` by `analyze`-ing every function given. A function
     that raises `Opaque` is recorded under `Report.opaque` by its own
     qualified name and reason, never silently treated as reading or
@@ -273,10 +256,10 @@ def component_map(*functions) -> Report:
         except Opaque as exc:
             report.opaque[name] = str(exc)
             continue
-        for kind in analysis.reads:
-            report.reads.setdefault(kind, set()).add(name)
-        for kind in analysis.writes:
-            report.writes.setdefault(kind, set()).add(name)
+        for attr in analysis.reads:
+            report.reads.setdefault(attr, set()).add(name)
+        for attr in analysis.writes:
+            report.writes.setdefault(attr, set()).add(name)
         if analysis.destroys:
             report.destroys.add(name)
     return report
@@ -341,32 +324,20 @@ def _walk_function(fn, module, analysis: Analysis, seen: set,
                     return True
         return False
 
-    def resolve_class(node):
-        if isinstance(node, ast.Name) and isinstance(
-                module.__dict__.get(node.id), type):
+    def resolve_name(node) -> str:
+        # A name is a str literal, full stop. Anything else (a variable, a
+        # concatenation, a class) cannot be resolved without evaluating it,
+        # so it is Opaque, not guessed at.
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
             handled_names.add(id(node))
-            return module.__dict__[node.id]
-        return None
+            return node.value
+        raise Opaque(_qualname(fn),
+                     "an attribute name must be a string literal: %r"
+                     % ast.unparse(node))
 
-    def resolve_kind_list(node):
+    def resolve_name_list(node):
         elts = node.elts if isinstance(node, (ast.Tuple, ast.List)) else [node]
-        kinds = []
-        for elt in elts:
-            kind = resolve_class(elt)
-            if kind is None:
-                raise Opaque(_qualname(fn),
-                             "cannot resolve a component type from %r" %
-                             ast.unparse(elt))
-            kinds.append(kind)
-        return kinds
-
-    def resolve_instance_class(node):
-        # `Kind(...)` -- a freshly-built component. Anything else (a bare
-        # variable, a comprehension, a starred value) cannot be traced to
-        # a type without evaluating it, so it is Opaque, not guessed at.
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-            return resolve_class(node.func)
-        return None
+        return [resolve_name(elt) for elt in elts]
 
     def handle_world_method(call, method):
         args = call.args
@@ -374,95 +345,49 @@ def _walk_function(fn, module, analysis: Analysis, seen: set,
                 kw.arg is None for kw in call.keywords):
             raise Opaque(_qualname(fn),
                          "%s(...) called with a starred/**-argument -- "
-                         "cannot enumerate its component types" % method)
-        if method in READS:
-            start = 1 if method == "get" else 0
-            kinds = []
-            for a in args[start:]:
-                kind = resolve_class(a)
-                if kind is None:
-                    raise Opaque(_qualname(fn),
-                                 "%s(...) argument is not a literal "
-                                 "component type: %r" % (method, ast.unparse(a)))
-                analysis.reads.add(kind)
-                kinds.append(kind)
+                         "cannot enumerate its attribute names" % method)
+        names = []
+        if method in READS or method in EXISTENCE_READS:
+            # Where the NAME arguments sit: `get(entity, name[, default])`
+            # names from index 1 and only index 1; `has(entity, *names)`
+            # from index 1 to the end; the entity-less readers start at 0.
+            if method == "get":
+                window = args[1:2]
+            elif method == "has":
+                window = args[1:]
+            elif method in ("all", "the"):
+                window = args[0:1]
+            else:                       # each, first, populated
+                window = args[0:]
+            for a in window:
+                names.append(resolve_name(a))
+            analysis.reads.update(names)
             for kw in call.keywords:
                 if kw.arg == "without":
-                    analysis.reads.update(resolve_kind_list(kw.value))
-            if kinds and _is_negated(call):
-                analysis.negated_reads.update(kinds)
-        elif method in EXISTENCE_READS:
-            start = 1 if method in ("get_all", "has") else 0
-            kinds = []
-            for a in args[start:]:
-                kind = resolve_class(a)
-                if kind is None:
-                    raise Opaque(_qualname(fn),
-                                 "%s(...) argument is not a literal "
-                                 "component type: %r" % (method, ast.unparse(a)))
-                analysis.reads.add(kind)
-                kinds.append(kind)
-            if kinds and _is_negated(call):
-                analysis.negated_reads.update(kinds)
-        elif method in WRITES_INSTANCE:
-            start = 1 if method in ("attach", "replace") else 0
-            for a in args[start:]:
-                kind = resolve_instance_class(a)
-                if kind is None:
-                    raise Opaque(_qualname(fn),
-                                 "%s(...) argument is not a freshly-built "
-                                 "component (`Kind(...)`): %r" %
-                                 (method, ast.unparse(a)))
-                handled_names.add(id(a.func))
-                analysis.writes.add(kind)
-        elif method in WRITES_KIND:
-            for a in args[1:]:
-                kind = resolve_class(a)
-                if kind is None:
-                    raise Opaque(_qualname(fn),
-                                 "detach(...) argument is not a bare "
-                                 "component type: %r" % ast.unparse(a))
-                analysis.writes.add(kind)
-        elif method in WRITES_VALUE:
-            if len(args) < 2:
-                raise Opaque(_qualname(fn), "remove(...) missing its value")
-            kind = resolve_instance_class(args[1])
-            if kind is None:
-                raise Opaque(_qualname(fn),
-                             "remove(...) argument is not a freshly-built "
-                             "component (`Kind(...)`): %r" % ast.unparse(args[1]))
-            handled_names.add(id(args[1].func))
-            analysis.writes.add(kind)
+                    analysis.reads.update(resolve_name_list(kw.value))
+            if names and _is_negated(call):
+                analysis.negated_reads.update(names)
+        elif method in WRITES:
+            window = args[1:2]
+            for a in window:
+                analysis.writes.add(resolve_name(a))
+        elif method == "spawn":
+            pass                        # creating an entity touches no name
         elif method == "destroy":
             analysis.destroys = True
         elif method == "changes":
-            # `w.changes(changed=SomeType)` reads the change log; when the
-            # `changed=` argument is a literal component type, that type is
-            # a genuine read (the rule only cares about changes to it).
-            # None, or any other keyword, contributes no read -- the rule
-            # then falls back to "no reads, called every tick", the safe
-            # default. A non-literal `changed=` is Opaque below, the same
-            # refusal every other non-literal component argument gets. See
-            # the module note, "reading the change log".
             for kw in call.keywords:
                 if kw.arg != "changed":
                     continue
-                kind = resolve_class(kw.value)
-                if kind is None:
-                    raise Opaque(_qualname(fn),
-                                 "changes(changed=...) argument is not a "
-                                 "literal component type: %r"
-                                 % ast.unparse(kw.value))
-                analysis.reads.add(kind)
-        elif method == "recent":
-            pass
-        elif method in ("entity", "revision"):
-            pass
+                analysis.reads.add(resolve_name(kw.value))
+        elif method in ("recent", "entity", "revision", "attributes", "show",
+                        "alive"):
+            pass                        # reads the world, names no attribute
         else:
             raise Opaque(_qualname(fn),
                          "unknown world method %r -- this module's own "
-                         "vocabulary of world methods may be out of date" %
-                         method)
+                         "vocabulary of world methods may be out of date"
+                         % method)
 
     def mark_world_args(call):
         for a in call.args:
@@ -474,11 +399,6 @@ def _walk_function(fn, module, analysis: Analysis, seen: set,
 
     def handle_helper_call(call):
         callee = module.__dict__.get(call.func.id)
-        # Note: `reply`/`propose`/`arbitrate`/`census` were removed from
-        # `loopingrules.world` as part of a simplification, so the old
-        # `callee is _CORE_REPLY` special case (which marked a `Reply`
-        # write) is gone with them -- any other call is followed only if
-        # it is a plain same-module function, below.
         if not inspect.isfunction(callee) or callee.__module__ != module.__name__:
             raise Opaque(_qualname(fn),
                          "%r is not a plain function defined in this "

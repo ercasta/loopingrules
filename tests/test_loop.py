@@ -1,37 +1,28 @@
 """What the loop promises: every rule, in order, until nothing changes
 -- called once a tick, writing to the world directly, with nothing in
-between the write and the next rule seeing it."""
+between the write and the next rule seeing it.
 
-import dataclasses
+Under the attribute substrate (D8) a former component with a field is a
+plain ATTRIBUTE (`step` holds the number) and a fieldless tag is a FLAG
+(`ping`, `pong`, `seen`).
+"""
+
+from __future__ import annotations
 
 import pytest
 
 from loopingrules.loop import Loop
 
 
-@dataclasses.dataclass(frozen=True)
-class Step:
-    n: object
-
-
-@dataclasses.dataclass(frozen=True)
-class Ping:
-    pass
-
-
-@dataclasses.dataclass(frozen=True)
-class Pong:
-    pass
-
-
-@dataclasses.dataclass(frozen=True)
-class Seen:
-    pass
-
-
 @pytest.fixture
 def loop():
     return Loop()
+
+
+def _spawn_step(world, n):
+    entity = world.spawn()
+    world.set(entity, "step", n)
+    return entity
 
 
 def test_rules_run_in_registration_order_every_tick(loop):
@@ -58,10 +49,10 @@ def test_a_rule_is_named_for_its_module_and_function(loop):
 def test_a_rule_fires_by_changing_something(loop):
     @loop.rule
     def marks(w):
-        for e, _ in w.each(Step):
-            w.attach(e, Seen())          # news once, and then never again
+        for e, _ in w.each("step"):
+            w.mark(e, "seen")            # news once, and then never again
 
-    loop.world.spawn(Step(0))
+    _spawn_step(loop.world, 0)
     assert loop.tick() == ["test_loop.marks"]
     assert loop.tick() == []
 
@@ -69,22 +60,22 @@ def test_a_rule_fires_by_changing_something(loop):
 def test_a_rule_that_writes_nothing_does_not_fire(loop):
     @loop.rule
     def idle(w):
-        for entity, step in w.each(Step):
+        for entity, step in w.each("step"):
             pass   # reads, writes nothing
 
-    loop.world.spawn(Step(0))
+    _spawn_step(loop.world, 0)
     assert loop.tick() == []
 
 
 def test_run_settles_when_a_whole_pass_changes_nothing(loop):
     @loop.rule
     def chain(w):
-        for entity, step in w.each(Step):
+        for entity, step in w.each("step"):
             w.destroy(entity)
-            if step.n < 3:
-                w.spawn(Step(step.n + 1))
+            if step < 3:
+                _spawn_step(w, step + 1)
 
-    loop.world.spawn(Step(0))
+    _spawn_step(loop.world, 0)
     settled = loop.run()
     assert settled.hot == []
     assert settled.ticks == 5          # four steps, then the quiet pass
@@ -92,60 +83,54 @@ def test_run_settles_when_a_whole_pass_changes_nothing(loop):
 
 
 def test_a_spawn_is_a_real_entity_usable_the_same_call(loop):
-    """`w.spawn(...)` hands back the real entity, not a placeholder --
-    usable immediately, in the rest of the SAME rule, for a further
-    `w.attach`/`w.get`/anything else."""
+    """`w.spawn()` hands back the real entity, not a placeholder -- usable
+    immediately, in the rest of the SAME rule."""
     @loop.rule
     def make_and_mark(w):
-        made = w.spawn(Step(1))
-        w.attach(made, Seen())
+        made = w.spawn()
+        w.set(made, "step", 1)
+        w.mark(made, "seen")
 
     loop.tick()
-    entity, step = loop.world.each(Step)[0]
-    assert step.n == 1
-    assert loop.world.has(entity, Seen)
+    entity, step = loop.world.each("step")[0]
+    assert step == 1
+    assert loop.world.has(entity, "seen")
 
 
-def test_a_freshly_spawned_entity_s_id_is_usable_in_another_component_field(loop):
-    @dataclasses.dataclass(frozen=True)
-    class Holder:
-        ref: object
-
-    @dataclasses.dataclass(frozen=True)
-    class Index:
-        by_name: dict
-
+def test_a_freshly_spawned_entity_s_id_is_usable_as_a_reference(loop):
     @loop.rule
     def make(w):
-        made = w.spawn(Step(1))
-        w.spawn(Holder(made))
-        w.spawn(Index({"a": made}))
+        made = w.spawn()
+        w.set(made, "step", 1)
+        holder = w.spawn()
+        w.set(holder, "ref", made)
 
     loop.tick()
     w = loop.world
-    target = w.each(Step)[0][0]
-    holder = w.each(Holder)[0][1]
-    index = w.each(Index)[0][1]
-    # A component field never holds a live handle -- see loopingrules.world's own
-    # note -- so the entity is lowered to its plain id on the way in.
-    assert holder.ref == target.id
-    assert index.by_name == {"a": target.id}
+    target = w.each("step")[0][0]
+    holder = w.each("ref")[0]
+    # A reference is stored as a plain id, not a live handle.
+    assert holder[1] == target.id
+    assert w.entity(holder[1]) == target
 
 
 def test_two_rules_feeding_each_other_stop_at_the_budget_and_are_named(loop):
     @loop.rule
     def ping(w):
-        for entity, _ in w.each(Pong):
+        for entity, _ in w.each("pong"):
             w.destroy(entity)
-            w.spawn(Ping())
+            e = w.spawn()
+            w.mark(e, "ping")
 
     @loop.rule
     def pong(w):
-        for entity, _ in w.each(Ping):
+        for entity, _ in w.each("ping"):
             w.destroy(entity)
-            w.spawn(Pong())
+            e = w.spawn()
+            w.mark(e, "pong")
 
-    loop.world.spawn(Ping())
+    e = loop.world.spawn()
+    loop.world.mark(e, "ping")
     settled = loop.run(budget=20)
     assert settled.ticks == 20
     assert sorted(set(settled.hot)) == ["test_loop.ping", "test_loop.pong"]
@@ -158,103 +143,87 @@ def test_a_rule_that_raises_is_recorded_and_the_others_still_run(loop):
 
     @loop.rule
     def carries_on(w):
-        # `attach`, not `spawn`: spawning is never idempotent, so a rule
-        # that spawned every tick would keep the world awake by itself and
-        # tell us nothing about the one that raises.
-        for e, _ in w.each(Step):
-            w.attach(e, Seen())
+        for e, _ in w.each("step"):
+            w.mark(e, "seen")
 
-    loop.world.spawn(Step(0))
+    _spawn_step(loop.world, 0)
     settled = loop.run()
-    assert loop.world.each(Seen)
+    assert loop.world.each("seen")
     assert [name for name, _ in loop.errors] == ["test_loop.explodes"]
-    # It raises every tick, but raising changes nothing, so the world
-    # still settles rather than burning the whole budget.
     assert settled.hot == []
 
 
 def test_install_hands_the_loop_to_a_domain(loop):
     def domain(lp, greeting="hi"):
-        lp.world.spawn(Step(greeting))
+        e = lp.world.spawn()
+        lp.world.set(e, "step", greeting)
         lp.rule(lambda w: None, name="noop")
 
     loop.install(domain, greeting="hello")
-    assert loop.world.the(Step).n == "hello"
+    assert loop.world.the("step") == "hello"
     assert [name for name, _ in loop.rules] == ["noop"]
 
 
 def test_a_rule_gated_by_its_own_reads_is_not_even_called_while_dormant(loop):
     """No `watches=` to declare any more -- `analyze()` derives a rule's
-    reads from its own body (here, `w.each(Step)`) and `Loop.rule` uses
-    them as the gate itself. See `loop.py`'s own module note, "A rule
-    wakes only when something it reads exists.\""""
+    reads from its own body (here, `w.each("step")`) and `Loop.rule` uses
+    them as the gate itself."""
     calls = []
 
     @loop.rule
     def counts_calls(w):
-        for _entity, _step in w.each(Step):
+        for _entity, _step in w.each("step"):
             pass
         calls.append(None)
 
     loop.tick()
     loop.tick()
-    assert calls == [], "Step has never existed -- the body never ran"
+    assert calls == [], "step has never existed -- the body never ran"
 
-    loop.world.spawn(Step(0))
+    _spawn_step(loop.world, 0)
     loop.tick()
-    assert len(calls) == 1, "a Step exists now -- it runs"
+    assert len(calls) == 1, "a step exists now -- it runs"
     loop.tick()
     assert len(calls) == 2, "populated now, so it runs every tick again"
 
 
-def test_a_rule_reading_several_types_wakes_on_any_one_of_them(loop):
-    """The gate is an OR over every type `analyze()` found -- reading
-    `Step` in one `each()` call and `Ping` in another still wakes the
-    rule the moment either exists, not only once both do."""
+def test_a_rule_reading_several_names_wakes_on_any_one_of_them(loop):
     seen = []
 
     @loop.rule
     def either(w):
-        for _entity, _step in w.each(Step):
+        for _entity, _step in w.each("step"):
             pass
-        for _entity, _ping in w.each(Ping):
+        for _entity, _ping in w.each("ping"):
             pass
         seen.append("either")
 
     loop.tick()
     assert seen == []
 
-    loop.world.spawn(Ping())
+    e = loop.world.spawn()
+    loop.world.mark(e, "ping")
     loop.tick()
-    assert seen == ["either"], "Ping alone wakes it -- Step was never populated"
+    assert seen == ["either"], "ping alone wakes it -- step was never populated"
 
 
 def test_a_rule_reacting_to_absence_is_never_gated_dormant(loop):
-    """`w.each(Step)` tested for absence, not presence -- gating this on
-    `Step` would skip it exactly when `Step` is gone, the one moment it
-    needs to run. See `loopingrules.analyze.Analysis.negated_reads`."""
     calls = []
 
     @loop.rule
     def replenish(w):
-        if not w.each(Step):
-            w.spawn(Step(0))
+        if not w.each("step"):
+            _spawn_step(w, 0)
         calls.append(None)
 
     loop.tick()
-    assert len(calls) == 1, "Step has never existed -- still called, and it fired"
-    assert loop.world.each(Step) != []
+    assert len(calls) == 1, "step has never existed -- still called, and it fired"
+    assert loop.world.each("step") != []
     loop.tick()
-    assert len(calls) == 2, "Step exists now, but this is not gated on it either"
+    assert len(calls) == 2, "step exists now, but this is not gated on it either"
 
 
 def test_a_rule_that_reads_nothing_runs_every_tick_regardless(loop):
-    """A rule whose world parameter is never used analyzes cleanly to
-    empty reads -- nothing to gate on, so it falls back to "called every
-    tick," the same fallback an `Opaque` rule (see `test_analyze.py`,
-    and the lambda-based rules elsewhere in this file -- `inspect.
-    getsource` on a lambda never yields a plain function, so every one of
-    them is Opaque too) also gets."""
     seen = []
 
     @loop.rule
@@ -283,25 +252,16 @@ def test_equal_priority_including_the_default_keeps_registration_order(loop):
     loop.rule(lambda w: order.append("second"), name="second", priority=0)
     loop.rule(lambda w: order.append("third"), name="third", priority=5)
     loop.tick()
-    # "third" (priority 5) leads; "first" and "second" are both priority 0
-    # and keep the order they were registered in relative to each other.
     assert order == ["third", "first", "second"]
 
 
 def test_priority_does_not_reorder_the_registry_itself(loop):
-    """`self.rules` is what `/rules` prints and what other tests read
-    -- it stays in registration order. Priority is `tick()`'s own
-    execution order, not a second registry."""
     loop.rule(lambda w: None, name="low", priority=1)
     loop.rule(lambda w: None, name="high", priority=10)
     assert [name for name, _ in loop.rules] == ["low", "high"]
 
 
 def test_a_late_registered_high_priority_rule_still_runs_first(loop):
-    """Priority is read fresh each tick, not fixed at whatever position a
-    rule happened to be appended at -- a rule two domains install in
-    either order still runs in the order THEY declared, not the order
-    `install()` happened to run in."""
     order = []
     loop.tick()                                    # nothing registered yet
     loop.rule(lambda w: order.append("first-installed"), name="a", priority=0)
@@ -311,25 +271,26 @@ def test_a_late_registered_high_priority_rule_still_runs_first(loop):
     assert order == ["installed-later-but-important", "first-installed"]
 
 
-def test_a_rule_reading_SEVERAL_kinds_still_fires_ONCE_per_tick(loop):
+def test_a_rule_reading_SEVERAL_names_still_fires_ONCE_per_tick(loop):
     calls = []
 
     @loop.rule
     def watcher(w):
-        w.each(Step)
-        w.each(Ping)
-        w.each(Pong)
+        w.each("step")
+        w.each("ping")
+        w.each("pong")
         calls.append(None)
 
-    loop.world.spawn(Step(0))
-    loop.world.spawn(Ping())
-    loop.world.spawn(Pong())               # all three read kinds exist
+    _spawn_step(loop.world, 0)
+    e = loop.world.spawn()
+    loop.world.mark(e, "ping")
+    f = loop.world.spawn()
+    loop.world.mark(f, "pong")
     loop.tick()
     assert len(calls) == 1, "one entry in self.rules, called once, full stop"
 
 
-# --- unique names: the engine now checks a convention that used to be a
-# habit ---------------------------------------------------------------
+# --- unique names -------------------------------------------------------
 
 
 def test_a_second_rule_with_the_same_explicit_name_is_refused(loop):
@@ -360,25 +321,17 @@ def test_an_inferred_name_colliding_with_an_explicit_one_is_refused(loop):
     assert len(loop.rules) == 1
 
 
-# --- tracing: off by default, and rule-attributed when on --------------
-
-
-
-
-
-
-
 def test_after_tick_runs_between_ticks_not_at_the_end(loop):
     seen = []
 
     @loop.rule
     def countdown(w):
-        for entity, step in w.each(Step):
+        for entity, step in w.each("step"):
             w.destroy(entity)
-            if step.n > 0:
-                w.spawn(Step(step.n - 1))
+            if step > 0:
+                _spawn_step(w, step - 1)
 
-    loop.world.spawn(Step(3))
+    _spawn_step(loop.world, 3)
     loop.run(after_tick=lambda: seen.append(
-        [s.n for _, s in loop.world.each(Step)]))
+        [s for _, s in loop.world.each("step")]))
     assert seen == [[2], [1], [0], []]

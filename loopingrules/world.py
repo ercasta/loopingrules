@@ -279,6 +279,12 @@ class World:
         # skip them; `purge_transient` drops them). Transience is a NAME
         # now that there is no class to mark -- see the module note.
         self.transient: Set[str] = set()
+        # The names whose value is an entity REFERENCE rather than an
+        # ordinary number -- the schema's ref declaration, carried here so
+        # `share` can remap a pack id without trusting the file. `save`
+        # does not need it (it preserves ids); `share` does. See
+        # `docs/plan-attributes.md` on refs and `share.py`.
+        self.refs: Set[str] = set()
         # The change log: transient, in-memory, never saved. `_seq` counts
         # every record so `changes(since=...)` stays stable even when
         # `_log_capacity` drops old entries; `_actor`/`_tick` are set by
@@ -323,6 +329,19 @@ class World:
         on. No existence check: the same trust level constructing `Entity`
         directly always had."""
         return Entity(self, int(entity_id))
+
+    def _restore(self, entity_id: int, name: str, value) -> None:
+        """Put a slot back WITHOUT logging a `Change` -- what `save.load`
+        uses. Restoring is not something that happened to the world, it IS
+        the world, so unlike `set` it records nothing; it still adopts the
+        entity and moves `revision`, because a restored world has moved
+        from empty. Not part of the rule-facing API.
+        """
+        entity = self._adopt(entity_id)
+        self._write_slot(entity.id, name, _lower(value,
+                                                 "restore #%d.%s"
+                                                 % (entity.id, name)))
+        self.revision += 1
 
     def _slots_of(self, entity_id: int) -> "dict":
         return self._slots.get(entity_id, {})

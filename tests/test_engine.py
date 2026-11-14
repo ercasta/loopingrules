@@ -1,26 +1,25 @@
 """What the engine promises: one world, one thread that ever touches it,
 and any number of channels attached to it -- see `loopingrules.engine`'s own
-docstring for the contract a channel has to keep."""
+docstring for the contract a channel has to keep.
 
-import dataclasses
+`Said`/`Reply` are tag entities now (D8): a line is an entity carrying
+`channel` and `text`, marked `said`/`reply`.
+"""
+
+from __future__ import annotations
+
 import threading
 import time
 
 import pytest
 
-from loopingrules.engine import BROADCAST, Engine, Reply, Said
+from loopingrules.engine import BROADCAST, Engine, reply
 from loopingrules.loop import Loop
 
 
-@dataclasses.dataclass(frozen=True)
-class Ping:
-    pass
-
-
 class Fake:
-    """The smallest thing that satisfies the channel contract: a name,
-    and a place messages land. `post` is called by the TEST, standing in
-    for whatever thread a real channel would read from."""
+    """The smallest thing that satisfies the channel contract: a name, and
+    a place messages land."""
 
     def __init__(self, name=None):
         self.name = name
@@ -54,10 +53,6 @@ def engine(loop):
 
 
 def run_briefly(engine, seconds=0.3):
-    """`engine.run()` on its own thread, stopped after a short window --
-    for a test that wants to `post` from the main thread while the engine
-    thread is the one draining the queue, the same shape any real channel
-    is in."""
     thread = threading.Thread(target=engine.run, daemon=True)
     thread.start()
     time.sleep(seconds)
@@ -66,7 +61,13 @@ def run_briefly(engine, seconds=0.3):
     assert not thread.is_alive()
 
 
-# --- attaching ------------------------------------------------------------
+def _mark(world, name):
+    entity = world.spawn()
+    world.mark(entity, name)
+    return entity
+
+
+# --- attaching ----------------------------------------------------------
 
 def test_attach_names_a_channel_that_did_not_name_itself(engine):
     a, b = Fake(), Fake()
@@ -135,16 +136,17 @@ def test_say_spawns_said_under_the_poster_s_own_channel_name(engine):
     engine.attach(fake)
     engine.post(fake, "say", "hello")
     run_briefly(engine)
-    assert engine.loop.world.the(Said) is None, "settled and destroyed"
+    assert not engine.loop.world.populated("said"), "settled and destroyed"
     assert any("unheard" in m or "reply" in m for m in fake.messages)
 
 
 def test_a_reply_addressed_to_user_is_seen_by_the_asker_too(loop):
     @loop.rule
     def echo(w):
-        for entity, said in w.each(Said):
+        for entity, _ in w.each("said"):
+            text = w.get(entity, "text")
             w.destroy(entity)
-            w.spawn(Reply("user", "echo: %s" % said.text))
+            reply(w, "user", "echo: %s" % text)
 
     engine = Engine(loop)
     fake = Fake()
@@ -166,14 +168,12 @@ def test_get_returns_the_world_only_to_the_asker(loop):
 
 
 def test_stop_posted_through_the_queue_does_not_strand_a_say_before_it(loop):
-    # The race this guards: a channel that posts `say` and then `stop` in
-    # quick succession must have the say acted on first, not have `stop`
-    # race it to the front (see `Engine.post`'s own docstring).
     @loop.rule
     def echo(w):
-        for entity, said in w.each(Said):
+        for entity, _ in w.each("said"):
+            text = w.get(entity, "text")
             w.destroy(entity)
-            w.spawn(Reply("user", "got: %s" % said.text))
+            reply(w, "user", "got: %s" % text)
 
     engine = Engine(loop)
     fake = Fake()
@@ -184,7 +184,8 @@ def test_stop_posted_through_the_queue_does_not_strand_a_say_before_it(loop):
     thread.start()
     thread.join(2)
     assert not thread.is_alive()
-    assert any(m.get("reply", {}).get("text") == "got: hello" for m in fake.messages)
+    assert any(m.get("reply", {}).get("text") == "got: hello"
+               for m in fake.messages)
 
 
 def test_a_command_is_run_on_the_engine_s_own_thread(loop):
@@ -245,22 +246,23 @@ def test_an_unknown_command_says_so_to_the_one_who_typed_it(engine):
 def test_settle_reports_a_runaway_pair_and_their_names(loop):
     @loop.rule
     def ping(w):
-        for e, _ in w.each(Ping):
-            w.detach(e, Ping)
+        for e, _ in w.each("ping"):
+            w.unmark(e, "ping")
 
-    loop.world.spawn(Ping())
+    _mark(loop.world, "ping")
 
     @loop.rule
     def pong(w):
-        if not w.each(Ping):
-            w.spawn(Ping())
+        if not w.each("ping"):
+            _mark(w, "ping")
 
     engine = Engine(loop)
     fake = Fake()
     engine.attach(fake)
     engine.settle()
     errors = [m["error"]["text"] for m in fake.messages if "error" in m]
-    assert any("still firing" in e and "ping" in e and "pong" in e for e in errors)
+    assert any("still firing" in e and "ping" in e and "pong" in e
+               for e in errors)
 
 
 def test_on_settle_is_called_once_the_world_has_finished_saying_things(loop):
