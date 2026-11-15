@@ -14,9 +14,14 @@ the substrate and the control network. It was **discussed before it was written*
 the note mixed the operation *language* with *engine seams*, and each claim was
 sorted into language / seam / open **before** anything landed in the docs.
 
-- **Tests: 409 pass, with 6 collection errors** — all the unported
+- **Tests: 423 pass, with 6 collection errors** — all the unported
   `loopingrules_forge` spike and `loopingrules_reflect.r1`. That is the one red
   piece, deliberately deferred (see §4).
+- **The correction pass has a walking skeleton**: `loopingrules_ux.s6` (14
+  tests) — the train trip with a budget, reduced to two models and two planners,
+  pinning ADR-13's seam (materialized candidates, a distinct pure evaluator,
+  application memory, a cross-model budget veto) on the *current* substrate,
+  before any clean break.
 - **Docs** (the "clean slate"): the guide, plus **`decisions.md`** (ADR-1…ADR-13,
   the reasoning) and **`plan-ux.md`** (Plan U, the roadmap). Everything else — the
   D1–D10 design docs, `tuning`, the study guide/plan, `modeling`, `comparison-soar`,
@@ -64,16 +69,15 @@ Everything still hangs off ADR-1…ADR-9; the correction pass turns three of the
 
 ## 5. Next (recommended, not started)
 
-1. **U0** — reconcile the prose (the guide, `mkdocs.yml`) with what the code
+1. **Grow the skeleton (S6 → U8)** — add the third model (the train-trip graph),
+   more planners, and a **listwise** scorer in place of the two-leaf tree; it is
+   cheap and it teaches the shape the clean breaks must serve.
+2. **U0** — reconcile the prose (the guide, `mkdocs.yml`) with what the code
    does: attributes *with declared, model-qualified components*.
-2. **The components clean break (ADR-10)** — `world` → `analyze` → `save`/`share`
-   → `reflect`/IR → `examples`, in the clean-break order D8 gave, done whole.
-   This is the seam the train-trip probe needs, and it is the largest single
-   piece of work now open.
-3. **The train-trip probe (U8, S6)** — three models (planning + train + budget),
-   a **cross-model operation** where the budget vetoes planning candidates, and a
-   **decision-tree / listwise** network that must learn **which planning model**
-   to activate. Best attempted once the substrate and the IR-native engine exist.
+3. **The components clean break (ADR-10)** — `world` → `analyze` → `save`/`share`
+   → `reflect`/IR → `examples`, in the clean-break order D8 gave, done whole, and
+   migrate `s6` onto it. The largest single piece of work now open; do it once
+   the skeleton has settled the shape.
 
 ## 6. Pointers
 

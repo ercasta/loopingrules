@@ -289,7 +289,14 @@ round-trips exactly; an NL round-trip is judged. **Kill/reshape:** if the edge's
 output cannot be verified structurally, narrow it — the structured mode bypasses
 NL entirely.
 
-### U8 — The train-trip scenario *(the first real control-network probe)*
+### U8 — The train-trip scenario *(the first real control-network probe)* — **walking skeleton built**
+
+**Built (the reduced cut).** `loopingrules_ux.s6` (pinned by `tests/test_ux_s6.py`)
+does two models (planning + budget) and two planners, and exercises ADR-13's whole
+seam: materialized candidates, a distinct pure evaluator, application memory, and
+a cross-model budget veto. What is **still to build**: the third model (the
+train-trip graph), more planners, and a **listwise** scorer in place of the two-leaf
+tree.
 
 **Deliverable.** A real-world scenario — *plan a train trip with a budget* — built
 from **at least three models**: a **planning** model (it evaluates candidate
@@ -328,14 +335,17 @@ Each is a milestone, not a feature; each has a kill/reshape criterion (above).
   cross-island context and routes by control attributes; ground truth = final
   cash; grows `['spread>0', 'affordable']` and generalises (train +70, held-out
   +95).
-- **S6 — the train trip with a budget** *(planned: U8)*. Three models (planning +
-  train + budget) composed; a **cross-model operation** where the budget vetoes
-  planning candidates; the network — a **decision tree / listwise scorer** grown
-  by elimination (ADR-13) — selects the application, and must learn **which of
-  two planning models** (weak / stronger) to activate by context. Ground truth =
-  a completing plan within budget. This is the probe that first exercises the
-  **pure evaluator**, **materialized candidates**, and **model composition** at
-  once.
+- **S6 — the train trip with a budget** *(walking skeleton built:
+  `loopingrules_ux.s6`, pinned by `tests/test_ux_s6.py`)*. A *reduced* train trip
+  — **two** models (planning + budget), **two planners** (a weak direct-leg one,
+  a stronger search one) — that exercises the whole **correction pass** on the
+  current substrate: candidate applications **materialized**, a **distinct**
+  decision-tree evaluator that selects one and **writes nothing**, the selection
+  **recorded to application memory**, and a **cross-model operation** (the budget
+  vetoes a plan the planners propose). Growth finds `direct_in_budget` and
+  generalises (train `+4`, held-out `-47`, both equal to the oracle; greedy
+  `-235/-271`, pool `-8/-59`). **Still to build** (the full U8): the **third**
+  model (the train-trip graph itself) and more than two planners.
 
 ## 6. Cross-cutting invariants (CI fitness functions)
 
