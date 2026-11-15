@@ -1,12 +1,15 @@
 # Plan U — the user experience: authored islands, resolved anchors, a grown control network
 
-Status: **design.** This consolidates `docs/decisions.md` (ADR-1…ADR-9, the UX
+Status: **design.** This consolidates `docs/decisions.md` (ADR-1…ADR-13, the UX
 discussion) into a plan. It builds on **Phase S** — the attribute substrate
 (`plan-attributes.md`, largely built on the `attribute-substrate` branch) — and
 on design docs D5 (the forge), D6 (islands), D7 (reflection), D9 (the control
-network), D10 (mazes). It is the answer to `docs/ux.md` (the steering note) and
-to `docs/handoff.md` §6. Nothing here is a commitment to code: **every phase is a
-probe with a kill/reshape criterion**, in the repo's posture.
+network), D10 (mazes). It is the answer to `docs/ux.md` and to a later steering
+note (`archived-old/components and control network.md`), which forced a
+**correction pass** — ADR-10…ADR-13 — over the substrate (D8) and the control
+network (D9). It is also the answer to `docs/handoff.md` §6. Nothing here is a
+commitment to code: **every phase is a probe with a kill/reshape criterion**, in
+the repo's posture.
 
 Read `docs/decisions.md` first — this plan is its execution, and the ADRs carry
 the reasoning. The design docs it builds on and revises (D5–D10,
@@ -15,17 +18,23 @@ the reasoning. The design docs it builds on and revises (D5–D10,
 
 ## 1. The thesis, stated once
 
-> The engine is a tiny **enumerating** kernel; the substance is a **library of
-> islands** (clusters of rules keyed by terminology); structured input **anchors**
-> onto islands; and a **grown control network** **scores every candidate
-> application and selects one per step** (ADR-9), resolving the ambiguities
-> (non-confluence) that a person cannot feasibly rule by hand.
+> The engine is a tiny **enumerating** kernel over entities whose data lives in
+> **declared, model-qualified components** (ADR-10); a **model is an importable
+> module** of components and **operations** (ADR-11, ADR-12); the substance is a
+> **library of islands** (clusters of operations keyed by terminology); structured
+> input **anchors** onto islands; and a **grown control network** — a **pure
+> evaluator** — **materializes the candidate applications and selects one per
+> step**, never writing the blackboard (ADR-9, ADR-13); the ambiguities it
+> resolves (non-confluence) are what a person cannot feasibly rule by hand.
 
-Everything is entities (ADR-4): input, rules, and examples are the same kind of
-thing over different entities. So **there is no separate authoring pipeline**
+Everything is entities (ADR-4): input, operations, and examples are the same kind
+of thing over different entities. So **there is no separate authoring pipeline**
 (ADR-1, ADR-8) — and no engine-level vocabulary of "registers" or "domains." What
 exists is *structures*, the *islands* that read them, and the *network* that
-composes the islands.
+composes the islands. The **schema is the coordinate system** — the components a
+model declares, model-qualified so two models' vocabularies stay disjoint
+(ADR-10, `model_spaces.md`) — and the **model is the module** that carries it
+(ADR-12).
 
 A term's definers decide what computation is needed (ADR-8):
 
@@ -65,30 +74,63 @@ fixpoint is the confluence optimization, not the default.
   design rests on (ADR-6); the "cross-island read graph" moves to the controller,
   one level up (ADR-5).
 - **D9 (control network)** — its **motivation is now derived** (ambiguity =
-  non-confluence; the policy space is combinatorial), rather than asserted. The
-  algorithm stays open, to be chosen by a probe.
+  non-confluence; the policy space is combinatorial), rather than asserted. And
+  under the correction pass its **mechanism is replaced** (ADR-13): the network
+  is a **pure evaluator**, not stigmergic rules; it reads the materialized
+  candidates and writes nothing; it **subsumes** `RuleControl` and the
+  scheduler's `argmax`. The algorithm stays open, chosen by a probe.
+
+**The correction pass (ADR-10…ADR-13), from the later note.**
+
+- **D8 (attributes)** — **refined, not reversed** (ADR-10): components come back
+  as **declared, model-qualified bags** of fields (`entity → {component →
+  {field}}`), one per name, lists for many; **only entities have identity**. The
+  flat values and lists D8 shipped are kept; what returns is the **declaration**
+  and the **namespace**.
+- **rules → operations** (ADR-11): a rule is an **operation** (a capability);
+  an **application** binds it; the language keeps `if` and drops `while`, with
+  iteration as stigmergic re-firing (a **loop model** is an ordinary model).
+  **Tools are an engine seam** — a deposited request answered between ticks —
+  not a language operator, so a tool-using operation stays analyzable.
+- **models as modules** (ADR-12): a **model** is an importable module of
+  components + operations, **everything visible**; authors write a
+  **schema-checked textual format** for now, a guided UI / NL later.
+- **the application memory** (ADR-13): the engine records the **selected
+  application** into world memory, so ordinary operations can reason over the
+  trajectory the network produced (homoiconicity's payoff).
 
 ## 3. The shape, in one picture
 
 ```
-input (structures)            islands (the library)              examples
-  terms  ──enquiry──►  resolution ──► islands whose terms match  ──fitness──►
-     │                     │ (no definer → gap)                        │
-     │ anchors             │                                           │
-     ▼                     ▼                                           ▼
-  what must appear   compose rules + control  ◄── grown by the control network
+ models (importable)          islands (the library)             examples
+   components  ┐
+   operations  ┴─►  islands whose operations handle the terms  ──fitness──►
+      │                    │ (no definer → gap)                     │
+      │ anchors            │                                        │
+      ▼                    ▼                                        ▼
+  what must appear  materialize the candidate applications ─► network (pure evaluator)
+                          │ selects ONE                                    │
+                          ▼                                                ▼
+                  apply it to the blackboard ─► application memory (the selected app/step)
                           │
                           ▼
                   a frozen trajectory of selected applications
 ```
 
-- **The kernel** (ADR-4): the thin, fixed set of rules that lower to primitives;
-  the ground and the trusted computing base. **Everything above it lowers to
+- **Components & models** (ADR-10, ADR-12): data lives in **declared,
+  model-qualified components** on entities (`entity → {component → {field}}`); a
+  **model** is an importable module of components and operations. Only entities
+  have identity.
+- **The kernel** (ADR-4): the thin, fixed set of **operators** operations lower
+  to — the ground and the trusted computing base. **Everything above it lowers to
   concepts** — a term with no definer is a blocking gap.
-- **Islands** (ADR-6, D6): a cluster of rules + vocabulary that *manages* a
-  concept ("underrated", "a graph", "a procedure"). Indexed by **signature** —
-  lexical (terms) and structural (shape patterns) — so retrieval is a lookup, not
-  a search over all agents.
+- **Islands** (ADR-6, D6): a cluster of **operations** + vocabulary that
+  *manages* a concept ("underrated", "a graph", "a procedure"). Indexed by
+  **signature** — lexical (terms) and structural (shape patterns) — so retrieval
+  is a lookup, not a search over all agents.
+- **The network** (ADR-13): a **pure evaluator** the engine calls, over the
+  **materialized candidate applications**; it selects one, writes nothing, and
+  the engine records the selection into **application memory**.
 - **Anchors** (ADR-8): a term in the input is a *requirement* (the trajectory
   must use it) and an *index* (it retrieves the island that manages it). An
   explicit hint ("model this as a graph") is a *hard* anchor; a term is a *soft*
@@ -99,9 +141,9 @@ input (structures)            islands (the library)              examples
 - **The anchor for training** (ADR-4): a **frozen-judge tower** — a mechanical
   base (the `checks` / a maze's ground truth / profit), with learned judges as
   dense proxies validated against the base.
-- **Bundles** (ADR-5): an agent is a capability bundle — vocabulary + rules +
-  **declared interfaces (terminology + shapes)** + examples + knobs — so it
-  composes obliviously and can be trained jointly.
+- **Bundles** (ADR-5, ADR-12): a shipped set of **models** + examples + knobs.
+  Interfaces are **not declared yet** (ADR-12: everything visible); the declared
+  contract waits until a second model must compose against one.
 
 ## 4. The phases
 
@@ -110,21 +152,22 @@ above"). Phases are independent enough to ship and test on their own.
 
 | Phase | Deliverable | Depends | Design |
 |---|---|---|---|
-| **U0** | The decisions (ADR-1…9) + this plan + prose reconciliation | S | `decisions.md` |
+| **U0** | The decisions (ADR-1…13) + this plan + prose reconciliation | S | `decisions.md` |
 | **U1** | **Walking skeleton**: a grown rule-level controller composing two real islands, guided by a structured anchor, scored by a mechanical example | U0 | this doc |
 | **U2** | **The anchor schema + resolution**: structured input; term → island; gaps | U1 | ADR-8 |
 | **U3** | **The island library**: evaluation/ranking, scoping, procedure-following, graph — each terminology-indexed | U1 | D6, ADR-6 |
-| **U4** | **Tools**: the calling convention + render/parse adapters (external data; the LM's home) | U2 | ADR-1, circuits.Call |
-| **U5** | **The rule-as-entity + kernel fold**: rules as term entities; staged execution | U1 | ADR-7, D7 |
-| **U6** | **Bundles & packaging**: declared interfaces + terminology; joint examples | U3, U4 | ADR-5 |
+| **U4** | **Tools**: the calling convention + render/parse adapters (external data; the LM's home) | U2 | ADR-1, ADR-11 |
+| **U5** | **The operation-as-entity + kernel fold**: operations as term entities; staged execution | U1 | ADR-7, ADR-11, D7 |
+| **U6** | **Models & packaging**: the model as an importable module; joint examples | U3, U4 | ADR-12 |
 | **U7** | **The NL edge**: the statistical coercion, LM as last-resort tool | U2, U4 | ADR-1/3, D5 |
+| **U8** | **The train-trip scenario**: three models (planning + train + budget) composed; a decision-tree/listwise network; model composition and selection | U3, U5 | ADR-13, this doc §5 |
 
 ### U0 — The decisions *(design)*
 
-`docs/decisions.md` (ADR-1…9) and this plan; reconcile the prose that still says
-"components," and reconcile D5/D6/D9 and `plan.md`'s locked 8/11. **Not a code
-phase.** Probe: a review that the ADRs are coherent and the revisions in §2 are
-accepted.
+`docs/decisions.md` (ADR-1…13) and this plan; reconcile the prose that still
+says "components," and reconcile D5/D6/D8/D9 and `plan.md`'s locked 8/11. **Not
+a code phase.** Probe: a review that the ADRs are coherent and the revisions in
+§2 are accepted.
 
 ### U1 — The walking skeleton *(the thesis, cheapest)* — **probe built**
 
@@ -203,43 +246,68 @@ mapping is declared.* **Probe:** an island reads a file / calls an API through t
 convention; an unanswered request is a gap. **Kill/reshape:** if the convention
 cannot confine the free Python and keep the rules analyzable, reshape it.
 
-### U5 — The rule-as-entity + the kernel fold
+### U5 — The operation-as-entity + the kernel fold
 
-**Deliverable.** Rules as **term entities** (ADR-7): a rule entity = identity +
-derived projections + a **body** (a flat instruction list with expression trees);
-**derived** `reads`/`writes` and the **production view** (`lhs`/`rhs`); a
-structural hash over the datum + `version`. **Staged execution:** render Python
-first (today's engine), fold to interpreting the datum (the kernel) later.
+**Deliverable.** **Operations** as **term entities** (ADR-7, ADR-11): an
+operation entity = identity + derived projections + a **body** (a flat
+instruction list with expression trees) over a closed operator set; **derived**
+`reads`/`writes` and the **production view** (`lhs`/`rhs`); a structural hash over
+the datum + `version`. **Staged execution:** render Python first (today's
+engine), fold to interpreting the datum (the kernel) later. **The engine becomes
+IR-native** (it must see **bindings** to materialize applications — ADR-13).
 
-**The seam.** *Rules are data all the way down, totally analyzable, with a
+**The seam.** *Operations are data all the way down, totally analyzable, with a
 structural hash.* **Probe:** `r1`-style — analysis over the datum is total and
-agrees with `analyze` on Python; a rendered rule reproduces `signature`.
+agrees with `analyze` on Python; a rendered operation reproduces `signature`.
 **Kill/reshape:** if the datum needs verbatim escapes beyond lexing/formatting,
-reshape the term language (as M0 did). **Unlocks:** activation-level control
-(D9's second half) and homoiconic meta-rules (ADR-6).
+reshape the term language (as M0 did). **Unlocks:** the materialized candidates
+the network selects (ADR-13) and homoiconic meta-rules (ADR-6).
 
-### U6 — Bundles & packaging
+### U6 — Models & packaging
 
-**Deliverable.** An **agent bundle** = vocabulary + rules/islands + **declared
-interfaces (terminology + shapes)** + examples + knobs (ADR-5); a format on
-`share`; **joint examples** at two tiers (contract-level + rollout/DAgger).
+**Deliverable.** A **model** as an importable module — its **namespace**
+(model-qualified component names), its **components**, its **operations**; the
+**textual, schema-checked authoring format** (ADR-12); a format on `share`; and
+**joint examples**. *(No declared interface yet — ADR-12: everything visible.)*
 
-**The seam.** *Bundles compose and joint training transfers.* **Probe:** two
-bundles compose with interfaces declared; a **held-out joint** split (train the
+**The seam.** *Models compose, and joint training transfers.* **Probe:** two
+models compose by namespace + the world; a **held-out joint** split (train the
 pair, evaluate on an unseen partner). **Kill/reshape:** if joint examples do not
-transfer, the interface is too loose — narrow it, or add rollouts.
+transfer, the model boundary is too loose — a declared interface is the next
+step.
 
 ### U7 — The NL edge
 
 **Deliverable.** The **statistical coercion**: user text → the anchor schema,
 through the **ladder** — schema-constrained input → metarules → tools → an LM as
-last-resort tool — with **round-trip verification**.
+last-resort tool — with **round-trip verification**. (ADR-12: a guided UI /
+NL-led surface is the *target*; the textual format is the prototype.)
 
 **The seam.** *Text → structures is a separate, gate-checked edge.* **Probe
 (S4):** the LM as last-resort tool on the residual; the dumped structure
 round-trips exactly; an NL round-trip is judged. **Kill/reshape:** if the edge's
 output cannot be verified structurally, narrow it — the structured mode bypasses
 NL entirely.
+
+### U8 — The train-trip scenario *(the first real control-network probe)*
+
+**Deliverable.** A real-world scenario — *plan a train trip with a budget* — built
+from **at least three models**: a **planning** model (it evaluates candidate
+solutions and discards some), a **train-trip** model (stops, legs, fares), and a
+**budget** model (cost within a limit). The **cross-model operation** is where
+they meet: the planning model's candidates are **vetoed by the budget** — exactly
+ADR-9's "joint operation," a rule whose reads span ≥2 models. The **control
+network** then **selects which application fires**: which plan, which leg, which
+candidate. Ground truth is **mechanical** (cost/time within budget, a plan that
+completes).
+
+**The seam.** *Can the network compose three models and **select among
+alternative operations** — including choosing **which planning model** to use?*
+**Probe (S6):** two planning models of different strength (a weak one that emits
+candidates greedily, a stronger one that builds a **pool** and evaluates it). The
+network must learn to **activate the more useful one** by context. **Kill/
+reshape:** if selection cannot tell the models apart, the network's features are
+too poor — widen them, or the "which model" choice is the wrong grain.
 
 ## 5. Probes (cheap, falsifiable)
 
@@ -260,6 +328,14 @@ Each is a milestone, not a feature; each has a kill/reshape criterion (above).
   cross-island context and routes by control attributes; ground truth = final
   cash; grows `['spread>0', 'affordable']` and generalises (train +70, held-out
   +95).
+- **S6 — the train trip with a budget** *(planned: U8)*. Three models (planning +
+  train + budget) composed; a **cross-model operation** where the budget vetoes
+  planning candidates; the network — a **decision tree / listwise scorer** grown
+  by elimination (ADR-13) — selects the application, and must learn **which of
+  two planning models** (weak / stronger) to activate by context. Ground truth =
+  a completing plan within budget. This is the probe that first exercises the
+  **pure evaluator**, **materialized candidates**, and **model composition** at
+  once.
 
 ## 6. Cross-cutting invariants (CI fitness functions)
 
@@ -273,10 +349,15 @@ The guards that keep the design from eroding — each a test that can fail:
   guessed (D5, ADR-8).
 - **Anchors constrain; they never synthesize.** No L1 pattern induction; growth
   searches wiring and values only (ADR-2).
-- **Select, never rewrite.** The network composes and gates; it never edits a
-  domain or island rule (locked 8).
+- **Select, never rewrite — and write nothing.** The network is a **pure
+  evaluator**: it reads the candidates and the blackboard, returns a selection,
+  and **writes nothing** (ADR-13). It never edits a domain or island operation
+  (locked 8).
+- **The engine, not the network, writes the record.** The only thing that reaches
+  the world because of a selection is the **application memory** the engine
+  deposits (ADR-13) — for reflection, not for steering.
 - **Freeze before run; determinism.** Replay twice, same `signature`; the network
-  is frozen before it runs (D5/M2, D9).
+  is frozen before it runs (D5/M2, ADR-13).
 - **The concession ledger.** Any escape (verbatim helpers, an LM tool) is declared
   with a reason and reported, never silent (D5).
 
@@ -293,19 +374,32 @@ The guards that keep the design from eroding — each a test that can fail:
 
 ## 8. Open questions, and what this does not settle
 
-- **The growth algorithm** — D9's crux, deliberately left to a probe (GP/GE over
-  the IR with XCS-style credit plus library learning, or another). This plan does
-  not choose it.
+- **The growth algorithm** — **first option, a decision tree / listwise scorer
+  that eliminates bottom candidates** (ADR-13); GP-over-a-feature-program and
+  XCS-style credit are the compared fallbacks. Chosen by the train-trip probe
+  (S6), not here.
+- **The network's artifact** — what an evaluator *is* (a tree, a program,
+  weights), its interface to the engine, and whether it is grown per-domain or
+  shared (ADR-13's open).
+- **Where candidates and scratch live** — engine-side is chosen (ADR-13); the
+  exact home, and how (or whether) the scratch is inspected, is open.
+- **The schema as entities vs a module artifact** (ADR-10's open) — homoiconicity
+  wants the schema readable by a meta-rule; the prototype can load it.
+- **How a model declares a dependence** on another (ADR-12's open) and whether a
+  joint split validates composition.
+- **Credit assignment across independently-authored models** (ADR-5/ADR-13) —
+  harder than within one; the train trip makes it concrete (which selection, in
+  which model, earned the outcome).
 - **The exact anchor schema** and the *island* taxonomy (which islands exist, how
   each declares its signature). The register table in ADR-8 is a description of
   outcomes, not a fixed set.
 - **Confluence detection** — not cheaply decidable, so the plan assumes ambiguity
   and treats confluence as an optimization.
-- **Credit assignment across independently-authored islands** (ADR-5) — harder
-  than within one.
 - **Cost** — the tension between the island library's breadth and the growth
-  search.
+  search, now sharpened by **materializing every candidate** (ADR-13's join
+  enumeration).
 - **The NL layer's model**, and how much structure a UI enforces (schema-driven
-  autocompletion vs free text) — ADR-1's ladder leaves it open.
+  autocompletion vs free text) — ADR-1's ladder leaves it open; ADR-12 makes the
+  textual format the prototype and the UI/NL the target.
 - **The name** — `plan-ux.md` / "Plan U" is provisional, as `loopingrules_forge`
   and `loopingrules_islands` are.

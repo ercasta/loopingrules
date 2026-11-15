@@ -1,0 +1,14 @@
+I think it is now time to reason about the concrete implementation.
+
+First of all, a correction. We suppressed components in favour of entity-attributes, but components were the only way to declare schemas. So we need them back, just we don't necessarily need python data classes. The concept is an entity is just an opaque id, all its data lives in named components. Be sure to allow the component attributes to have lists of values (not just scalars), otherwise we have no way to represent lists.
+
+Now regarding rules and the control network. The rules specify operations (and i'd better call them operations): they just specify what is possibile and the effect of what's possible. They should have an homoiconic implementation, that use a "vocabulary" made of a limited set of operators. They should be able to alter the state of the blackboard and call tools. The language can have if statements, but not while statements (the loop is external, it is managed by attaching / detaching components, we could have a "loop" model for that) The homoiconic representation is not what the authors write, we need some dedicated and guided editing. So a "model" can contain components, operations, both or some or them. They are distributed in an importable way so users can create their system with a set of modules.  
+
+Now the control network. This is something we might experiment with, because it could have many forms, a scoring set of rules, a decision tree, etc. But the fundamental point is that the purpose of the control network is growing a policy to select the right application of operation at the right time. The control network never alters the blackboard; but depending on the implementation, we could allow the control network to save intermediate data during the evaluation to implement progressive scoring a bottom-scoring candidates elimination. It can read the blackboard and it can read the candidate applications, so they must be materialized somehow. 
+The point is: it's grown based on a set of examples / scenarios that we can automatically evaluate. We need to evaluate a few options for how to start.
+
+Also, as part of doing this, we could create a real world scenario of planning a train trip with a budget. I see at least 3 models at play here, the planning, the train trip, and the budget management. It will be interesting to see which operations we need to combine the 3 models. (like the planning module evaluates candidate solutions and discards some of them because of the budget). It would also be interesting to understand how the performance of the system changes if we provide different planning models, some stronger, that support concepts like creating a pool of candidates and evaluating them, some weaker. Also, it would be interesting to see what happens when we introduce multiple planning models in the system and the control network must learn to activate the most useful one.
+
+
+
+

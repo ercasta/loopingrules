@@ -51,17 +51,19 @@ they are worth reading once the basics are clear:
 
 The forward-looking work *is* part of this site: [Plan U — the user
 experience](plan-ux.md), and its reasoning in the [architectural
-decisions](decisions.md) (ADR-1…ADR-9). Both consolidate the earlier design
+decisions](decisions.md) (ADR-1…ADR-13; ADR-10…13 are the correction pass from
+the later steering note). Both consolidate the earlier design
 docs — the roadmap (`plan.md`), the D1–D10 documents (`plan-memory` …
 `plan-maze`), `plan-scheduler`, `modeling`, `comparison-soar`, `tuning`, the
 study guide and plan, and the notes that started this (`ux.md`,
-`changes-to-perform.md`, `review.md`, `learn to reconstruct.md`) — which are
-kept for provenance under `archived-old/`. The [handoff](handoff.md) says where
-the work stands.
+`components and control network.md`, `changes-to-perform.md`, `review.md`,
+`learn to reconstruct.md`) — which are kept for provenance under
+`archived-old/`. The [handoff](handoff.md) says where the work stands.
 
 The guide above still describes the **component** substrate the port retired
 (entities carrying typed `@dataclass` components). The engine was re-founded on
 **attributes** — entities carrying named values, a value a scalar, an entity
 reference, or a flat list; a "component" a tagged entity — on the
-`attribute-substrate` branch, now merged to `main`. Reconciling this guide to
-that substrate is part of Plan U (phase U0).
+`attribute-substrate` branch, now merged to `main`. ADR-10 then brings components
+back as **declared, model-qualified bags** on entities (not classes). Reconciling
+this guide to that substrate is part of Plan U (phase U0).

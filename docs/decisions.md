@@ -6,11 +6,18 @@ it does *not* settle, kept as we go. This is a **draft**: entries are numbered,
 marked **proposed** or **settled**, and revised freely — this repository is a
 stratification of experiments, and revising an earlier decision is normal.
 
-Status: **consolidated into [`plan-ux.md`](plan-ux.md).** ADR-1…ADR-4 and ADR-9
-are **settled**; ADR-5…ADR-8 stay **proposed** until a probe disagrees. Nothing
-here is a commitment to code. The design docs the ADRs reference (D5–D10,
-`plan-*.md`, `modeling.md`, `comparison-soar.md`) now live under
-`archived-old/`.
+Status: **consolidated into [`plan-ux.md`](plan-ux.md).** ADR-1…ADR-4, ADR-9,
+ADR-10 and ADR-13 are **settled**; ADR-5…ADR-8, ADR-11 and ADR-12 stay
+**proposed** until a probe disagrees. Nothing here is a commitment to code. The
+design docs the ADRs reference (D5–D10, `plan-*.md`, `modeling.md`,
+`comparison-soar.md`) now live under `archived-old/`.
+
+ADR-10…ADR-13 are a **correction pass** over ADR-1…ADR-9, from the steering note
+kept at `archived-old/components and control network.md` (discussed, not
+transcribed: the note mixed the *operation language* with *engine seams*, and
+each was sorted before anything was written). They revisit the substrate (D8) and
+the control network (D9); where they revise a *settled* decision, that decision
+is marked revised in its own entry, not left to drift.
 
 ---
 
@@ -628,7 +635,9 @@ chosen by a probe).
 
 ## ADR-9 — Models, rules, and sequential application
 
-Status: **settled** (the view the plan presupposes, stated).
+Status: **settled** (the view the plan presupposes, stated). *(The selecting
+network's mechanism is revised by ADR-13: it is a pure evaluator, not control
+rules; and a rule is an **operation** — ADR-11.)*
 
 **Context.** `ADR-1` asserts "the schema is the model" but never defines *model*
 or *rule*; `ADR-7` fixes a rule's *form* but not its *meaning*; and `ADR-8`'s
@@ -715,6 +724,237 @@ confluence optimization).
 **Revises.** ADR-1 (slogan), ADR-4 (the kernel is an *enumerator*, not a
 fixpoint), ADR-6 (mode = model), ADR-8 (the trichotomy is content); `plan-ux.md`
 §1 and `handoff.md` §2.
+
+---
+
+## ADR-10 — Components return: named, declared, model-qualified bags
+
+Status: **settled** (a correction to D8's representation; the substrate's
+invariants are kept).
+
+**Context.** D8 retired the typed `@dataclass` component and re-founded on
+**entity + attribute**, and Phase S shipped it as `entity → {name: value}` —
+flat names, one slot per name. Two things were lost. First, **the declaration**:
+the note names it precisely — *"components were the only way to declare schemas...
+we need them back."* Phase S has no first-class component in the running system;
+a "shape" is prose, and `world.refs` is the only declared set. Second, the
+**namespace**: with flat names, every field name is global, so two models'
+vocabularies collide (`purse`, `policy` — the collision the travelling-trader
+composite already named).
+
+**Decision.**
+
+1. A **component** is a **declared schema**: a name, and a set of **field**
+   declarations (field name; kind `singular`/`set`/`sequence`/`flag`; scalar or
+   a **reference**; and a reference's target component). It is **not a Python
+   class**, and it declares **no value types** (`PRINCIPLES.md`: values are
+   primitives only).
+2. Data is a **named bag of fields on the entity**: `entity → {component →
+   {field → value}}`. A component is **both** its schema and its instance (the
+   container). *(Confirmed in discussion, against D8's "a component is an
+   entity.")*
+3. **Model-qualified names.** A component's name is scoped by its **model**
+   (ADR-12): `market.purse`, `cards.purse`. **The model IS the namespace**, so
+   two models may each declare `purse` and never collide — structurally, not by
+   convention.
+4. **One slot per name, at both levels**: at most one component of a given name
+   per entity, at most one field of a given name per component. Multiplicity
+   lives *inside* a field as a **flat list** — D8's rule, applied twice, so B is
+   not a return to classic ECS multiplicity.
+5. A field value is a scalar, a **reference** (to an entity), or a **flat list**
+   of those. **No structured value**; structure deeper than one level goes
+   through references — the invariant "values are primitives only" holds: a
+   component is a *namespace*, not a value.
+6. A **tag** is a component with no fields.
+
+**What this revises, and what it deliberately keeps.** It reverses D8's *one*
+representation choice — a component instance is **not** an entity. It has no
+independent identity, its lifetime is the holder's, and nothing references a
+component instance (references point at **entities**). The simplification that
+falls out is real and worth stating: **only entities have identity.** Kept
+unchanged: D8's "one slot per name," the flat values, and the lists. The old
+two-concept worry D8 removed ("component *and* many-of-a-type") does **not**
+return — one-per-name plus a list-in-field covers multiplicity.
+
+**Cost, named.** This reopens the substrate Phase S shipped and went green on
+(`world`, `analyze`, `save`, `share`, `reflect`, and every example's
+`each`/`get`). It is **another clean break of Phase-S size**, done whole, never
+half-applied (D8's own rule).
+
+**Revises.** D8's representation (referenced entity → bag on the holder);
+answers **ADR-1's open** ("declared, derived, or both"): **both** — declared
+components (here), cross-checked against derived use (`analyze`, D8's blocking
+gap).
+
+**Open.** Whether the declaration lives in the world as **entities**
+(homoiconicity — so a meta-rule can read a schema) or as a module artifact the
+engine loads — recommend **both**, one derived from the other. The exact query
+spelling over qualified names (`each("listing.price")`). Whether a rule may set a
+field no declaration names (recommend: yes, flagged underived) — D8's open 6.
+
+---
+
+## ADR-11 — Operations: a minimal, homoiconic language; tools are an engine seam
+
+Status: **proposed** (the language is agreed; the rename's scope is open).
+
+**Context.** ADR-7 fixed a rule's *form* (a production made of entities); ADR-9
+made it a **capability**. The note renames it an **operation** — *"they just
+specify what is possible and the effect of what's possible"* — and adds a
+language law: *"if statements, but not while statements."* Its third sentence
+bundles a language fact with an engine fact: *"alter the state of the blackboard
+**and** call tools."* The discussion separated them.
+
+**Decision.**
+
+1. An **operation** is a capability: identity + **derived** projections
+   (`reads`/`writes`/`models`) + a body over a **closed, limited operator set**,
+   homoiconic (operations are entities, ADR-7). It **reads the blackboard and
+   effects the blackboard**.
+2. The language has **`if` (a guard) and effects, and no `while`.** Iteration is
+   **not a construct**: it is **stigmergic re-firing** — an operation mints or
+   consumes a marker and fires again on a later step because the world changed.
+   A **loop model** is an **ordinary model** (components + operations, ADR-12)
+   that packages that discipline; neither the language nor the engine knows it
+   is "a loop."
+3. **Tool calls are not language operators — they are an engine seam.** An
+   operation **deposits a request** (a special entity/component); the engine
+   **watches for it** and, **between two ticks**, calls the tool and reifies the
+   output back as ordinary entities/components. The language never sees the
+   call: no operator, no blocking, no return value. (The posture of
+   `circuits.Call`/`ToolRequest`: confine free Python to tools; keep rules as
+   data.) A tool-using operation therefore stays **analyzable** — the edge is
+   *declared and named*, not code inside the operation body.
+4. An **application** is an operation **bound** to concrete entities + context,
+   whose guard holds. The engine **enumerates applications**; the network selects
+   one (ADR-13). *"Rule"* stays the implementation noun; *operation* /
+   *application* is the concept.
+
+**Why separating the layers matters.** "Alter the blackboard" is a fact about the
+*language*; "call tools" is a fact about a *seam the engine offers*. Stacked as
+two operators, the language grows impure verbs and the "limited operator set"
+and totality of analysis both erode. Sorted, a pure operation stays pure and the
+tool edge is exactly the concession ledger's kind of edge: **declared and
+reported.**
+
+**Revises.** ADR-7/ADR-9 terminology only (rule → operation + application, and
+the loop model named).
+
+**Open.** Whether the concept rename propagates to **code** now or with the IR
+fold (ADR-7's staged execution). Recommendation: the vocabulary now, the code
+rename with the kernel fold — a nine-domain churn is not worth a cosmetic word;
+the *distinction* (operation vs application) is what earns it, and it is already
+real.
+
+---
+
+## ADR-12 — A model is an importable module; authors use a guided surface
+
+Status: **proposed.**
+
+**Context.** The note: *"a 'model' can contain components, operations, both or
+some of them. They are distributed in an importable way so users can create
+their system with a set of modules"*; and *"the homoiconic representation is not
+what the authors write, we need some dedicated and guided editing."*
+
+**Decision.**
+
+1. A **model** is the unit of **distribution**: a module declaring a **namespace**
+   (its model-qualified component names, ADR-10) and holding its **components**
+   and **operations**, in any mix (components only, operations only, or both). A
+   system is composed by importing models.
+2. **Everything visible** *(confirmed in discussion)*: importing a model makes
+   all its components and operations available; there is **no declared
+   interface** yet. Composition is by the world and model-qualified names;
+   ADR-5's declared bridge is deferred until a second model must compose against
+   a contract.
+3. The homoiconic form (operations as entities, ADR-7; components as schemas,
+   ADR-10) is **machine-facing**. **For prototyping, authors write a textual
+   format with schema validation**; the target surface is a **guided editor/UI**
+   or an **NL-led** one — ADR-1's ladder, built later.
+
+**Naming, reconciled.** The repo has accumulated *model, island, bundle, agent,
+pattern*. This ADR fixes the base: **model** = the importable unit (components +
+operations + namespace); **island** (ADR-6/D6) = a **terminology-indexed view**
+over operations; **bundle / agent** (ADR-5) = a **shipped set of models** +
+examples + knobs; **pattern** = a reusable hole-shaped operation or shape. *Model*
+is the primitive; the rest are views or packages.
+
+**Revises.** ADR-5 (a bundle is a shipped set of **models**), ADR-6 (a mode *is*
+a model), ADR-9 (model = coordinate system + operations, now also the unit of
+distribution).
+
+**Open.** When and how a model **declares a dependence** on another (a versioned
+import, or a declared interface only); whether composition is validated by a
+held-out **joint** split (ADR-5's open, restated).
+
+---
+
+## ADR-13 — The control network is one pure evaluator; the trajectory is recorded
+
+Status: **settled** (the contract; the algorithm is chosen by probe).
+
+**Context.** D9 made the network **stigmergic rules** that write **opaque control
+attributes** to the *world*, steering later applications. The note states a
+stricter contract: *"The control network never alters the blackboard... It can
+read the blackboard and it can read the candidate applications, so they must be
+materialized somehow."* The discussion resolved what "materialized" and
+"intermediate data" mean.
+
+**Decision.**
+
+1. The network is a **distinct evaluator artifact** the engine calls each step —
+   **not** operations, **not** world-writing rules. It **reads** the blackboard
+   and the **materialized candidates**, **writes nothing** to the world, may keep
+   **private scratch**, and **returns a selection**: one application, or
+   `exclude`. *(Confirmed in discussion: a distinct artifact, a pure evaluator.)*
+2. **Candidates are materialized by the engine** before selection — every
+   application whose guard holds. This **decides** `plan-scheduler.md`'s largest
+   open ("does the engine materialise activations or a generic matcher rule?"):
+   **the engine does**, which makes the engine **IR-native** (it must see
+   bindings).
+3. Candidates and scratch live in an **engine-side store**; the language does not
+   see them. But the engine **records the selected application** (operation +
+   binding + tick — **the selection only**) into an **application memory**
+   component, which **is world data**. Because operations are entities
+   (homoiconicity), that record is **queryable by the language** — so an ordinary
+   operation can reason over the trajectory the network produced. (This is the
+   "system-2" role the note sketches — it is *just operations*; it does **not**
+   alter the network's decision, only the trajectory, through the world.)
+4. The network **subsumes** D7's `RuleControl` and the scheduler's per-activation
+   `argmax` — it is **the one selection point**. Those become special cases, or
+   retire.
+5. **Multi-step steering is entirely "which application fires next."** The
+   network's only lever is selection; the chosen operation's effects shape the
+   next step's candidates. D9's "one attribute-set steers the next application"
+   is **gone**.
+6. **Growth** is offline, over examples/scenarios evaluated automatically
+   (ADR-4's frozen-judge tower), frozen before run. **First option: a decision
+   tree / listwise scorer** that progressively scores and **eliminates bottom
+   candidates** (the note's own phrasing). Compared later if the first does not
+   earn it: **GP over a feature program** (extend `loopingrules_forge.evolve`),
+   and **XCS-style accuracy credit** (D9's crux).
+
+**What this revises in D9.** The stigmergic network is **replaced** by a pure
+evaluator. D9's *searchability* (an opaque alphabet the generator mutates) is
+kept but **relocated**: the alphabet is the network's own representation and
+scratch, not the domain world. The consequence is the point —
+`PRINCIPLES.md`'s *"the only channel between rules is the shared World"* is
+**fully restored**: the network is not a set of world-writing rules but an
+evaluator the engine calls. The one thing it emits *into* the world is the
+**application record** (borrowed from the engine), for reflection. Cost, named:
+D9's "shared split across subtrees" relied on control attributes being state read
+by later applications; under this contract a split prunes the **candidate set**,
+not the world, so sharing is a property of the *evaluation*, not of world state.
+
+**Revises.** D9 (mechanism), ADR-9 §5 (the kernel now **calls** a network, and
+the network is one evaluator, not a fixpoint of control rules).
+
+**Open.** The network's **artifact interface** (what an evaluator is: a tree, a
+program, weights) and whether it is grown per-domain or shared; **stability** —
+a scorer whose scratch feeds its own next split can oscillate (D9's open,
+unchanged); and whether `RuleControl`/`argmax` retire or stay as authored
+special cases.
 
 ---
 
@@ -819,8 +1059,11 @@ missing is the controller and the declared interfaces.
 
 ## Open decisions queued (not yet written)
 
-10. Is the schema declared, derived, or both?
+10. ~~Is the schema declared, derived, or both?~~ **Answered (ADR-10): both** —
+    declared components (model-qualified), cross-checked against derived use.
 11. The **batteries**: the command schema + metarules, and where they live.
 12. **Tools**: the convention, the render/parse manifest, the adapter stdlib.
-13. Packaging details: how a bundle declares its **interfaces**, and how joint
-    examples are represented. (ADR-5 fixes the shape; this is the format.)
+    (ADR-11 fixes the *seam* — a deposited request answered between ticks — so
+    this queued item is the adapters and the manifest, not the shape.)
+13. Packaging details: how a model/bundle declares its **interfaces** (ADR-12
+    says *none yet*), and how joint examples are represented.
