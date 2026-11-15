@@ -100,3 +100,21 @@ class Gap(Exception):
     """A use that names a component or field the schema does not declare. The
     forge's read-without-writer gap, at the schema grain: refusible, never
     guessed (ADR-1, D8)."""
+
+
+def slot_str(slot: Tuple[str, Optional[str]]) -> str:
+    """A slot as ONE storable string -- `"trader.cash"`, or `"done"` for a
+    component-level slot. The store cannot hold a tuple (`_lower` refuses a
+    structured value), so a slot that has to be written down -- a `RuleCard`'s
+    `reads`, say -- is encoded this way rather than as a pair."""
+    component, field = slot
+    return component if field is None else "%s.%s" % (component, field)
+
+
+def parse_slot(text: str) -> Tuple[str, Optional[str]]:
+    """The inverse of `slot_str` -- splitting on the LAST dot, so a
+    model-qualified component name (`market.purse.cash`) survives."""
+    if "." not in text:
+        return (text, None)
+    component, _dot, field = text.rpartition(".")
+    return (component, field)

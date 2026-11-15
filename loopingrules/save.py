@@ -3,47 +3,44 @@
     save.write(world, "~/.local/state/harneskills/world.json")
     save.read(world, path)          # into an EMPTY world, before any domain
 
-Under the attribute substrate (`docs/plan-attributes.md`, D8) there is
-nothing here but an entity id and a dict of its attributes -- one JSON object
-PER LINE (JSONL). The first line is a header; every line after it is either
-an entity's attribute set or a bare, attribute-less entity::
+Under the component substrate (ADR-10) there is nothing here but an entity id
+and its COMPONENTS -- a named bag of fields each -- one JSON object PER LINE
+(JSONL). The first line is a header; every line after it is either an entity's
+components or a bare, component-less entity::
 
-    {"version": 3, "next": 23}
-    {"entity": 3, "attributes": {"path": "/tmp/notes", "tags": ["a", "b"]}}
+    {"version": 4, "next": 23}
+    {"entity": 3, "components": {"listing": {"price": 10, "tags": ["a", "b"]}}}
+    {"entity": 5, "components": {"done": {}}}      # a tag
     {"entity": 7}
 
 ## A value is already JSON
 
-`World.set` already guarantees a stored value is a scalar, an entity
-reference (a plain int id), or a **flat list** of those -- never a dict, a
-tuple or a live handle. So there is no `$tuple` wrapper any more and no
-nested rebuild: a reference to another entity is already exactly the
-JSON-native int this format wants. `_field` remains a second, cheaper line
-of defence that refuses anything that somehow is not JSON.
+`World.set` already guarantees a stored value is a scalar, an entity reference
+(a plain int id), or a **flat list** of those -- never a dict, a tuple or a live
+handle. So a reference is already exactly the JSON-native int this format wants.
+`_field` refuses anything that somehow is not JSON.
 
 ## Ids are preserved, and so is the counter
 
-Restoring `#3` as `#3` is the whole point: every reference is that number.
-And `next` comes back too -- a world that resumed its counter at 1 would
-hand a new entity an id some attribute is still pointing at.
+Restoring `#3` as `#3` is the whole point: every reference is that number. And
+`next` comes back too.
 
 ## What is NOT saved
 
 The RULES: a domain registers those in `install()`, from code, every time.
 
-Also not saved: any attribute whose NAME is in `world.transient` -- skipped
-name by name, the same as a rule. An entity whose ONLY attributes were
-transient is skipped too, entirely, rather than written back as bare -- a
-bare `{"entity": id}` record means "this entity is real but carries nothing
-YET", which is not what "every attribute it had was disposable" means. The
-two cases look identical from `world.attributes(entity)` returning `{}`
-either way, and this module tells them apart before that point, not after.
+Also not saved: any COMPONENT whose NAME is in `world.transient` -- skipped
+component by component. An entity whose ONLY components were transient is
+skipped too, entirely, rather than written back as bare -- a bare
+`{"entity": id}` record means "this entity is real but carries nothing YET",
+which is not what "everything it had was disposable" means. A TAG (a component
+with no fields) IS durable data: it is written as `{"component": {}}`.
 
-## Version 3, deliberately not silent about it
+## Version 4, deliberately not silent about it
 
-Version 2 was one record per typed component; this is one record per
-entity's attribute set. The two cannot be mis-read as each other, so a
-version that does not match is refused by name rather than guessed at.
+Version 3 was one record per entity's flat attribute set; version 2 was one
+record per typed component. This is components-as-named-bags. A version that
+does not match is refused by name rather than guessed at.
 """
 
 from __future__ import annotations
@@ -51,7 +48,7 @@ from __future__ import annotations
 import json
 import os
 
-VERSION = 3
+VERSION = 4
 
 
 class SaveError(ValueError):
@@ -67,45 +64,39 @@ def _field(value, where: str):
 
 
 def dump(world) -> "list[dict]":
-    """The whole world, as a list of records -- a header first, then one
-    record per entity carrying at least one durable attribute, then a bare
-    `{"entity": id}` for any entity that carries none. Raises `SaveError`
-    naming the entity and attribute if anything will not go.
+    """The whole world, as a list of records -- a header first, then one record
+    per entity carrying at least one durable component, then a bare
+    `{"entity": id}` for any entity that carries none. Raises `SaveError` naming
+    the entity and field if anything will not go.
     """
     records = [{"version": VERSION, "next": world._next}]
     for entity in world.entities():
-        attributes = world.attributes(entity)
-        if not attributes:
+        components = world.components(entity)
+        if not components:
             records.append({"entity": entity.id})
             continue
-        durable = {name: value for name, value in attributes.items()
-                   if name not in world.transient}
+        durable = {component: bag for component, bag in components.items()
+                   if component not in world.transient}
         if not durable:
-            # Everything it carried was marked disposable -- not the same as
-            # never having carried anything, so no bare record either.
+            # Everything it carried was disposable -- not the same as never
+            # having carried anything, so no bare record either.
             continue
-        records.append({"entity": entity.id, "attributes": {
-            name: _field(value, "%s.%s" % (entity, name))
-            for name, value in durable.items()}})
+        records.append({"entity": entity.id, "components": {
+            component: {field: _field(value, "%s.%s.%s"
+                                      % (entity, component, field))
+                        for field, value in bag.items()}
+            for component, bag in durable.items()}})
     return records
 
 
 def write(world, path: str) -> None:
-    """Save it, atomically. The directory is made if it is not there.
-
-    Written to a temporary file beside the real one and then renamed,
-    because the thing most likely to interrupt this is the restart it
-    exists to survive -- and a half-written world is worse than an old one.
-    """
+    """Save it, atomically. The directory is made if it is not there."""
     path = os.path.abspath(os.path.expanduser(path))
     records = dump(world)
     folder = os.path.dirname(path)
     if folder:
         os.makedirs(folder, exist_ok=True)
     temporary = path + ".tmp"
-    # `newline=""` so text mode does not turn every `\n` into `\r\n` on
-    # Windows. A state file that is different bytes depending on which
-    # machine wrote it is a file you cannot compare.
     with open(temporary, "w", encoding="utf-8", newline="") as fh:
         for record in records:
             fh.write(json.dumps(record, sort_keys=False))
@@ -116,7 +107,7 @@ def write(world, path: str) -> None:
 def load(world, records: "list[dict]") -> "list[str]":
     """Put it all back, into a world that is empty. Returns problems.
 
-    Restoring writes slots through `World._restore`, which does NOT log a
+    Restoring writes through `World._restore`/`_restore_tag`, which do NOT log a
     `Change` -- a restore is not something that happened, it IS the world.
     """
     if len(world) or world._next:
@@ -133,23 +124,24 @@ def load(world, records: "list[dict]") -> "list[str]":
         world._adopt(int(record["entity"]))
     for record in body:
         entity_id = int(record["entity"])
-        world._adopt(entity_id)
-        for name, value in record.get("attributes", {}).items():
-            try:
-                world._restore(entity_id, name, value)
-            except (TypeError, ValueError) as e:
-                problems.append("#%d.%s: %s" % (entity_id, name, e))
-    # After the entities, never before: `_adopt` keeps the counter above
-    # every id it has seen, and the file's own `next` is what a world that
-    # destroyed its highest entity before saving needs to come back to.
+        components = record.get("components", {})
+        for component, bag in components.items():
+            if not bag:
+                world._restore_tag(entity_id, component)
+                continue
+            for field, value in bag.items():
+                try:
+                    world._restore(entity_id, component, field, value)
+                except (TypeError, ValueError) as e:
+                    problems.append("#%d.%s.%s: %s"
+                                    % (entity_id, component, field, e))
     world._next = max(world._next, int(header.get("next", 0)))
     return problems
 
 
 def read(world, path: str) -> "list[str]":
     """`load` what is at `path`. Returns problems -- and a file that is not
-    there is not one: it is the ordinary case for a first run, and it means
-    an empty world, exactly as if it held nothing."""
+    there is not one: it is the ordinary case for a first run."""
     path = os.path.abspath(os.path.expanduser(path))
     try:
         with open(path, "r", encoding="utf-8") as fh:

@@ -87,9 +87,10 @@ def policy_of(world) -> "dict":
     if row is None:
         return None
     entity = row[0]
-    return {"max_entries": world.get(entity, "max_entries", 64),
-            "max_per_target": world.get(entity, "max_per_target", 0),
-            "kinds": world.get(entity, "kinds", [])}
+    return {"max_entries": world.get(entity, "memory_policy", "max_entries", 64),
+            "max_per_target": world.get(entity, "memory_policy",
+                                        "max_per_target", 0),
+            "kinds": world.get(entity, "memory_policy", "kinds", [])}
 
 
 def seeded(world) -> bool:
@@ -99,7 +100,7 @@ def seeded(world) -> bool:
 
 def remember_field(world, entity, name):
     """One field off a `remembered` entity (the reader's convenience)."""
-    return world.get(entity, name)
+    return world.get(entity, "remembered", name)
 
 
 def _memory_write(world, change) -> bool:
@@ -139,7 +140,7 @@ def remember(w) -> None:
     if policy is None or not seeded(w):
         return
     cursor_row = w.first("memory_cursor")
-    since = w.get(cursor_row[0], "seq", -1) if cursor_row else -1
+    since = w.get(cursor_row[0], "memory_cursor", "seq", -1) if cursor_row else -1
     tail = w.changes(since=since)
     for change in tail:
         if policy["kinds"] and change.kind not in policy["kinds"]:
@@ -148,12 +149,13 @@ def remember(w) -> None:
             continue
         entity = w.spawn()
         w.mark(entity, "remembered")
-        w.set(entity, "seq", change.seq)
-        w.set(entity, "tick", change.tick)
-        w.set(entity, "rule", change.rule)
-        w.set(entity, "kind", change.kind)
-        w.set(entity, "target", change.target)
-        w.set(entity, "types", sorted({delta[0] for delta in change.payload}))
+        w.set(entity, "remembered", "seq", change.seq)
+        w.set(entity, "remembered", "tick", change.tick)
+        w.set(entity, "remembered", "rule", change.rule)
+        w.set(entity, "remembered", "kind", change.kind)
+        w.set(entity, "remembered", "target", change.target)
+        w.set(entity, "remembered", "types",
+              sorted({delta[0] for delta in change.payload}))
     examined = [change.seq for change in tail if not _memory_write(w, change)]
     if examined:
         moved = max(examined)
@@ -162,11 +164,11 @@ def remember(w) -> None:
         # itself.
         world_cursor = w.first("memory_cursor")
         if world_cursor is not None:
-            w.set(world_cursor[0], "seq", moved)
+            w.set(world_cursor[0], "memory_cursor", "seq", moved)
         else:
             entity = w.spawn()
             w.mark(entity, "memory_cursor")
-            w.set(entity, "seq", moved)
+            w.set(entity, "memory_cursor", "seq", moved)
 
 
 def forget(w) -> None:
@@ -181,8 +183,9 @@ def forget(w) -> None:
     if policy is None or not seeded(w):
         return
     entries = sorted(
-        ((entity, w.get(entity, "seq", -1), w.get(entity, "target", -1))
-         for entity, _ in w.each("remembered")),
+        ((entity, w.get(entity, "remembered", "seq", -1),
+          w.get(entity, "remembered", "target", -1))
+         for entity, in w.each("remembered")),
         key=lambda row: row[1])
     doomed = set()
     if policy["max_entries"] and len(entries) > policy["max_entries"]:
@@ -210,22 +213,22 @@ def install(loop, policy=None) -> object:
     already present is left alone. Returns the loop.
     """
     world = loop.world
-    if not world.populated("memory"):
+    if not world.populated(MEMORY):
         marker = world.spawn()
-        world.mark(marker, "memory")
-    if not world.populated("memory_policy"):
+        world.mark(marker, MEMORY)
+    if not world.populated(POLICY):
         fields = dict(DEFAULTS)
         fields.update(policy or {})
         entity = world.spawn()
-        world.mark(entity, "memory_policy")
-        world.set(entity, "max_entries", fields["max_entries"])
-        world.set(entity, "max_per_target", fields["max_per_target"])
-        world.set(entity, "kinds", list(fields["kinds"]))
-    if not world.populated("memory_cursor"):
+        world.mark(entity, POLICY)
+        world.set(entity, POLICY, "max_entries", fields["max_entries"])
+        world.set(entity, POLICY, "max_per_target", fields["max_per_target"])
+        world.set(entity, POLICY, "kinds", list(fields["kinds"]))
+    if not world.populated(CURSOR):
         entity = world.spawn()
-        world.mark(entity, "memory_cursor")
-        world.set(entity, "seq", -1)
-        world.set(entity, "seq", world.changes()[-1].seq)
+        world.mark(entity, CURSOR)
+        world.set(entity, CURSOR, "seq", -1)
+        world.set(entity, CURSOR, "seq", world.changes()[-1].seq)
     loop.rule(remember)
     loop.rule(forget)
     return loop

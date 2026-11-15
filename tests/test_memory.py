@@ -23,8 +23,9 @@ _FIELDS = ("seq", "tick", "rule", "kind", "target", "types")
 def _entries(loop):
     w = loop.world
     out = []
-    for entity, _ in w.each(memory.REMEMBERED):
-        out.append({field: w.get(entity, field) for field in _FIELDS})
+    for entity, in w.each(memory.REMEMBERED):
+        out.append({field: w.get(entity, memory.REMEMBERED, field)
+                    for field in _FIELDS})
     return out
 
 
@@ -34,7 +35,7 @@ def test_a_change_is_promoted_into_a_durable_remembered_entry():
     loop = Loop()
     memory.install(loop)
     entity = loop.world.spawn()
-    loop.world.set(entity, "mark", 1)
+    loop.world.set(entity, "mark", "value", 1)
     loop.run()
     entries = _entries(loop)
     assert entries
@@ -47,7 +48,7 @@ def test_a_change_is_promoted_into_a_durable_remembered_entry():
 def test_a_promoted_entry_is_ordinary_durable_data():
     loop = Loop()
     memory.install(loop)
-    loop.world.set(loop.world.spawn(), "mark", 7)
+    loop.world.set(loop.world.spawn(), "mark", "value", 7)
     loop.run()
     records = save.dump(loop.world)
     fresh = World()
@@ -59,7 +60,7 @@ def test_a_promoted_entry_is_ordinary_durable_data():
 def test_remembering_settles_and_does_not_duplicate():
     loop = Loop()
     memory.install(loop)
-    loop.world.set(loop.world.spawn(), "mark", 1)
+    loop.world.set(loop.world.spawn(), "mark", "value", 1)
     assert loop.run().hot == []
     first = len(_entries(loop))
     assert loop.run().hot == []
@@ -69,7 +70,7 @@ def test_remembering_settles_and_does_not_duplicate():
 def test_the_memory_rules_never_remember_themselves():
     loop = Loop()
     memory.install(loop)
-    loop.world.set(loop.world.spawn(), "mark", 1)
+    loop.world.set(loop.world.spawn(), "mark", "value", 1)
     loop.run()
     for entry in _entries(loop):
         assert entry["rule"] not in ("memory.remember", "memory.forget")
@@ -90,7 +91,7 @@ def test_policy_kinds_admits_only_those_kinds():
     loop = Loop()
     memory.install(loop, {"kinds": ["set"]})
     entity = loop.world.spawn()              # spawn: not admitted
-    loop.world.set(entity, "mark", 1)        # set: admitted
+    loop.world.set(entity, "mark", "value", 1)        # set: admitted
     loop.run()
     assert {r["kind"] for r in _entries(loop)} == {"set"}
 
@@ -103,7 +104,7 @@ def test_max_entries_forgets_the_oldest_and_keeps_the_newest():
     marks = []
     for i in range(5):
         marks.append(loop.world.spawn())
-        loop.world.set(marks[-1], "mark", i)
+        loop.world.set(marks[-1], "mark", "value", i)
     assert loop.run().hot == []
     kept = sorted(r["seq"] for r in _entries(loop))
     assert len(kept) == 2
@@ -118,7 +119,7 @@ def test_a_forgotten_change_is_not_remembered_again():
     loop = Loop()
     memory.install(loop, {"max_entries": 1})
     for i in range(4):
-        loop.world.set(loop.world.spawn(), "mark", i)
+        loop.world.set(loop.world.spawn(), "mark", "value", i)
     loop.run()
     assert len(_entries(loop)) == 1
     assert loop.run().hot == []              # and it stays settled
@@ -129,9 +130,9 @@ def test_max_per_target_caps_entries_for_one_target():
     loop = Loop()
     memory.install(loop, {"max_per_target": 1})
     target = loop.world.spawn()
-    loop.world.set(target, "mark", 0)
-    loop.world.set(target, "mark", 1)
-    loop.world.set(target, "mark", 2)
+    loop.world.set(target, "mark", "value", 0)
+    loop.world.set(target, "mark", "value", 1)
+    loop.world.set(target, "mark", "value", 2)
     loop.run()
     on_target = [r for r in _entries(loop) if r["target"] == target.id]
     assert len(on_target) == 1
@@ -143,7 +144,7 @@ def test_max_per_target_caps_entries_for_one_target():
 
 def test_both_rules_abstain_without_the_marker_or_the_policy():
     loop = Loop()
-    loop.world.set(loop.world.spawn(), "mark", 1)
+    loop.world.set(loop.world.spawn(), "mark", "value", 1)
     loop.rule(memory.remember)
     loop.rule(memory.forget)
     loop.run()
@@ -154,9 +155,11 @@ def test_both_rules_abstain_without_the_marker_or_the_policy():
 
 def test_analyze_sees_the_memory_rules_rather_than_refusing_them():
     remembered = analyze.analyze(memory.remember)
-    assert "memory_policy" in remembered.reads
-    assert "memory" in remembered.reads
-    assert "remembered" in remembered.writes
+    read_components = {slot[0] for slot in remembered.reads}
+    write_components = {slot[0] for slot in remembered.writes}
+    assert "memory_policy" in read_components
+    assert "memory" in read_components
+    assert "remembered" in write_components
     forgetting = analyze.analyze(memory.forget)
-    assert "remembered" in forgetting.reads
+    assert "remembered" in {slot[0] for slot in forgetting.reads}
     assert forgetting.destroys

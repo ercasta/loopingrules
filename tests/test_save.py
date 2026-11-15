@@ -1,9 +1,8 @@
 """What the state file promises: the same world, ids and all, next time.
 
-Under the attribute substrate (D8) there is no class to rebuild and no
-`module:ClassName` record: a state line is an entity and a dict of its
-ATTRIBUTE NAMES to values. Transience is a NAME (`world.transient`), not a
-`@transient` class.
+Under the component substrate (ADR-10) there is no class to rebuild: a state
+line is an entity and its COMPONENTS (named bags of fields). Transience is a
+COMPONENT name (`world.transient`), not a `@transient` class.
 """
 
 from __future__ import annotations
@@ -21,14 +20,14 @@ def peopled():
     point back at it, and a flat list of their ids kept on the folder."""
     w = World()
     folder = w.spawn()
-    w.set(folder, "path", "/tmp/notes")
+    w.set(folder, "folder", "path", "/tmp/notes")
     ids = []
     for name in ("a.txt", "b.bin"):
         entry = w.spawn()
-        w.set(entry, "folder", folder)          # a reference
-        w.set(entry, "name", name)
+        w.set(entry, "entry", "folder", folder)          # a reference
+        w.set(entry, "entry", "name", name)
         ids.append(entry.id)
-    w.set(folder, "names", ids)                 # a flat list of references
+    w.set(folder, "folder", "names", ids)                # a flat list of refs
     w.mark(w.entity(ids[0]), "stale")
     return w, folder, ids
 
@@ -46,7 +45,7 @@ def test_everything_comes_back_with_the_same_ids():
     w, folder, ids = peopled()
     back = roundtrip(w)
     assert [e.id for e in back.entities()] == [e.id for e in w.entities()]
-    assert back.get(folder, "path") == "/tmp/notes"
+    assert back.get(folder, "folder", "path") == "/tmp/notes"
     assert back.has(back.entity(ids[0]), "stale")
     assert not back.has(back.entity(ids[1]), "stale")
 
@@ -54,14 +53,13 @@ def test_everything_comes_back_with_the_same_ids():
 def test_a_reference_still_points_at_the_same_entity():
     w, folder, ids = peopled()
     back = roundtrip(w)
-    assert back.get(back.entity(ids[1]), "folder") == folder.id
-    assert back.get(folder, "names") == ids
+    assert back.get(back.entity(ids[1]), "entry", "folder") == folder.id
+    assert back.get(folder, "folder", "names") == ids
 
 
 def test_the_counter_resumes_above_every_restored_id():
     w, _, _ = peopled()
-    back = roundtrip(w)
-    assert back.spawn().id == 4
+    assert roundtrip(w).spawn().id == 4
 
 
 def test_a_destroyed_highest_entity_does_not_free_its_id():
@@ -75,8 +73,8 @@ def test_a_destroyed_highest_entity_does_not_free_its_id():
 def test_the_value_types_a_world_may_hold(value):
     w = World()
     entity = w.spawn()
-    w.set(entity, "value", value)
-    assert roundtrip(w).get(entity, "value") == value
+    w.set(entity, "note", "value", value)
+    assert roundtrip(w).get(entity, "note", "value") == value
 
 
 def test_an_empty_world_round_trips_to_an_empty_world():
@@ -119,7 +117,7 @@ def test_writing_makes_the_directory_and_replaces_atomically(tmp_path):
     w, _, _ = peopled()
     path = tmp_path / "deep" / "down" / "world.json"
     save.write(w, str(path))
-    save.write(w, str(path))                      # again, over the top
+    save.write(w, str(path))
     header = json.loads(path.read_text(encoding="utf-8").splitlines()[0])
     assert header["next"] == 3
     assert not (tmp_path / "deep" / "down" / "world.json.tmp").exists()
@@ -131,7 +129,7 @@ def test_written_and_read_back_is_the_same_world(tmp_path):
     save.write(w, path)
     back = World()
     assert save.read(back, path) == []
-    assert back.get(back.entity(ids[0]), "folder") == folder.id
+    assert back.get(back.entity(ids[0]), "entry", "folder") == folder.id
 
 
 def test_the_file_is_the_same_bytes_on_every_platform(tmp_path):
@@ -145,40 +143,38 @@ def test_the_file_is_the_same_bytes_on_every_platform(tmp_path):
 def test_one_line_per_record_is_what_makes_it_JSONL():
     w, folder, ids = peopled()
     records = save.dump(w)
-    # Header, plus one line per entity that carries a durable attribute --
-    # the folder, and the two entries -- nothing nested inside another.
     assert records[0] == {"version": save.VERSION, "next": w._next}
     assert len(records) == 1 + 3
 
 
-# --- transience is a name ----------------------------------------------
+# --- transience is a component name -----------------------------------
 
-def test_dump_skips_every_transient_name():
+def test_dump_skips_every_transient_component():
     w, folder, _ = peopled()
     w.transient = {"scratch"}
-    w.set(folder, "scratch", 1)
+    w.set(folder, "scratch", "hits", 1)
     records = save.dump(w)
     folder_record = next(r for r in records if r.get("entity") == folder.id)
-    assert "scratch" not in folder_record["attributes"]
-    assert "path" in folder_record["attributes"]
+    assert "scratch" not in folder_record["components"]
+    assert "folder" in folder_record["components"]
 
 
 def test_a_transient_alongside_durable_ones_writes_normally():
     w, folder, _ = peopled()
     w.transient = {"scratch"}
-    w.set(folder, "scratch", 1)
+    w.set(folder, "scratch", "hits", 1)
     back = roundtrip(w)
-    assert back.get(folder, "path") == "/tmp/notes"
+    assert back.get(folder, "folder", "path") == "/tmp/notes"
     assert not back.has(folder, "scratch")
 
 
-def test_an_entity_whose_only_attributes_were_transient_does_not_survive():
+def test_an_entity_whose_only_components_were_transient_does_not_survive():
     w = World()
     w.transient = {"scratch"}
     scratch_only = w.spawn()
-    w.set(scratch_only, "scratch", 1)
+    w.set(scratch_only, "scratch", "hits", 1)
     durable = w.spawn()
-    w.set(durable, "kept", "yes")
+    w.set(durable, "note", "kept", "yes")
     back = roundtrip(w)
     assert scratch_only.id not in [e.id for e in back.entities()]
 
@@ -188,4 +184,13 @@ def test_a_genuinely_bare_entity_still_round_trips_as_bare():
     bare = w.spawn()
     back = roundtrip(w)
     assert bare.id in [e.id for e in back.entities()]
-    assert back.attributes(back.entity(bare.id)) == {}
+    assert back.components(back.entity(bare.id)) == {}
+
+
+def test_a_tag_round_trips_as_a_tag():
+    w = World()
+    e = w.spawn()
+    w.mark(e, "done")
+    back = roundtrip(w)
+    assert back.has(back.entity(e.id), "done")
+    assert back.components(back.entity(e.id)) == {"done": {}}

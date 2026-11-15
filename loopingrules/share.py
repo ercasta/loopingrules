@@ -20,11 +20,10 @@ in the pack gets a FRESH id, so any attribute holding another pack entity's
 id has to be rewritten, and any attribute merely holding a number must NOT
 be -- on pain of a price silently turning into an unrelated id.
 
-Under the attribute substrate (`docs/plan-attributes.md`, D8) ref-ness is
-DECLARED in the schema and carried at runtime in `World.refs`, a set of
-attribute NAMES whose values are references. That is the one thing this
-module consults. It replaces the old `share.ref()` field metadata: a name is
-a ref, or it is not, and nothing about a value's shape says which.
+Under the component substrate (ADR-10) ref-ness is DECLARED in the schema and
+carried at runtime in `World.refs`, a set of `(component, field)` SLOTS whose
+values are references. That is the one thing this module consults: a slot is a
+ref, or it is not, and nothing about a value's shape says which.
 
 ## 2. A ref name's claim is not trusted from the file
 
@@ -93,31 +92,34 @@ def _ref_out(value, ids: set, where: str):
 
 
 def dump_pack(world, entities) -> "list[dict]":
-    """`entities`, and every durable, non-transient attribute on them, as
-    pack records -- a header first. Raises `PackError` for a ref attribute
-    pointing outside `entities`, and `save.SaveError` for a value that is
-    not JSON-shaped at all.
+    """`entities`, and every durable, non-transient component on them, as pack
+    records -- a header first. Raises `PackError` for a ref slot pointing
+    outside `entities`, and `save.SaveError` for a value that is not
+    JSON-shaped at all.
     """
     ids = {_id_of(e) for e in entities}
     records = [{"version": VERSION}]
     for entity in entities:
         entity_id = _id_of(entity)
-        attributes = world.attributes(entity)
-        if not attributes:
+        components = world.components(entity)
+        if not components:
             records.append({"entity": entity_id})
             continue
-        durable = {name: value for name, value in attributes.items()
-                   if name not in world.transient}
+        durable = {component: bag for component, bag in components.items()
+                   if component not in world.transient}
         if not durable:
             continue
-        fields = {}
-        for name, value in durable.items():
-            where = "#%d.%s" % (entity_id, name)
-            if name in world.refs:
-                fields[name] = _ref_out(value, ids, where)
-            else:
-                fields[name] = _field(value, where)
-        records.append({"entity": entity_id, "attributes": fields})
+        out = {}
+        for component, bag in durable.items():
+            fields = {}
+            for field, value in bag.items():
+                where = "#%d.%s.%s" % (entity_id, component, field)
+                if (component, field) in world.refs:
+                    fields[field] = _ref_out(value, ids, where)
+                else:
+                    fields[field] = _field(value, where)
+            out[component] = fields
+        records.append({"entity": entity_id, "components": out})
     return records
 
 
@@ -172,13 +174,18 @@ def load_pack(world, records: "list[dict]"):
             mapping[old_id] = world.spawn()
     for record in body:
         entity = mapping[int(record["entity"])]
-        for name, value in record.get("attributes", {}).items():
-            where = "pack #%d.%s" % (int(record["entity"]), name)
-            if name in world.refs:
-                resolved, ok = _remap(value, mapping, where, problems)
-                if not ok:
-                    continue
-                world.set(entity, name, resolved)
-            else:
-                world.set(entity, name, value)
+        for component, bag in record.get("components", {}).items():
+            if not bag:
+                world.mark(entity, component)          # a tag
+                continue
+            for field, value in bag.items():
+                where = "pack #%d.%s.%s" % (int(record["entity"]),
+                                            component, field)
+                if (component, field) in world.refs:
+                    resolved, ok = _remap(value, mapping, where, problems)
+                    if not ok:
+                        continue
+                    world.set(entity, component, field, resolved)
+                else:
+                    world.set(entity, component, field, value)
     return problems, {old: e.id for old, e in mapping.items()}

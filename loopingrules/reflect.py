@@ -78,6 +78,7 @@ import hashlib
 import inspect
 
 from . import analyze
+from .schema import slot_str
 
 
 # The flag that TAGS a card/control entity as that shape -- the attribute
@@ -141,19 +142,23 @@ def card_for(fn) -> dict:
                 "priority": getattr(fn, "_loopingrules_priority", 0)}
     return {
         "hash": identity(fn), "name": rule_name(fn),
-        "reads": tuple(sorted(analysis.reads)),
-        "writes": tuple(sorted(analysis.writes)),
+        "reads": tuple(sorted(slot_str(s) for s in analysis.reads)),
+        "writes": tuple(sorted(slot_str(s) for s in analysis.writes)),
         "destroys": analysis.destroys, "opaque": False,
         "priority": getattr(fn, "_loopingrules_priority", 0)}
 
 
 def write_card(world, card: dict):
-    """Deposit `card` (a `card_for` dict) as a tagged entity. Returns it."""
+    """Deposit `card` (a `card_for` dict) as a `rule_card` component. Returns
+    it. `reads`/`writes` are stored as flat lists of slot STRINGS
+    (`"trader.cash"`, `"done"`) -- the store cannot hold a tuple."""
     entity = world.spawn()
     world.mark(entity, CARD)
     for field in _CARD_FIELDS:
-        world.set(entity, field, list(card[field])
-                  if isinstance(card[field], tuple) else card[field])
+        value = card[field]
+        if isinstance(value, tuple):
+            value = list(value)
+        world.set(entity, CARD, field, value)
     return entity
 
 
@@ -161,13 +166,13 @@ def read_card(world, entity) -> dict:
     """The card fields off a card entity, as the same dict `card_for`
     returns -- so a rule reading a card and a rule describing one speak the
     same shape."""
-    return {field: world.get(entity, field) for field in _CARD_FIELDS}
+    return {field: world.get(entity, CARD, field) for field in _CARD_FIELDS}
 
 
 def cards(world) -> "list":
     """Every `(entity, fields)` for a card in the world, oldest first."""
     return [(entity, read_card(world, entity))
-            for entity, _ in world.each(CARD)]
+            for entity, in world.each(CARD)]
 
 
 def reify(loop) -> list:
@@ -179,7 +184,7 @@ def reify(loop) -> list:
     loop runs. Returns `[(entity, card)]`.
     """
     world = loop.world
-    seen = {h for _e, _t, h in world.each(CARD, "hash")}
+    seen = {h for _e, h in world.each(CARD, "hash")}
     placed = []
     for _name, fn in loop.rules:
         card = card_for(fn)
@@ -199,16 +204,16 @@ def control(world, hash: str, enabled: bool = True, priority: int = 0):
     `Loop._tick_order` reads; a rule with no control runs exactly as it
     always did, so this is opt-in."""
     existing = None
-    for entity, _ in world.each(CONTROL):
-        if world.get(entity, "hash") == hash:
+    for entity, in world.each(CONTROL):
+        if world.get(entity, CONTROL, "hash") == hash:
             existing = entity
             break
     if existing is None:
         existing = world.spawn()
         world.mark(existing, CONTROL)
-        world.set(existing, "hash", hash)
-    world.set(existing, "enabled", bool(enabled))
-    world.set(existing, "priority", int(priority))
+        world.set(existing, CONTROL, "hash", hash)
+    world.set(existing, CONTROL, "enabled", bool(enabled))
+    world.set(existing, CONTROL, "priority", int(priority))
     return existing
 
 
@@ -217,8 +222,8 @@ def control_map(world) -> dict:
     `each()` order winning -- the contract is one control per hash; several
     are tolerated deterministically, not meaningfully."""
     out = {}
-    for entity, _ in world.each(CONTROL):
-        key = world.get(entity, "hash")
-        out[key] = (world.get(entity, "enabled", True),
-                    world.get(entity, "priority", 0))
+    for entity, in world.each(CONTROL):
+        key = world.get(entity, CONTROL, "hash")
+        out[key] = (world.get(entity, CONTROL, "enabled", True),
+                    world.get(entity, CONTROL, "priority", 0))
     return out
