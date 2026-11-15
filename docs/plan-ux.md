@@ -292,11 +292,12 @@ NL entirely.
 ### U8 — The train-trip scenario *(the first real control-network probe)* — **walking skeleton built**
 
 **Built (the reduced cut).** `loopingrules_ux.s6` (pinned by `tests/test_ux_s6.py`)
-does two models (planning + budget) and two planners, and exercises ADR-13's whole
-seam: materialized candidates, a distinct pure evaluator, application memory, and
-a cross-model budget veto. What is **still to build**: the third model (the
-train-trip graph), more planners, and a **listwise** scorer in place of the two-leaf
-tree.
+does three models (train, planning, budget) and exercises ADR-13's whole seam:
+materialized candidates at two levels, a distinct pure evaluator (an activation
+tree plus a listwise `rank` that eliminates), the trip executed, application
+memory, and a cross-model budget veto. What is **still to build**: a **per-step**
+selection (the network choosing the next move each tick, the deepest reading of
+ADR-13), more planners, and a *learned* listwise scorer.
 
 **Deliverable.** A real-world scenario — *plan a train trip with a budget* — built
 from **at least three models**: a **planning** model (it evaluates candidate
@@ -337,15 +338,17 @@ Each is a milestone, not a feature; each has a kill/reshape criterion (above).
   +95).
 - **S6 — the train trip with a budget** *(walking skeleton built:
   `loopingrules_ux.s6`, pinned by `tests/test_ux_s6.py`)*. A *reduced* train trip
-  — **two** models (planning + budget), **two planners** (a weak direct-leg one,
-  a stronger search one) — that exercises the whole **correction pass** on the
-  current substrate: candidate applications **materialized**, a **distinct**
-  decision-tree evaluator that selects one and **writes nothing**, the selection
-  **recorded to application memory**, and a **cross-model operation** (the budget
-  vetoes a plan the planners propose). Growth finds `direct_in_budget` and
-  generalises (train `+4`, held-out `-47`, both equal to the oracle; greedy
-  `-235/-271`, pool `-8/-59`). **Still to build** (the full U8): the **third**
-  model (the train-trip graph itself) and more than two planners.
+  — **three** models (train, planning, budget) — that exercises the whole
+  **correction pass** on the current substrate. **Materialized candidates** at two
+  levels (the planner, then the plan); a **distinct** evaluator that writes
+  nothing — an **activation** tree (which planner) and a **listwise `rank`** that
+  scores every candidate and **eliminates the bottom**; the **trip executed**
+  (walked leg by leg, the fare spent); the selection **recorded** to application
+  memory (planner, cost, proposed, eliminated); and a **cross-model operation**
+  (the budget vetoes a plan). Activation grows `direct_in_budget` and generalises
+  (train `+14`, held-out `-45`, both equal to the oracle; greedy `-335/-371`,
+  pool `+2/-57`). **Still to build** (the full U8): a **per-step** selection (the
+  network choosing the next move each tick) and a *learned* listwise scorer.
 
 ## 6. Cross-cutting invariants (CI fitness functions)
 

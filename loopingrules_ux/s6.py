@@ -2,71 +2,75 @@
 
 The probe (`docs/plan-ux.md`, U8/S6; `docs/decisions.md`, ADR-13): the whole
 **correction pass**, end to end, on the substrate that already exists. It is a
-*reduced* train trip -- **two models** (planning + budget) and **two planners**
-(a weak one and a stronger one) -- and it pins the four pieces of ADR-13 that
-nothing has exercised:
+*reduced* train trip -- **three models** (train, planning, budget) -- and it
+exercises ADR-13's seam:
 
 1. **Materialized candidates.** The engine's stand-in (`run`) enumerates the
-   candidate **applications** -- one `application` entity per planner -- *before*
-   any is chosen. This is ADR-13's materialization, in its cheapest form: on the
-   current substrate the engine cannot see a rule's bindings, so a planner is the
-   unit of application, not a binding. (The IR-native engine that materializes
-   *bindings* is U5, later.)
-2. **A distinct evaluator.** The choice is made by a **decision tree** -- a
-   standalone artifact, not a rule -- that reads the candidates and the context
-   and returns a selection. It **writes nothing** (pinned by a test: the world's
+   candidate **applications** as data, *before* any is chosen -- at two levels
+   (see below). On the current substrate the engine cannot see a rule's bindings,
+   so the units of application are the *planner* and the *plan*, not
+   (rule, binding). The IR-native engine that materializes bindings is U5, later.
+2. **A distinct evaluator.** The choice is made by an artifact that is not a
+   rule: an **activation** decision tree (`Tree`) that picks *which planner to
+   run*, and a **listwise** `rank` that scores the plan candidates and
+   **eliminates the bottom**. Neither writes anything (pinned: the world's
    revision does not move across `Tree.decide`).
 3. **Application memory.** The selection is recorded into world data (an
-   `applied` entity), so an ordinary operation can reason over the trajectory the
-   network produced -- the homoiconicity payoff, shown by `trajectory`.
+   `applied` entity -- the planner chosen, the cost, and how many candidates the
+   scorers eliminated), so an ordinary operation can reason over the trajectory
+   the network produced (the homoiconicity payoff; `trajectory`).
 4. **Subsumes `RuleControl` + `argmax`.** There is no `RuleControl` anywhere: the
-   evaluator's choice *is* what fires.
+   activation choice *is* what fires, and `rank`'s elimination *is* the
+   resolution.
 
-## The two models, and the cross-model operation
+## The three models
 
-* **planning** -- two planner operations. `plan_greedy` (the weak one) takes a
-  **direct** leg if the request's endpoints are adjacent. `plan_pool` (the
-  stronger one) searches a **pool** of simple paths and picks the cheapest.
-* **budget** -- one operation, `budget_veto`, that **discards** any plan whose
-  cost exceeds the request's budget. It reads the planning model's `cost` and the
-  request's `budget` at once: a **joint operation** (ADR-9), a rule whose reads
-  span two models -- exactly the note's *"the planning module evaluates candidate
-  solutions and discards some of them because of the budget."*
+| Model | Operations | What it is |
+|---|---|---|
+| **train** | `train_execute` | the graph (stops, legs) and the trip itself: walking a plan advances the traveller and spends the fare |
+| **planning** | `plan_greedy`, `plan_pool` | proposes **candidate plans** -- the weak one takes a direct leg, the strong one enumerates a pool of paths |
+| **budget** | `budget_veto` | **discards** a plan whose cost exceeds the cash on hand -- a *cross-model* operation, reading `plan.cost` and `trip.cash` at once |
 
-## The choice, and why it is real
+## Two levels of selection, and why both are real
 
-The planners trade off: `greedy` is **free** (effort `0`) but only ever proposes
-a direct leg; `pool` finds the cheapest path but **costs** (`EFFORT['pool']`). So
-the useful choice is context-dependent, and it is **not** simply "is there a
-direct leg?" -- a direct leg *over budget* is useless (`h3`). The feature that
-decides is `direct_in_budget`, and the tree grows it from examples alone.
+* **Activation** (which planner) -- the tree, grown offline. The planners trade
+  off: `greedy` is **free** but can only propose a direct leg; `pool` finds the
+  cheapest path but **costs** (`EFFORT['pool']`). So the choice is
+  context-dependent, and it is NOT "is there a direct leg?" -- a direct leg *over
+  budget* is useless (`h3`). The feature that decides is `direct_in_budget`.
+* **Candidate selection** (which plan) -- `rank`, a **listwise** scorer that
+  scores every survivor and **eliminates the bottom**, then breaks ties on hops.
+  `plan_pool` emits *several* candidates (`m1`), so this pass has real work.
 
 This is a *pipeline* probe, not a search result -- the same honest framing
-`loopingrules_forge.evolve` and `s5` carry: the tree is tiny and the question is
-whether the **seam** holds, not whether the learner scales.
+`loopingrules_forge.evolve` and `s5` carry. The learner here is **thin** (the
+objective is mechanical, so the tree is small); the increment being proven is the
+**mechanism**: materialized candidates, elimination, and a multi-step executed
+trip. A *per-step* selection (the network choosing the next move each tick, the
+deepest reading of ADR-13) and a learned listwise scorer are the next growth.
 """
 
 from __future__ import annotations
 
 from loopingrules.world import World
 
-REFS = {"start", "goal", "from", "to", "request", "legs"}
+REFS = {"start", "goal", "from", "to", "at", "legs"}
 
-# What a planner costs beyond the fare -- the trade-off that makes the choice
-# real: `greedy` is free but can only propose a direct leg; `pool` searches and
-# costs this much.
+# What a planner costs beyond the fare -- the trade-off that makes the activation
+# choice real: `greedy` is free but can only propose a direct leg; `pool`
+# searches and costs this much.
 EFFORT = {"greedy": 0, "pool": 6}
 
-# The score when no in-budget plan is produced at all.
+# The score when no in-budget plan is produced (or the trip does not complete).
 PENALTY = -100.0
 
 
-# -- the world ----------------------------------------------------------
+# -- the train model: the graph and the trip ---------------------------
 
 def build(network):
-    """One scenario's world: stops, legs (as entities carrying `from`/`to`/
-    `fare`), and a `request`. A scenario is `{"stops", "legs", "start", "goal",
-    "budget"}`; a leg is `(from, to, fare)` by stop NAME.
+    """One scenario's world: stops, legs (entities carrying `from`/`to`/`fare`),
+    and a `trip` (start, goal, cash, position). A scenario is `{"stops", "legs",
+    "start", "goal", "cash"}`; a leg is `(from, to, fare)` by stop NAME.
     """
     w = World()
     w.refs = set(REFS)
@@ -82,12 +86,17 @@ def build(network):
         w.set(e, "from", stops[frm])
         w.set(e, "to", stops[to])
         w.set(e, "fare", fare)
-    request = w.spawn()
-    w.mark(request, "request")
-    w.set(request, "start", stops[network["start"]])
-    w.set(request, "goal", stops[network["goal"]])
-    w.set(request, "budget", network["budget"])
+    trip = w.spawn()
+    w.mark(trip, "trip")
+    w.set(trip, "start", stops[network["start"]])
+    w.set(trip, "goal", stops[network["goal"]])
+    w.set(trip, "cash", network["cash"])
+    w.set(trip, "at", stops[network["start"]])
     return w
+
+
+def _trip(w):
+    return w.first("trip")[0]
 
 
 def _legs(w):
@@ -95,6 +104,26 @@ def _legs(w):
     return [(frm, to, fare, leg) for leg, frm, to, fare
             in w.each("from", "to", "fare")]
 
+
+def train_execute(w, trip, plan):
+    """The train model's operation: **walk** a plan's legs, advancing the
+    traveller and spending each fare. Returns whether it reached the goal."""
+    at = w.get(trip, "at")
+    cash = w.get(trip, "cash")
+    goal = w.get(trip, "goal")
+    for leg_id in w.get(plan, "legs"):
+        leg = w.entity(leg_id)
+        cash -= w.get(leg, "fare")
+        at = w.get(leg, "to")
+    w.set(trip, "cash", cash)
+    w.set(trip, "at", at)
+    done = at == goal
+    if done:
+        w.mark(trip, "done")
+    return done
+
+
+# -- the planning model: candidate plans -------------------------------
 
 def _make_plan(w, planner, cost, legs, hops):
     plan = w.spawn()
@@ -106,49 +135,42 @@ def _make_plan(w, planner, cost, legs, hops):
     return plan
 
 
-# -- the planning model -------------------------------------------------
-
-def plan_greedy(w, request):
+def plan_greedy(w, trip):
     """The weak planner: a **direct** leg, if the endpoints are adjacent. No
-    search -- so it is free, and it fails when there is no direct leg (or
-    proposes one over budget, which the budget model then vetoes)."""
-    start = w.get(request, "start")
-    goal = w.get(request, "goal")
+    search -- so it is free, and it proposes nothing when there is no direct leg
+    (or proposes one over budget, which the budget model then vetoes)."""
+    start = w.get(trip, "start")
+    goal = w.get(trip, "goal")
     for frm, to, fare, leg in _legs(w):
         if frm == start and to == goal:
-            return _make_plan(w, "greedy", fare, [leg], 1)
-    return None
+            return [_make_plan(w, "greedy", fare, [leg], 1)]
+    return []
 
 
-def plan_pool(w, request, max_expansions=500):
-    """The stronger planner: enumerate a **pool** of simple paths and keep the
-    cheapest. Bounded, so it is not unbounded work -- and it costs `EFFORT`."""
-    start = w.get(request, "start")
-    goal = w.get(request, "goal")
+def plan_pool(w, trip, max_candidates=200):
+    """The stronger planner: enumerate a **pool** of simple paths and propose
+    each as a candidate. Bounded, so it is not unbounded work -- and it costs
+    `EFFORT`. Returns the candidate plans (possibly several)."""
+    start = w.get(trip, "start")
+    goal = w.get(trip, "goal")
     adjacency = {}
     for frm, to, fare, leg in _legs(w):
         adjacency.setdefault(frm, []).append((to, fare, leg))
-    best = {"cost": None, "legs": None}
-    seen_count = [0]
+    plans = []
 
     def walk(at, cost, path, visited):
-        if seen_count[0] > max_expansions:
+        if len(plans) >= max_candidates:
             return
         if at == goal and path:
-            if best["cost"] is None or cost < best["cost"]:
-                best["cost"] = cost
-                best["legs"] = list(path)
+            plans.append(_make_plan(w, "pool", cost, path, len(path)))
             return
         for to, fare, leg in adjacency.get(at, ()):
             if to in visited:
                 continue
-            seen_count[0] += 1
             walk(to, cost + fare, path + [leg], visited | {to})
 
     walk(start, 0, [], {start})
-    if best["cost"] is None:
-        return None
-    return _make_plan(w, "pool", best["cost"], best["legs"], len(best["legs"]))
+    return plans
 
 
 PLANNERS = {"greedy": plan_greedy, "pool": plan_pool}
@@ -156,15 +178,15 @@ PLANNERS = {"greedy": plan_greedy, "pool": plan_pool}
 
 # -- the budget model (a cross-model operation) -------------------------
 
-def budget_veto(w, request):
+def budget_veto(w, trip):
     """The budget model's one operation: **discard** (mark `vetoed`) any plan
-    whose cost exceeds the request's budget. Reads the planning model's `cost`
-    and the request's `budget` together -- a joint operation. Returns how many
+    whose cost exceeds the cash on hand. Reads the planning model's `cost` and
+    the train model's `cash` together -- a joint operation. Returns how many
     plans it discarded."""
-    budget = w.get(request, "budget")
+    cash = w.get(trip, "cash")
     discarded = 0
     for plan, _planner, cost in w.each("planner", "cost"):
-        if w.has(plan, "plan") and cost > budget and not w.has(plan, "vetoed"):
+        if w.has(plan, "plan") and cost > cash and not w.has(plan, "vetoed"):
             w.mark(plan, "vetoed")
             discarded += 1
     return discarded
@@ -172,27 +194,26 @@ def budget_veto(w, request):
 
 # -- the engine stand-in: materialize -> evaluate -> apply -> record ----
 
-def materialize(w, request):
-    """Enumerate the candidate **applications** as data, before any is chosen:
-    one `application` entity per planner. ADR-13's materialization, in its
-    cheapest form."""
+def materialize_planners(w, trip):
+    """Enumerate the candidate **applications** -- one `application` entity per
+    planner -- as data, before any is chosen (ADR-13's materialization)."""
     apps = []
     for name in sorted(PLANNERS):
         a = w.spawn()
         w.mark(a, "application")
         w.set(a, "planner", name)
-        w.set(a, "request", request)
+        w.set(a, "trip", trip)
         apps.append(a)
     return apps
 
 
-def context(w, request):
-    """The features the evaluator reads off the blackboard. `direct_in_budget`
-    is the one the tree ends up choosing on: a direct leg is useless if it is
-    over budget."""
-    start = w.get(request, "start")
-    goal = w.get(request, "goal")
-    budget = w.get(request, "budget")
+def context(w, trip):
+    """The features the activation evaluator reads off the blackboard.
+    `direct_in_budget` is the one the tree ends up choosing on: a direct leg is
+    useless if it is over budget."""
+    start = w.get(trip, "start")
+    goal = w.get(trip, "goal")
+    cash = w.get(trip, "cash")
     legs = _legs(w)
     direct_fares = [fare for frm, to, fare, _leg in legs
                     if frm == start and to == goal]
@@ -200,50 +221,64 @@ def context(w, request):
     return {
         "direct": 1 if direct_fare is not None else 0,
         "direct_in_budget": 1 if (direct_fare is not None
-                                  and direct_fare <= budget) else 0,
+                                  and direct_fare <= cash) else 0,
         "direct_fare": direct_fare if direct_fare is not None else -1,
-        "budget": budget,
+        "cash": cash,
         "n_legs": len(legs),
     }
 
 
-def _score(w, plan, request, choice):
-    """The mechanical objective: an in-budget plan earns what is left of the
-    budget, less the planner's effort; no plan (or a vetoed one) earns
-    `PENALTY`."""
-    if plan is None or w.has(plan, "vetoed"):
-        return float(PENALTY)
-    return float(w.get(request, "budget") - w.get(plan, "cost") - EFFORT[choice])
+def rank(w, plans):
+    """The **listwise** candidate evaluator: score every candidate, **eliminate
+    the bottom**, and select the best -- `None` (exclude) if none survived the
+    budget. Progressive by construction: a coarse pass prunes on cost, a finer
+    pass breaks ties on hops. (Whether the elimination *saves* anything is
+    unmeasured; what it pins is that scoring every candidate and pruning is the
+    selection mechanism, not a single context lookup.)"""
+    live = [p for p in plans if not w.has(p, "vetoed")]
+    if not live:
+        return None
+    best_cost = min(w.get(p, "cost") for p in live)
+    survivors = [p for p in live if w.get(p, "cost") == best_cost]   # eliminate
+    return min(survivors, key=lambda p: (w.get(p, "hops"), p.id))
 
 
-def _remember(w, choice, plan):
-    """The engine records the **selected application** -- the selection only,
-    never the candidates -- into world data (ADR-13)."""
+def _remember(w, choice, proposed, selected):
+    """The engine records the **selection** into world data (ADR-13): the planner
+    chosen, the selected cost, and -- the probe's own question -- how many
+    candidates were **proposed** and how many the scorers **eliminated**."""
     record = w.spawn()
     w.mark(record, "applied")
     w.set(record, "planner", choice)
-    if plan is not None and w.has(plan, "plan"):
-        w.set(record, "cost", w.get(plan, "cost"))
-        if w.has(plan, "vetoed"):
-            w.mark(record, "vetoed")
+    w.set(record, "proposed", proposed)
+    w.set(record, "eliminated", proposed - (1 if selected is not None else 0))
+    if selected is not None:
+        w.set(record, "cost", w.get(selected, "cost"))
     return record
 
 
+def _pipeline(w, trip, choice):
+    """One scenario, given the activated planner: **materialize** the candidate
+    plans, let the **budget** veto, **rank** the survivors, **execute** the
+    chosen plan, and **record** the selection. Returns the score."""
+    plans = PLANNERS[choice](w, trip)
+    budget_veto(w, trip)
+    selected = rank(w, plans)
+    done = selected is not None and train_execute(w, trip, selected)
+    score = (w.get(trip, "cash") - EFFORT[choice]) if done else float(PENALTY)
+    _remember(w, choice, len(plans), selected)
+    return score
+
+
 def run(network, tree):
-    """One step of the recognize-act cycle, by hand: **materialize** the
-    candidates, ask the **tree** for a selection, **apply** the chosen planner,
-    let the **budget** model veto, and **record** the selection. Returns
+    """The recognize-act cycle, by hand: **materialize** the planner candidates,
+    ask the **tree** which to activate, then run the pipeline. Returns
     `(world, score)`."""
     w = build(network)
-    request = w.first("request")[0]
-    apps = materialize(w, request)
-    candidates = [w.get(a, "planner") for a in apps]
-    choice = tree.decide(context(w, request), candidates)
-    plan = PLANNERS[choice](w, request)
-    budget_veto(w, request)
-    score = _score(w, plan, request, choice)
-    _remember(w, choice, plan)
-    return w, score
+    trip = _trip(w)
+    apps = materialize_planners(w, trip)
+    choice = tree.decide(context(w, trip), [w.get(a, "planner") for a in apps])
+    return w, _pipeline(w, trip, choice)
 
 
 def trajectory(w):
@@ -252,11 +287,12 @@ def trajectory(w):
     payoff; the note's 'system-2' role, which is just operations)."""
     return [{"planner": planner,
              "cost": w.get(record, "cost"),
-             "vetoed": w.has(record, "vetoed")}
+             "proposed": w.get(record, "proposed"),
+             "eliminated": w.get(record, "eliminated")}
             for record, _applied, planner in w.each("applied", "planner")]
 
 
-# -- the evaluator: a distinct artifact, grown offline ------------------
+# -- the activation evaluator: a distinct artifact, grown offline -------
 
 class Tree:
     """A tiny decision tree: `feature >= threshold`? -> left : right, leaves a
@@ -297,20 +333,17 @@ class Tree:
 
 
 def _outcomes(networks):
-    """The offline evaluation of every candidate: for each scenario, the score
-    each planner WOULD earn. Ground truth is mechanical (the objective above)."""
+    """The offline evaluation of every candidate planner: for each scenario, the
+    score each planner WOULD earn, through the whole pipeline. Ground truth is
+    mechanical (the objective above)."""
     rows = []
     for network in networks:
         w = build(network)
-        request = w.first("request")[0]
-        ctx = context(w, request)
+        ctx = context(w, _trip(w))
         outcomes = {}
         for name in PLANNERS:
             w2 = build(network)
-            r2 = w2.first("request")[0]
-            plan = PLANNERS[name](w2, r2)
-            budget_veto(w2, r2)
-            outcomes[name] = _score(w2, plan, r2, name)
+            outcomes[name] = _pipeline(w2, _trip(w2), name)
         rows.append((ctx, outcomes))
     return rows
 
@@ -362,44 +395,49 @@ def _fit(rows, depth):
 
 
 def grow(networks, depth=2):
-    """Grow the evaluator offline, over scenarios evaluated automatically.
-    Frozen before it runs (ADR-13)."""
+    """Grow the activation evaluator offline, over scenarios evaluated
+    automatically. Frozen before it runs (ADR-13)."""
     return _fit(_outcomes(networks), depth)
 
 
 # -- scenarios ----------------------------------------------------------
 
+# `direct_in_budget` is the feature that decides activation: `greedy` when a
+# direct leg fits the cash, `pool` otherwise. The `m*` scenarios have no direct
+# leg and SEVERAL paths, so `pool` emits a real candidate set for `rank`.
 TRAIN = (
-    # direct leg, in budget -> greedy is free and as cheap as pool
     {"name": "e1", "stops": ["A", "B"], "legs": [("A", "B", 10)],
-     "start": "A", "goal": "B", "budget": 50},
+     "start": "A", "goal": "B", "cash": 50},
     {"name": "e2", "stops": ["A", "B"], "legs": [("A", "B", 5)],
-     "start": "A", "goal": "B", "budget": 30},
-    # no direct leg -> only pool can plan
+     "start": "A", "goal": "B", "cash": 30},
     {"name": "h1", "stops": ["A", "B", "C"], "legs": [("A", "B", 3), ("B", "C", 4)],
-     "start": "A", "goal": "C", "budget": 50},
-    # a direct leg, but OVER budget -> greedy proposes it and the budget vetoes it
+     "start": "A", "goal": "C", "cash": 50},
     {"name": "h3", "stops": ["A", "B", "C"],
      "legs": [("A", "B", 1), ("B", "C", 1), ("A", "C", 20)],
-     "start": "A", "goal": "C", "budget": 10},
-    # no plan in budget at all -> both fail
+     "start": "A", "goal": "C", "cash": 10},
+    {"name": "m1", "stops": ["A", "B", "C", "D"],
+     "legs": [("A", "B", 2), ("B", "D", 3), ("A", "C", 2), ("C", "D", 2)],
+     "start": "A", "goal": "D", "cash": 20},
     {"name": "imp", "stops": ["A", "B"], "legs": [("A", "B", 100)],
-     "start": "A", "goal": "B", "budget": 5},
+     "start": "A", "goal": "B", "cash": 5},
 )
 
 TEST = (
     {"name": "e3", "stops": ["A", "B"], "legs": [("A", "B", 4)],
-     "start": "A", "goal": "B", "budget": 20},
+     "start": "A", "goal": "B", "cash": 20},
     {"name": "h4", "stops": ["A", "B", "C", "D"],
      "legs": [("A", "B", 2), ("B", "C", 3), ("C", "D", 4)],
-     "start": "A", "goal": "D", "budget": 40},
+     "start": "A", "goal": "D", "cash": 40},
     {"name": "h5", "stops": ["A", "B", "C"],
      "legs": [("A", "B", 2), ("A", "C", 30), ("B", "C", 3)],
-     "start": "A", "goal": "C", "budget": 10},
+     "start": "A", "goal": "C", "cash": 10},
     {"name": "e4", "stops": ["A", "C"], "legs": [("A", "C", 7)],
-     "start": "A", "goal": "C", "budget": 20},
+     "start": "A", "goal": "C", "cash": 20},
+    {"name": "m3", "stops": ["A", "B", "C", "D"],
+     "legs": [("A", "B", 1), ("B", "D", 1), ("A", "C", 1), ("C", "D", 5)],
+     "start": "A", "goal": "D", "cash": 10},
     {"name": "imp2", "stops": ["A", "B"], "legs": [("A", "B", 50)],
-     "start": "A", "goal": "B", "budget": 10},
+     "start": "A", "goal": "B", "cash": 10},
 )
 
 
@@ -409,24 +447,21 @@ def _total_fixed(networks, planner):
 
 
 def _oracle(networks):
-    total = 0.0
-    for network in networks:
-        rows = _outcomes([network])[0][1]
-        total += max(rows.values())
-    return total
+    return sum(max(outcomes.values())
+               for _ctx, outcomes in _outcomes(networks))
 
 
 def main() -> int:
     tree = grow(TRAIN)
-    print("grown evaluator:")
+    print("grown activation:")
     print(tree.describe(1))
     for label, networks in (("train", TRAIN), ("test", TEST)):
         grown = sum(run(net, tree)[1] for net in networks)
         print("  %-5s grown %+7.1f   greedy %+7.1f   pool %+7.1f   oracle %+7.1f"
               % (label, grown, _total_fixed(networks, "greedy"),
                  _total_fixed(networks, "pool"), _oracle(networks)))
-    w, _ = run(TRAIN[2], tree)
-    print("application memory (h1):", trajectory(w))
+    w, _ = run(TRAIN[4], tree)                      # m1: several candidates
+    print("application memory (m1):", trajectory(w))
     return 0
 
 
