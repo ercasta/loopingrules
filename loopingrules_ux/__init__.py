@@ -9,9 +9,9 @@ is a named probe from `docs/plan-ux.md`, pinned by its own `tests/test_ux_*`.
   example.
 * `s3` -- the ambiguity probe: **two** islands both handle one term; a controller
   resolves it by context via `RuleControl`.
-* `s6` -- the correction pass's seam: the train trip with a budget, in three
-  models (train, planning, budget), its candidates **materialized**, a **distinct**
-  evaluator (an activation tree + a listwise `rank` that eliminates) that writes
-  nothing, the trip **executed**, and the selection recorded to application
-  memory (ADR-13).
+* `s6` -- the correction pass's deepest claim, **per step**: the train trip with
+  a budget, in three models (train, planning, budget). Each tick materializes the
+  candidate **moves**, the budget excludes the unaffordable, a **distinct** pure
+  scorer selects one and writes nothing, the trip is **executed**, and the
+  selection is **recorded** -- so the trajectory is a sequence (ADR-13).
 """

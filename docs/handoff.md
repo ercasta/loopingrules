@@ -14,15 +14,17 @@ the substrate and the control network. It was **discussed before it was written*
 the note mixed the operation *language* with *engine seams*, and each claim was
 sorted into language / seam / open **before** anything landed in the docs.
 
-- **Tests: 426 pass, with 6 collection errors** — all the unported
+- **Tests: 424 pass, with 6 collection errors** — all the unported
   `loopingrules_forge` spike and `loopingrules_reflect.r1`. That is the one red
   piece, deliberately deferred (see §4).
-- **The correction pass has a walking skeleton**: `loopingrules_ux.s6` (17
-  tests) — the train trip with a budget, in **three** models (train, planning,
-  budget), pinning ADR-13's seam on the *current* substrate: candidates
-  materialized at two levels, a distinct pure evaluator (an activation tree plus
-  a listwise `rank` that **eliminates**), the trip **executed**, application
-  memory, and a cross-model budget veto — before any clean break.
+- **The correction pass has a per-step walking skeleton**: `loopingrules_ux.s6`
+  (15 tests) — the train trip with a budget, in **three** models (train,
+  planning, budget), pinning ADR-13's deepest claim on the *current* substrate:
+  **multi-step steering is "which application fires next."** Each step
+  materializes the candidate moves, the budget excludes the unaffordable, a
+  distinct pure scorer selects one and writes nothing, the train model applies
+  it, and the selection is recorded — so the trajectory is a sequence. Grown
+  network `+1*lookahead`, generalising (train `+34`, held-out `+38`, = oracle).
 - **Docs** (the "clean slate"): the guide, plus **`decisions.md`** (ADR-1…ADR-13,
   the reasoning) and **`plan-ux.md`** (Plan U, the roadmap). Everything else — the
   D1–D10 design docs, `tuning`, the study guide/plan, `modeling`, `comparison-soar`,

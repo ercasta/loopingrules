@@ -291,13 +291,13 @@ NL entirely.
 
 ### U8 — The train-trip scenario *(the first real control-network probe)* — **walking skeleton built**
 
-**Built (the reduced cut).** `loopingrules_ux.s6` (pinned by `tests/test_ux_s6.py`)
-does three models (train, planning, budget) and exercises ADR-13's whole seam:
-materialized candidates at two levels, a distinct pure evaluator (an activation
-tree plus a listwise `rank` that eliminates), the trip executed, application
-memory, and a cross-model budget veto. What is **still to build**: a **per-step**
-selection (the network choosing the next move each tick, the deepest reading of
-ADR-13), more planners, and a *learned* listwise scorer.
+**Built (the per-step cut).** `loopingrules_ux.s6` (pinned by `tests/test_ux_s6.py`)
+does three models (train, planning, budget) and exercises ADR-13's whole seam
+**per step**: the candidate moves materialized each tick, a cross-model budget
+exclusion, a distinct pure scorer that selects one and writes nothing, an executed
+trajectory recorded as a sequence, and a step budget that cuts a straying policy.
+What is **still to build**: a *richer* learned scorer (the objective is mechanical,
+so the search is thin) and the full trip graph (stops/legs are still a toy).
 
 **Deliverable.** A real-world scenario — *plan a train trip with a budget* — built
 from **at least three models**: a **planning** model (it evaluates candidate
@@ -336,19 +336,19 @@ Each is a milestone, not a feature; each has a kill/reshape criterion (above).
   cross-island context and routes by control attributes; ground truth = final
   cash; grows `['spread>0', 'affordable']` and generalises (train +70, held-out
   +95).
-- **S6 — the train trip with a budget** *(walking skeleton built:
-  `loopingrules_ux.s6`, pinned by `tests/test_ux_s6.py`)*. A *reduced* train trip
-  — **three** models (train, planning, budget) — that exercises the whole
-  **correction pass** on the current substrate. **Materialized candidates** at two
-  levels (the planner, then the plan); a **distinct** evaluator that writes
-  nothing — an **activation** tree (which planner) and a **listwise `rank`** that
-  scores every candidate and **eliminates the bottom**; the **trip executed**
-  (walked leg by leg, the fare spent); the selection **recorded** to application
-  memory (planner, cost, proposed, eliminated); and a **cross-model operation**
-  (the budget vetoes a plan). Activation grows `direct_in_budget` and generalises
-  (train `+14`, held-out `-45`, both equal to the oracle; greedy `-335/-371`,
-  pool `+2/-57`). **Still to build** (the full U8): a **per-step** selection (the
-  network choosing the next move each tick) and a *learned* listwise scorer.
+- **S6 — the train trip with a budget, selected PER STEP** *(built:
+  `loopingrules_ux.s6`, pinned by `tests/test_ux_s6.py`)*. The deepest reading of
+  ADR-13 — **multi-step steering is "which application fires next"** — as a
+  *reduced* train trip in **three** models (train, planning, budget). Each step:
+  the candidate **moves** are **materialized**, the **budget excludes** the
+  unaffordable (a cross-model operation), a **distinct** scorer — a `Policy`,
+  linear over the two planners' ratings, and **writing nothing** — selects one,
+  the train model **applies** it, and the selection is **recorded**; so the
+  **trajectory is a sequence**. The **step budget** is the circuit breaker (a
+  straying policy is cut). Growth finds the network `+1*lookahead` and generalises
+  (train `+34`, held-out `+38`, both equal to the oracle; weak `-72/-71`). **Still
+  to build** (the full U8): a *richer* learned scorer (the grid is thin because the
+  objective is mechanical) and the fuller trip graph.
 
 ## 6. Cross-cutting invariants (CI fitness functions)
 
