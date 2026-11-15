@@ -13,6 +13,58 @@ def _world():
     return World()
 
 
+# -- entity, and the value model ------------------------------------------
+
+def test_spawn_gives_a_bare_entity():
+    w = _world()
+    e = w.spawn()
+    assert e.alive and len(w) == 1 and w.entities() == [e]
+    assert w.components(e) == {}
+
+
+def test_a_tuple_is_accepted_and_stored_as_a_list():
+    w = _world()
+    e = w.spawn()
+    w.set(e, "listing", "tags", ("a", "b"))
+    assert w.get(e, "listing", "tags") == ["a", "b"]
+
+
+def test_remove_takes_one_occurrence():
+    w = _world()
+    e = w.spawn()
+    w.set(e, "listing", "tags", ["a", "b", "a"])
+    assert w.remove(e, "listing", "tags", "a") is True
+    assert w.get(e, "listing", "tags") == ["b", "a"]     # only the first went
+    assert w.remove(e, "listing", "tags", "z") is False
+
+
+def test_pop_from_empty_raises_and_from_absent_returns_none():
+    w = _world()
+    e = w.spawn()
+    assert w.pop(e, "log", "line") is None
+    w.set(e, "log", "line", [])
+    with pytest.raises(IndexError):
+        w.pop(e, "log", "line")
+
+
+def test_a_no_op_is_in_neither_the_log_nor_the_revision():
+    w = _world()
+    e = w.spawn()
+    w.set(e, "trader", "cash", 1)
+    before_rev, before_seq = w.revision, len(w.changes())
+    w.set(e, "trader", "cash", 1)
+    assert w.revision == before_rev and len(w.changes()) == before_seq
+
+
+def test_re_mark_is_not_a_change():
+    w = _world()
+    e = w.spawn()
+    w.mark(e, "done")
+    before = w.revision
+    w.mark(e, "done")
+    assert w.revision == before
+
+
 # -- a component is a named bag of fields ---------------------------------
 
 def test_set_and_get_a_field():

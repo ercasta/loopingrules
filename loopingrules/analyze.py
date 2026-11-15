@@ -1,24 +1,26 @@
-"""Static analysis of a rule: which ATTRIBUTES it reads, which it writes --
-derived from its own source, not declared by hand. This is the answer to
-two things at once: `PRINCIPLES.md`'s named, previously unsolved gap
+"""Static analysis of a rule: which SLOTS `(component, field)` it reads, which
+it writes -- derived from its own source, not declared by hand. This is the
+answer to two things at once: `PRINCIPLES.md`'s named, previously unsolved gap
 ("declare `watches` too narrow... there is no way to catch this from
 here") -- solved by removing the hand-written declaration rather than
 checking it, since `Loop.rule` calls `analyze()` itself at registration
 time and uses the result AS a rule's gate (see `loopingrules.loop`, "A
 rule wakes only when something it reads exists") -- and a "map" of which
-rules touch which attributes, without inventing a language to get one.
+rules touch which slots, without inventing a language to get one.
 
-## Attribute names, not component classes
+## Slots, not component classes
 
-Under the attribute substrate (`docs/plan-attributes.md`, D8) a rule names
-a fact with a **string literal** -- `w.get(e, "cash")`, `w.each("card",
-"tags")` -- where the component engine named a class. This walk is the
-same walk; the thing it resolves is a `str`, never a `module.__dict__`
-lookup. A name is a read when the method reads it, a write when the method
-writes it. `spawn`/`destroy` keep their old shape: creating an entity
-touches no NAME (`spawn` contributes no read or write), and destroying an
-entity names no name either -- `Analysis.destroys` records only that the
-rule CAN destroy entities, the same honest limit as before.
+A rule names a fact with a **string literal** for the component and one for the
+field -- `w.get(e, "trader", "cash")`, `w.each("listing", "card", "price")` --
+where the component engine named a class. This walk is the same walk; the thing
+it resolves is a `(component, field)` SLOT, a pair of `str`s, never a
+`module.__dict__` lookup. A slot with `field=None` is a COMPONENT-level read (a
+tag, or an `each` over a whole component). A slot is a read when the method
+reads it, a write when the method writes it. `spawn`/`destroy` keep their old
+shape: creating an entity touches no slot (`spawn` contributes no read or
+write), and destroying an entity names no slot either -- `Analysis.destroys`
+records only that the rule CAN destroy entities, the same honest limit as
+before.
 
 ## Why AST analysis of plain Python, not a new DSL
 
@@ -82,12 +84,16 @@ import ast
 import collections
 import inspect
 import textwrap
-from typing import Dict, Set
+from typing import Dict, Optional, Set, Tuple
+
+# A slot is what a rule reads or writes: `(component, field)`, `field` `None`
+# for a component-level read (a tag, or an `each` over a whole component).
+Slot = Tuple[str, Optional[str]]
 
 
-# Which world methods read which names, and where the name sits in the
-# call. `entity`-first methods (get/has/set/unset/...) name from index 1;
-# the entity-less readers (each/first/all/the/populated) start at 0.
+# Which world methods read which slots, and where the component/field sit in
+# the call. `entity`-first methods (get/has/set/unset/...) name from index 1;
+# the entity-less readers (each/first/all/the) start at 0.
 READS = {"each", "get", "all", "the", "first"}
 EXISTENCE_READS = {"has", "populated"}
 WRITES = {"set", "unset", "add", "remove", "append", "pop", "mark", "unmark"}
@@ -104,22 +110,22 @@ class Opaque(Exception):
 class Analysis:
     """One rule's own reads and writes, derived, not declared.
 
-    `reads`/`writes` are ATTRIBUTE NAMES (strings). `negated_reads` is a
-    subset of `reads`: every name this rule's own source tests for ABSENCE
-    (`if not w.each("x"):`, `w.first("x") is None`, `len(w.each("x")) ==
-    0`, `not w.has(e, "x")`, `not w.populated("x")`) rather than presence.
-    `Loop.rule` gates a rule on `reads - negated_reads`, never on `reads`
-    itself -- a rule reacting to a name NOT existing (`test_engine.py`'s
-    own `pong`, spawning a fresh `Ping` exactly when none is left, is the
-    case that found this) would otherwise be gated on the one condition
-    that guarantees it has nothing to do. A name appearing BOTH ways is
-    excluded everywhere, conservatively.
+    `reads`/`writes` are SLOTS `(component, field)`, `field` `None` for a
+    component-level read. `negated_reads` is a subset of `reads`: every slot
+    this rule's own source tests for ABSENCE (`if not w.each("done"):`,
+    `w.first("trader", "cash") is None`, `not w.has(e, "done")`) rather than
+    presence. `Loop.rule` gates a rule on `reads - negated_reads`, never on
+    `reads` itself -- a rule reacting to a slot NOT existing (`test_engine.py`'s
+    own `pong`, spawning a fresh `Ping` exactly when none is left, is the case
+    that found this) would otherwise be gated on the one condition that
+    guarantees it has nothing to do. A slot appearing BOTH ways is excluded
+    everywhere, conservatively.
     """
 
     def __init__(self) -> None:
-        self.reads: Set[str] = set()
-        self.negated_reads: Set[str] = set()
-        self.writes: Set[str] = set()
+        self.reads: Set[Slot] = set()
+        self.negated_reads: Set[Slot] = set()
+        self.writes: Set[Slot] = set()
         self.destroys: bool = False
 
     def __repr__(self) -> str:
@@ -232,8 +238,8 @@ class Report:
     """
 
     def __init__(self) -> None:
-        self.reads: Dict[str, Set[str]] = {}
-        self.writes: Dict[str, Set[str]] = {}
+        self.reads: Dict[Slot, Set[str]] = {}
+        self.writes: Dict[Slot, Set[str]] = {}
         self.destroys: Set[str] = set()
         self.opaque: Dict[str, str] = {}
 
@@ -339,55 +345,84 @@ def _walk_function(fn, module, analysis: Analysis, seen: set,
         elts = node.elts if isinstance(node, (ast.Tuple, ast.List)) else [node]
         return [resolve_name(elt) for elt in elts]
 
+    def resolve_slot(component_node, field_node):
+        return (resolve_name(component_node), resolve_name(field_node))
+
+    def resolve_each(component_node, field_nodes):
+        component = resolve_name(component_node)
+        if not field_nodes:
+            return [(component, None)]
+        return [(component, resolve_name(f)) for f in field_nodes]
+
+    def resolve_slot_arg(node):
+        # A slot given as ONE value: a bare component name (a tag), or a
+        # (component, field) pair of string literals.
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            handled_names.add(id(node))
+            return (node.value, None)
+        if isinstance(node, (ast.Tuple, ast.List)) and len(node.elts) == 2:
+            component = resolve_name(node.elts[0])
+            field_node = node.elts[1]
+            if isinstance(field_node, ast.Constant) and field_node.value is None:
+                return (component, None)
+            return (component, resolve_name(field_node))
+        raise Opaque(_qualname(fn),
+                     "a slot must be a component name or a (component, field) "
+                     "pair of string literals: %r" % ast.unparse(node))
+
     def handle_world_method(call, method):
         args = call.args
         if any(isinstance(a, ast.Starred) for a in args) or any(
                 kw.arg is None for kw in call.keywords):
             raise Opaque(_qualname(fn),
                          "%s(...) called with a starred/**-argument -- "
-                         "cannot enumerate its attribute names" % method)
-        names = []
-        if method in READS or method in EXISTENCE_READS:
-            # Where the NAME arguments sit: `get(entity, name[, default])`
-            # names from index 1 and only index 1; `has(entity, *names)`
-            # from index 1 to the end; the entity-less readers start at 0.
-            if method == "get":
-                window = args[1:2]
-            elif method == "has":
-                window = args[1:]
-            elif method in ("all", "the"):
-                window = args[0:1]
-            else:                       # each, first, populated
-                window = args[0:]
-            for a in window:
-                names.append(resolve_name(a))
-            analysis.reads.update(names)
-            for kw in call.keywords:
-                if kw.arg == "without":
-                    analysis.reads.update(resolve_name_list(kw.value))
-            if names and _is_negated(call):
-                analysis.negated_reads.update(names)
-        elif method in WRITES:
-            window = args[1:2]
-            for a in window:
-                analysis.writes.add(resolve_name(a))
+                         "cannot enumerate its slots" % method)
+        if method in ("get", "set", "unset", "add", "remove", "append", "pop"):
+            slots = [resolve_slot(args[1], args[2])]
+        elif method in ("all", "the"):
+            slots = [resolve_slot(args[0], args[1])]
+        elif method in ("each", "first"):
+            slots = resolve_each(args[0], args[1:])
+        elif method == "has":
+            slots = resolve_each(args[1], args[2:])
+        elif method == "populated":
+            slots = [resolve_slot_arg(a) for a in args]
+        elif method in ("mark", "unmark"):
+            slots = [(resolve_name(args[1]), None)]
         elif method == "spawn":
-            pass                        # creating an entity touches no name
+            slots = []                  # creating an entity touches no slot
         elif method == "destroy":
             analysis.destroys = True
+            slots = []
         elif method == "changes":
-            for kw in call.keywords:
-                if kw.arg != "changed":
-                    continue
-                analysis.reads.add(resolve_name(kw.value))
-        elif method in ("recent", "entity", "revision", "attributes", "show",
+            slots = [resolve_slot_arg(kw.value) for kw in call.keywords
+                     if kw.arg == "changed"]
+        elif method in ("recent", "entity", "revision", "components", "show",
                         "alive"):
-            pass                        # reads the world, names no attribute
+            slots = []                  # reads the world, names no slot
         else:
             raise Opaque(_qualname(fn),
                          "unknown world method %r -- this module's own "
                          "vocabulary of world methods may be out of date"
                          % method)
+        if method == "changes":
+            # The log read names a slot via `changed=` (already resolved into
+            # `slots`); with no `changed=` it names none and the rule falls back
+            # to "called every tick".
+            analysis.reads.update(slots)
+            return
+        if method in WRITES:
+            analysis.writes.update(slots)
+            return
+        if not (method in READS or method in EXISTENCE_READS):
+            return
+        analysis.reads.update(slots)
+        for kw in call.keywords:
+            if kw.arg == "without":
+                analysis.reads.update((c, None)
+                                      for c in resolve_name_list(kw.value))
+        if slots and _is_negated(call):
+            analysis.negated_reads.update(slots)
 
     def mark_world_args(call):
         for a in call.args:
