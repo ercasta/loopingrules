@@ -88,12 +88,13 @@ REPLY = "reply"
 
 
 def said(world, channel: str, text: str):
-    """Deposit a `Said` -- the tag entity a line arriving on a channel
-    becomes, before anything has decided it means something."""
+    """Deposit a `Said` -- the entity a line arriving on a channel becomes,
+    before anything has decided it means something: the `said` component with
+    `channel` and `text`."""
     entity = world.spawn()
     world.mark(entity, SAID)
-    world.set(entity, "channel", channel)
-    world.set(entity, "text", text)
+    world.set(entity, SAID, "channel", channel)
+    world.set(entity, SAID, "text", text)
     return entity
 
 
@@ -101,8 +102,8 @@ def reply(world, channel: str, text: str):
     """Deposit a `Reply` -- something to say back on a channel."""
     entity = world.spawn()
     world.mark(entity, REPLY)
-    world.set(entity, "channel", channel)
-    world.set(entity, "text", text)
+    world.set(entity, REPLY, "channel", channel)
+    world.set(entity, REPLY, "text", text)
     return entity
 
 
@@ -193,9 +194,9 @@ class Engine:
         settled world can say that.
         """
         world = self.loop.world
-        for entity, _ in world.each(REPLY):
-            channel = world.get(entity, "channel")
-            text = world.get(entity, "text")
+        for entity, in world.each(REPLY):
+            channel = world.get(entity, REPLY, "channel")
+            text = world.get(entity, REPLY, "text")
             world.destroy(entity)
             self.to(channel, {"reply": {"channel": channel, "text": text}})
         for name, error in self.loop.errors:
@@ -203,9 +204,9 @@ class Engine:
                                     % (name, type(error).__name__, error)}})
         self.loop.errors.clear()
         if unheard:
-            for entity, _ in world.each(SAID):
-                channel = world.get(entity, "channel")
-                text = world.get(entity, "text")
+            for entity, in world.each(SAID):
+                channel = world.get(entity, SAID, "channel")
+                text = world.get(entity, SAID, "text")
                 world.destroy(entity)
                 self.to(channel, {"unheard": {"text": text}})
 

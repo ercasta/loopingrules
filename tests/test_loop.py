@@ -2,8 +2,8 @@
 -- called once a tick, writing to the world directly, with nothing in
 between the write and the next rule seeing it.
 
-Under the attribute substrate (D8) a former component with a field is a
-plain ATTRIBUTE (`step` holds the number) and a fieldless tag is a FLAG
+Under the component substrate (ADR-10) a former component with a field is a
+COMPONENT with a field (`step{value}`) and a fieldless tag is a TAG
 (`ping`, `pong`, `seen`).
 """
 
@@ -21,7 +21,7 @@ def loop():
 
 def _spawn_step(world, n):
     entity = world.spawn()
-    world.set(entity, "step", n)
+    world.set(entity, "step", "value", n)
     return entity
 
 
@@ -49,7 +49,7 @@ def test_a_rule_is_named_for_its_module_and_function(loop):
 def test_a_rule_fires_by_changing_something(loop):
     @loop.rule
     def marks(w):
-        for e, _ in w.each("step"):
+        for e, _v in w.each("step", "value"):
             w.mark(e, "seen")            # news once, and then never again
 
     _spawn_step(loop.world, 0)
@@ -60,7 +60,7 @@ def test_a_rule_fires_by_changing_something(loop):
 def test_a_rule_that_writes_nothing_does_not_fire(loop):
     @loop.rule
     def idle(w):
-        for entity, step in w.each("step"):
+        for entity, step in w.each("step", "value"):
             pass   # reads, writes nothing
 
     _spawn_step(loop.world, 0)
@@ -70,7 +70,7 @@ def test_a_rule_that_writes_nothing_does_not_fire(loop):
 def test_run_settles_when_a_whole_pass_changes_nothing(loop):
     @loop.rule
     def chain(w):
-        for entity, step in w.each("step"):
+        for entity, step in w.each("step", "value"):
             w.destroy(entity)
             if step < 3:
                 _spawn_step(w, step + 1)
@@ -83,16 +83,15 @@ def test_run_settles_when_a_whole_pass_changes_nothing(loop):
 
 
 def test_a_spawn_is_a_real_entity_usable_the_same_call(loop):
-    """`w.spawn()` hands back the real entity, not a placeholder -- usable
-    immediately, in the rest of the SAME rule."""
+    """`w.spawn()` hands back the real entity, not a placeholder."""
     @loop.rule
     def make_and_mark(w):
         made = w.spawn()
-        w.set(made, "step", 1)
+        w.set(made, "step", "value", 1)
         w.mark(made, "seen")
 
     loop.tick()
-    entity, step = loop.world.each("step")[0]
+    entity, step = loop.world.each("step", "value")[0]
     assert step == 1
     assert loop.world.has(entity, "seen")
 
@@ -101,15 +100,14 @@ def test_a_freshly_spawned_entity_s_id_is_usable_as_a_reference(loop):
     @loop.rule
     def make(w):
         made = w.spawn()
-        w.set(made, "step", 1)
+        w.set(made, "step", "value", 1)
         holder = w.spawn()
-        w.set(holder, "ref", made)
+        w.set(holder, "ref", "target", made)
 
     loop.tick()
     w = loop.world
-    target = w.each("step")[0][0]
-    holder = w.each("ref")[0]
-    # A reference is stored as a plain id, not a live handle.
+    target = w.each("step", "value")[0][0]
+    holder = w.each("ref", "target")[0]
     assert holder[1] == target.id
     assert w.entity(holder[1]) == target
 
@@ -117,14 +115,14 @@ def test_a_freshly_spawned_entity_s_id_is_usable_as_a_reference(loop):
 def test_two_rules_feeding_each_other_stop_at_the_budget_and_are_named(loop):
     @loop.rule
     def ping(w):
-        for entity, _ in w.each("pong"):
+        for entity, in w.each("pong"):
             w.destroy(entity)
             e = w.spawn()
             w.mark(e, "ping")
 
     @loop.rule
     def pong(w):
-        for entity, _ in w.each("ping"):
+        for entity, in w.each("ping"):
             w.destroy(entity)
             e = w.spawn()
             w.mark(e, "pong")
@@ -143,7 +141,7 @@ def test_a_rule_that_raises_is_recorded_and_the_others_still_run(loop):
 
     @loop.rule
     def carries_on(w):
-        for e, _ in w.each("step"):
+        for e, _v in w.each("step", "value"):
             w.mark(e, "seen")
 
     _spawn_step(loop.world, 0)
@@ -156,23 +154,20 @@ def test_a_rule_that_raises_is_recorded_and_the_others_still_run(loop):
 def test_install_hands_the_loop_to_a_domain(loop):
     def domain(lp, greeting="hi"):
         e = lp.world.spawn()
-        lp.world.set(e, "step", greeting)
+        lp.world.set(e, "step", "value", greeting)
         lp.rule(lambda w: None, name="noop")
 
     loop.install(domain, greeting="hello")
-    assert loop.world.the("step") == "hello"
+    assert loop.world.the("step", "value") == "hello"
     assert [name for name, _ in loop.rules] == ["noop"]
 
 
 def test_a_rule_gated_by_its_own_reads_is_not_even_called_while_dormant(loop):
-    """No `watches=` to declare any more -- `analyze()` derives a rule's
-    reads from its own body (here, `w.each("step")`) and `Loop.rule` uses
-    them as the gate itself."""
     calls = []
 
     @loop.rule
     def counts_calls(w):
-        for _entity, _step in w.each("step"):
+        for _entity, _step in w.each("step", "value"):
             pass
         calls.append(None)
 
@@ -192,9 +187,9 @@ def test_a_rule_reading_several_names_wakes_on_any_one_of_them(loop):
 
     @loop.rule
     def either(w):
-        for _entity, _step in w.each("step"):
+        for _entity, _step in w.each("step", "value"):
             pass
-        for _entity, _ping in w.each("ping"):
+        for _entity, in w.each("ping"):
             pass
         seen.append("either")
 
@@ -326,12 +321,12 @@ def test_after_tick_runs_between_ticks_not_at_the_end(loop):
 
     @loop.rule
     def countdown(w):
-        for entity, step in w.each("step"):
+        for entity, step in w.each("step", "value"):
             w.destroy(entity)
             if step > 0:
                 _spawn_step(w, step - 1)
 
     _spawn_step(loop.world, 3)
     loop.run(after_tick=lambda: seen.append(
-        [s for _, s in loop.world.each("step")]))
+        [s for _, s in loop.world.each("step", "value")]))
     assert seen == [[2], [1], [0], []]

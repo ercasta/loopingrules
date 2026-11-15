@@ -143,8 +143,8 @@ def test_say_spawns_said_under_the_poster_s_own_channel_name(engine):
 def test_a_reply_addressed_to_user_is_seen_by_the_asker_too(loop):
     @loop.rule
     def echo(w):
-        for entity, _ in w.each("said"):
-            text = w.get(entity, "text")
+        for entity, in w.each("said"):
+            text = w.get(entity, "said", "text")
             w.destroy(entity)
             reply(w, "user", "echo: %s" % text)
 
@@ -170,8 +170,8 @@ def test_get_returns_the_world_only_to_the_asker(loop):
 def test_stop_posted_through_the_queue_does_not_strand_a_say_before_it(loop):
     @loop.rule
     def echo(w):
-        for entity, _ in w.each("said"):
-            text = w.get(entity, "text")
+        for entity, in w.each("said"):
+            text = w.get(entity, "said", "text")
             w.destroy(entity)
             reply(w, "user", "got: %s" % text)
 
@@ -246,7 +246,7 @@ def test_an_unknown_command_says_so_to_the_one_who_typed_it(engine):
 def test_settle_reports_a_runaway_pair_and_their_names(loop):
     @loop.rule
     def ping(w):
-        for e, _ in w.each("ping"):
+        for e, in w.each("ping"):
             w.unmark(e, "ping")
 
     _mark(loop.world, "ping")
