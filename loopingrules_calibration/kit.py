@@ -51,16 +51,18 @@ import itertools
 
 from loopingrules.engine import said
 from loopingrules.loop import Loop
+from loopingrules.schema import parse_slot, slot_str
 
 
 @dataclasses.dataclass(frozen=True)
 class Knob:
-    """One tunable attribute a rule reads.
+    """One tunable field a rule reads.
 
-    `name` is the attribute NAME (e.g. `"max_level"`), `low`/`high` the
-    inclusive bounds, `steps` how many values to try across them. `integer`
-    rounds the grid to whole numbers. The value lives on whichever singleton
-    entity carries `name`; `read_knobs`/`write_knobs` find it by name and
+    `name` is the SLOT -- `"tolerance.max_level"` (component `tolerance`, field
+    `max_level`); a bare `"done"` would name a component-level slot. `low`/
+    `high` the inclusive bounds, `steps` how many values to try across them.
+    `integer` rounds the grid to whole numbers. The value lives on whichever
+    singleton entity carries the slot; `read_knobs`/`write_knobs` find it and
     refuse to guess when nothing carries it.
 
     `scope` declares whether the knob may be moved ONLINE by a runtime
@@ -130,16 +132,18 @@ class Best:
 
 
 def _snapshot(world, exclude):
-    """A canonical, order-stable view of the world's attributes, EXCLUDING
-    the names in `exclude` (the knobs). Uses `repr` of each value, so it is
-    deterministic; unlike `save.dump` it keeps transient names."""
+    """A canonical, order-stable view of the world's components, EXCLUDING the
+    slots in `exclude` (the knobs). Uses `repr` of each value, so it is
+    deterministic; unlike `save.dump` it keeps transient components."""
     rows = []
     for entity in world.entities():
-        carried = tuple(sorted(
-            (name, repr(value))
-            for name, value in world.attributes(entity).items()
-            if name not in exclude))
-        rows.append((entity.id, carried))
+        carried = []
+        for component, bag in world.components(entity).items():
+            for field, value in bag.items():
+                name = slot_str((component, field))
+                if name not in exclude:
+                    carried.append((name, repr(value)))
+        rows.append((entity.id, tuple(sorted(carried))))
     return rows
 
 
@@ -149,30 +153,32 @@ def _signature(world, fired, exclude=frozenset()) -> str:
 
 
 def read_knobs(world, knobs) -> tuple:
-    """The current value of each knob's attribute, in `knobs` order. `None`
-    where nothing carries it -- reading tolerates absence even though
-    writing does not."""
+    """The current value of each knob's SLOT, in `knobs` order. `None` where
+    nothing carries it -- reading tolerates absence even though writing does
+    not."""
     out = []
     for knob in knobs:
-        row = world.first(knob.name)
-        out.append(None if row is None else world.get(row[0], knob.name))
+        component, field = parse_slot(knob.name)
+        row = world.first(component, field)
+        out.append(None if row is None else row[1])
     return tuple(out)
 
 
 def write_knobs(world, knobs, values) -> None:
-    """Set each knob's attribute to its paired value, on whichever entity
-    carries it. Refuses rather than guesses when nothing carries it: a tuner
-    that silently skipped a missing knob would search a surface that is not
-    the one the rules read. Raises `ValueError` naming the attribute."""
+    """Set each knob's SLOT to its paired value, on whichever entity carries
+    it. Refuses rather than guesses when nothing carries it: a tuner that
+    silently skipped a missing knob would search a surface that is not the one
+    the rules read. Raises `ValueError` naming the slot."""
     if len(knobs) != len(values):
         raise ValueError("%d knobs but %d values" % (len(knobs), len(values)))
     for knob, value in zip(knobs, values):
-        row = world.first(knob.name)
+        component, field = parse_slot(knob.name)
+        row = world.first(component, field)
         if row is None:
             raise ValueError(
                 "no entity carries %r -- cannot set %s"
                 % (knob.name, knob.name))
-        world.set(row[0], knob.name, value)
+        world.set(row[0], component, field, value)
 
 
 def replay(scenario, install, knobs=(), values=(), budget: int = 200,
@@ -200,7 +206,8 @@ def replay(scenario, install, knobs=(), values=(), budget: int = 200,
             observations.append(observe(loop.tick_count, world))
     else:
         hot = fired[-1] if fired else ()
-    replies = tuple(world.get(entity, "text") for entity, _ in world.each("reply"))
+    replies = tuple(world.get(entity, "reply", "text")
+                    for entity, in world.each("reply"))
     exclude = frozenset(knob.name for knob in knobs)
     return Trace(_signature(world, tuple(fired), exclude), tuple(fired),
                  len(fired), hot, replies, world, tuple(observations),
@@ -267,5 +274,5 @@ def reached(name):
     """A scorer: 1.0 if the settled world carries the attribute `name`
     anywhere."""
     def score(trace):
-        return 1.0 if trace.world.populated(name) else 0.0
+        return 1.0 if trace.world.populated(parse_slot(name)) else 0.0
     return score

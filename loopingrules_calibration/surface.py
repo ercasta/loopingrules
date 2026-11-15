@@ -30,7 +30,7 @@ _ATTR = "_loopingrules_knobs"
 def tunable(*declarations):
     """Declare the `Knob`(s) a rule is tunable over, ON the rule::
 
-        @tunable(Knob(RiskTolerance, "max_level", 0.0, 1.0, steps=5))
+        @tunable(Knob("tolerance.max_level", 0.0, 1.0, steps=5))
         def flag_too_risky(w): ...
 
     Stackable -- `@tunable(a)` above `@tunable(b)` gives `(b, a)`. The
