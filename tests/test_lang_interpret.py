@@ -12,9 +12,10 @@ PKG = Path(harness.__file__).resolve().parent
 CORE = PKG / "batteries" / "core.yaml"
 SCOPE = PKG / "batteries" / "scope.yaml"
 INTERPRET = PKG / "batteries" / "interpret.yaml"
+CLOCK = PKG / "batteries" / "clock.yaml"
 WHEN = PKG / "models" / "when.yaml"
 WHEN_CTX = PKG / "models" / "when.context.yaml"
-MODELS = [CORE, SCOPE, INTERPRET, WHEN]
+MODELS = [CORE, SCOPE, INTERPRET, CLOCK, WHEN]
 
 
 def _run(text, **policy):
@@ -61,8 +62,8 @@ def test_readings_project_confidence_onto_candidate():
 
 
 def test_cli_runs_the_when_model(capsys):
-    code = cli.main(["run", str(CORE), str(SCOPE), str(INTERPRET), str(WHEN),
-                     "-c", str(WHEN_CTX)])
+    code = cli.main(["run", str(CORE), str(SCOPE), str(INTERPRET), str(CLOCK),
+                     str(WHEN), "-c", str(WHEN_CTX)])
     out = capsys.readouterr().out
     assert code == 0
     assert "when.undetermined" in out

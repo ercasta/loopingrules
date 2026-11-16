@@ -19,6 +19,11 @@ operations:
     effect:
       - emit: {request: interpret_datetime, with: {text: {field: text}}}
 
+  - name: project_time
+    match: {component: reading, fields: [minutes], without: [moment]}
+    effect:
+      - set: {component: moment, field: minutes, value: {field: minutes}}
+
   - name: undetermined
     when: [{slot: tool_done, op: present}, {slot: chosen, op: absent}]
     match: {component: input, fields: [text]}

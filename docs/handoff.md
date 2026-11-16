@@ -13,11 +13,15 @@ ADR-1…ADR-13, `plan-ux.md`) and an **in-progress substrate clean break**
 
 - The **design pass** (ADR-10…13) and the **per-step probe** (`loopingrules_ux.s6`)
   landed first and were green (424). The **break** is mid-flight.
-- **Tests: 136 pass** — but *only across the PORTED core*. `loopingrules_calibration`
-  (except `kit`/`surface`), `loopingrules_patterns`, `loopingrules_islands`,
-  `loopingrules_ux`, the five kept examples, and their tests are **unported and
-  red**. This is a **staged clean break, committed per layer**, the way Phase S
-  was — the full suite returns to green only at the end.
+- **Tests: 237 pass** — but *only across the PORTED core* (136 at the break's
+  start; the rest are the new `loopingrules_lang` and spike tests).
+  `loopingrules_calibration` (except `kit`/`surface`), `loopingrules_patterns`,
+  `loopingrules_islands`, `loopingrules_ux`, the five kept examples, and their tests
+  are **unported and red**. This is a **staged clean break, committed per layer**,
+  the way Phase S was — the full suite returns to green only at the end.
+- **The direction also resumed from the other end**: a usable system
+  (`loopingrules_lang`, §5b) was built on the ported core only, so it does not wait
+  for the break.
 - The break was done on the branch `components-substrate` and **fast-forwarded
   into `plan-u`**, which is pushed. There is no separate open branch.
 
@@ -84,26 +88,71 @@ The other **eleven examples and ten test files were dropped** — the tuning/dat
 `hierarchy`, `planning`, `trade`); they existed to test a research program Plan U
 supersedes. `examples/__init__.py` names the five and why.
 
+## 5b. The usable system: `loopingrules_lang` (built on the ported core)
+
+Since the break stalled mid-flight, the direction resumed **from the other end**: a
+minimal, usable system built **on top of the ported core only** (`world`/`loop`/
+`analyze`/`schema` + the calibration kit), shipping no dependency on the red
+layers. This is where the *"assess real usefulness"* interest is pursued.
+
+- **The surface** (`docs/language.md`): YAML **components**, YAML **operations**
+  (rendered to Python — ADR-7's staged execution), a **context** (the anchor), and
+  a `lr` CLI (`lr run <model> … -c <context>`). Several models **compose on one
+  loop** (schemas unioned, operation names model-qualified).
+- **The tool seam** (ADR-11 §3): `emit` writes a capability's **own** request
+  component (`<capability>_request`, named args, schema-checked); the harness
+  answers it **between ticks** and reifies the result into the world. Tools:
+  `read_table` (generic CSV with a declared return schema), `train_timetable`,
+  `interpret_datetime`, `echo`.
+- **Batteries** (`docs/batteries.md`): shipped `core`, `scope` (cap **and** floor),
+  `rank`, `interpret` (competing readings, tie ⇒ abstain), `clock`
+  (`moment`/`window`), `table_io`. Five models compose into real pipelines
+  (text → readings → moment → window; CSV → rows → project → scope → rank).
+- **Tests**: `tests/test_lang*.py` (`loopingrules_lang`); the substrate fix to
+  `World.each`'s `without=` is pinned in `tests/test_world.py`.
+
+## 5c. Two probes and two design notes (this iteration)
+
+- `loopingrules_linda` (spike) + `docs/patterns-oblivious-composition.md` — a
+  minimal Linda tuple space and an **A/B** on keyed-vs-positional matching (M1–M4),
+  plus the pattern catalog for **oblivious composition** (a vocabulary-only hub,
+  keyed reads, per-interface amortization; the tool seam is one of its patterns).
+- `loopingrules_ux.t1` (spike) + `docs/plan-scale-probe.md` — **coverage** (axis B):
+  a fixed model set covers held-out *combinations* with no per-case code, gaps an
+  unknown concept, and buys several use cases per added rule. `t1` is the mechanism
+  slice; the four baselines are not built.
+
 ## 6. Next (recommended, not started)
 
-1. **Finish the port** — stage **5b** (`checks` first: the shared objective),
-   **5c** (`patterns`), **6** (the five examples), **6b** (`r0`), **6c** (tests).
-   Then `plan-u` is green on the component substrate again.
-2. **Then the design pass resumes**: **U0** (reconcile the prose — the guide is
-   now *doubly* stale: it says entity-component, and components came back as
-   bags); apply the supersessions in §4; build the **island library** (U3).
+Two tracks, now:
 
-The natural first increment after the port is **`checks`** — the load-bearing
-piece ADR-4 calls the frozen-judge tower's mechanical base.
+1. **Grow the usable system** (`loopingrules_lang`): the evaluation quartet's
+   `threshold` + `feasibility`, then `graph` + `sequence`, then `memory` + `focus`,
+   then `table`'s algebra (`group_by`/`join`/`order_by`). An `lr session` (load
+   once, re-run contexts) for UX. `docs/batteries.md` has the order and the bar.
+2. **Finish the port** (still open, §2) — stage **5b** (`checks` first: the shared
+   objective), **5c** (`patterns`), **6** (the five examples), **6b** (`r0`),
+   **6c** (tests) — so the red packages return. **The usable system does not depend
+   on this**, so it can proceed in parallel.
+3. **Then the design pass resumes**: **U0** (reconcile the prose — now *triply*
+   stale: entity-component, components-as-bags, and the new YAML surface); apply
+   §4's supersessions; build the **island library** (U3).
 
 ## 7. Known red / stale (named, not hidden)
 
 - **The port's unported layers are red** (§1) — packages, examples, their tests.
+  **`loopingrules_lang` does not touch them** — it imports only the ported core.
 - **The forge is red** (6 collection errors) and **reframed** by ADR-7; deferred.
-- **The guide is stale by design**, now doubly: `concepts.md`, `architecture.md`,
+- **The guide is stale by design**, now *triply*: `concepts.md`, `architecture.md`,
   `analysis.md`, `index.md`, `writing-rules.md`, `README.md` (root) and
-  `mkdocs.yml`'s `site_description` all describe a substrate the code no longer
-  is. This is **U0**.
+  `mkdocs.yml`'s `site_description` all describe a substrate the code no longer is.
+  This is **U0**. (The *new* docs — `language.md`, `batteries.md`,
+  `patterns-oblivious-composition.md`, `plan-scale-probe.md` — are current.)
+- **`loopingrules_lang` is current but unhardened.** Rendered operations are
+  closures, so `analyze` cannot read them (the compiler sets the gate instead), and
+  `reflect.identity` hashes *source*, so generated operations share a hash today.
+  `interpret`'s abstention uses a global "no `chosen`" check — correct for one
+  input, not for many. Named, not hidden.
 - **`TODO.md`** (root) and **`README.md`'s History** carry the pre-UX open
   threads; not reconciled.
 
@@ -113,6 +162,12 @@ piece ADR-4 calls the frozen-judge tower's mechanical base.
   questions.
 - `docs/decisions.md` — ADR-1…ADR-13; **ADR-10…13 are the correction pass**, and
   ADR-10 is the substrate this break performs.
+- **The usable system**: `docs/language.md` (the YAML surface + the tool seam),
+  `docs/batteries.md` (the library + the order), `loopingrules_lang/` (the code,
+  `models/` and `batteries/`).
+- **The design notes**: `docs/patterns-oblivious-composition.md` (hub/keyed reads,
+  plus `loopingrules_linda`), `docs/plan-scale-probe.md` (composition vs coverage,
+  plus `loopingrules_ux/t1`).
 - `loopingrules/schema.py`, `loopingrules/world.py` — the new substrate.
 - `loopingrules_ux/s6.py` — the per-step probe (`tests/test_ux_s6.py`).
 - `docs/archived-old/` — the design forest this direction grew out of.

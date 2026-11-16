@@ -121,11 +121,13 @@ def interpret_datetime(world, text) -> None:
     """The interpretation adapter: try each known format, and emit one **`reading`**
     per format that parses. Return schema::
 
-        reading{tool: str, text: str, format: str, value: str, confidence: number}
+        reading{tool: str, text: str, format: str, value: str, confidence: number,
+                minutes: int}
 
     ``value`` is a normalised ``YYYY-MM-DDTHH:MM`` (or ``HH:MM`` for a time-only
-    text); ``confidence`` is the format's own weight. No format parses => no
-    readings, which the caller reports as a gap."""
+    text); ``minutes`` is the time of day (minutes since midnight); ``confidence``
+    is the format's own weight. No format parses => no readings, which the caller
+    reports as a gap."""
     for fmt, name, confidence in _DATETIME_FORMATS:
         try:
             parsed = datetime.strptime(text, fmt)
@@ -137,6 +139,7 @@ def interpret_datetime(world, text) -> None:
         world.set(entity, "reading", "format", name)
         world.set(entity, "reading", "value", _normalise(parsed, fmt))
         world.set(entity, "reading", "confidence", confidence)
+        world.set(entity, "reading", "minutes", parsed.hour * 60 + parsed.minute)
 
 
 TOOLS = {"train_timetable": train_timetable, "read_table": read_table,

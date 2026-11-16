@@ -1,0 +1,27 @@
+# clock -- time as world data: a `moment{minutes}` (a time of day, minutes since
+# midnight), and the role `window` for a moment inside a policy window.
+#
+# Thin interface: reads `moment.minutes` and `policy.after`/`policy.before`; writes
+# the `window` role. It works for ANY time source -- a parsed reading, a timetable
+# departure, a wall clock the context supplies -- so it composes with `interpret`
+# (text -> readings -> minutes -> moment) and with `rank` (project `minutes` onto a
+# `candidate` to pick the earliest or latest).
+model: clock
+
+components:
+  moment: {minutes: singular}
+  window: {}
+
+operations:
+  - name: clock_window
+    when: [{slot: policy.after, op: present},
+           {slot: policy.before, op: present}]
+    match: {component: moment, fields: [minutes]}
+    effect:
+      - when: [{field: minutes, op: ge, value: {slot: policy.after}},
+               {field: minutes, op: le, value: {slot: policy.before}}]
+        mark: window
+      - when: [{field: minutes, op: lt, value: {slot: policy.after}}]
+        unmark: window
+      - when: [{field: minutes, op: gt, value: {slot: policy.before}}]
+        unmark: window

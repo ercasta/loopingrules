@@ -1,0 +1,5 @@
+# A determinate text -> one reading -> a moment (540 = 09:00) -> inside the window
+# [480, 540]. Composes five models: core, scope, interpret, clock, when.
+entities:
+  - input: {text: "2026-04-03 09:00"}
+  - policy: {after: 480, before: 540}

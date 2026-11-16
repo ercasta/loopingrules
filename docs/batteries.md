@@ -24,8 +24,8 @@ neutral shapes, and *that* is what keeps the library small:
 | `candidate{worth, label}` | a proposable thing (card, listing, departure, plan option) |
 | `metric{value}` | a projected scalar |
 | `constraint{kind, limit}` + `verdict{ok, reason}` | a business check |
-| `policy{order, limit}` | the knobs (values fitted by search, ADR-2) |
-| roles (tags): `chosen`, `excluded`, `selected` | what a battery confers |
+| `policy{order, limit, floor, after, before}` | the knobs (values fitted by search, ADR-2) |
+| roles (tags): `chosen`, `excluded`, `selected`, `window` | what a battery confers |
 | `request{capability, args}` | the tool seam (built) |
 
 ## The catalog
@@ -77,7 +77,7 @@ neutral shapes, and *that* is what keeps the library small:
 |---|---|---|---|---|
 | `table_io` (`read_table`) | `request{read_table, path, relation, columns}` → row entities | bring a table in | ★★★ | **shipped** |
 | `adapters` | `<capability>_request{...}` → world entities | reach files/CSV/dates/HTTP | ★★★ | `read_table`/`train_timetable`/`interpret_datetime`/`echo` |
-| `clock` | time as world data → minutes/dates/timers | deadlines, "before 9am" | ★★★ | planned (tiny) |
+| `clock` | `moment{minutes}` + `policy.after`/`before` → `window` | is a time in a window ("before 9am") | ★★★ | **shipped** (`clock.yaml`) |
 | `doubt` | nothing covered → `Doubt` | novelty / training signal | ★★ | the scheduler's `Doubt` |
 | `controls` | `RuleControl` → enable/disable/reorder | runtime steering | ★ | shipped (`reflect`) |
 
@@ -110,10 +110,16 @@ refused at load.
 ## The core to ship first, and the order
 
 **Shipped:** `core` (the shared vocabulary), `scope` (cap **and** floor), `rank`,
-`interpret` (competing readings, tie ⇒ abstain), `table_io`.
+`interpret` (competing readings, tie ⇒ abstain), `clock` (`moment`/`window`),
+`table_io`.
+
+Composition works today -- five models on one loop, no per-use-case code:
+`interpret_datetime("2026-04-03 09:00")` → a `reading` → `interpret` projects a
+`candidate` and selects it → `when` projects `reading.minutes` onto a `moment` →
+`clock` marks it `window` (08:00–09:00). See `models/when*.yaml`.
 
 **Next, in order:** `threshold` + `feasibility` (finish the evaluation quartet) →
-`clock` → `graph` + `sequence` → `memory` + `focus` → `table`'s algebra
+`graph` + `sequence` → `memory` + `focus` → `table`'s algebra
 (`group_by`/`join`/`order_by`) → `search`/`planning` → the language edge.
 
 `planning` is **not** a monolith: it is `search` + `rank` + `feasibility` + `graph`,

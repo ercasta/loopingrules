@@ -12,7 +12,7 @@ model: interpret
 
 components:
   reading: {tool: singular, text: singular, format: singular,
-            value: singular, confidence: singular}
+            value: singular, confidence: singular, minutes: singular}
 
 operations:
   - name: project
