@@ -1,0 +1,6 @@
+# A use case for the trip model. `timetable` is read by the `train_timetable`
+# tool (tools.py); `before: 480` means 08:00, so the 23:00 night train is out.
+# Path is relative to where you run `lr` (the repo root).
+entities:
+  - do: {what: cheapest, before: 480,
+         timetable: loopingrules_lang/models/timetable.csv}

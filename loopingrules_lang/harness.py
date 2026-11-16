@@ -54,7 +54,11 @@ class Run:
     def chosen(self) -> set:
         """The `candidate.name`s carrying `chosen` -- the answer, when a model uses
         that vocabulary."""
-        return {self.world.get(entity, "candidate", "name")
+        return self.chosen_of("candidate", "name")
+
+    def chosen_of(self, component, field) -> set:
+        """Every `component.field` among the entities carrying `chosen`."""
+        return {self.world.get(entity, component, field)
                 for entity, in self.world.each("chosen")}
 
     def gaps(self) -> list:
@@ -72,6 +76,9 @@ def parse(doc, *, name=None) -> Model:
     name = name or doc.get("model") or "model"
     schema = _components.parse(doc.get("components") or {})
     operations = tuple(_operations.parse(doc.get("operations") or ()))
+    for operation in operations:
+        for component in sorted(operation.used):
+            schema.component(component)      # raises Gap -- refuse rather than guess
     return Model(name=name, schema=schema, operations=operations)
 
 
@@ -79,13 +86,39 @@ def install(loop, model) -> None:
     """Register a model's operations on a loop, model-qualifying their names."""
     for operation in model.operations:
         loop.rule(operation.fn, name="%s.%s" % (model.name, operation.name))
-        # The compiler knows what each operation reads, so the gate the engine
-        # would derive from source (which it cannot, for a closure) is set here.
-        if operation.gate is not None:
-            operation.fn._loopingrules_watches = (operation.gate,)
+        # The compiler knows which components should wake the operation, so the
+        # gate the engine would derive from source (which it cannot, for a
+        # closure) is set here.
+        if operation.gate:
+            operation.fn._loopingrules_watches = operation.gate
 
 
-def run(model, context_doc, *, budget: int = 200) -> Run:
+def _answer(world, tools) -> int:
+    """The tool seam (ADR-11 §3): between ticks, answer every unanswered
+    `tool_request` by calling its tool and marking the outcome. Returns how many
+    were answered, so the loop knows a tool may have written new entities and it
+    should keep ticking."""
+    answered = 0
+    for entity, name in world.each("tool_request", "name",
+                                   without=("tool_answered", "tool_failed")):
+        tool = tools.get(name)
+        if tool is None:
+            world.set(entity, "tool_failed", "reason", "no tool named %r" % name)
+            answered += 1
+            continue
+        args = world.get(entity, "tool_request", "args") or []
+        try:
+            tool(world, *args)
+            world.mark(entity, "tool_answered")
+        except Exception as exc:  # noqa: BLE001 -- a tool's failure is world data
+            world.set(entity, "tool_failed", "reason",
+                      "%s: %s" % (type(exc).__name__, exc))
+        answered += 1
+    return answered
+
+
+def run(model, context_doc, *, budget: int = 200, tools=None) -> Run:
+    tools = tools or {}
     loop = Loop(budget=budget)
     install(loop, model)
     seeded = _context.seed(loop.world, context_doc)
@@ -93,16 +126,18 @@ def run(model, context_doc, *, budget: int = 200) -> Run:
     hot = ()
     for _ in range(budget):
         step = loop.tick()
-        if not step:
+        answered = _answer(loop.world, tools)
+        if step:
+            applied.append(tuple(step))
+        if not step and not answered:
             break
-        applied.append(tuple(step))
     else:
         hot = applied[-1] if applied else ()
     return Run(model=model, world=loop.world, applied=tuple(applied), hot=hot,
                seeded=tuple(seeded))
 
 
-def run_files(model_path, context_path, *, budget: int = 200) -> Run:
+def run_files(model_path, context_path, *, budget: int = 200, tools=None) -> Run:
     return run(load(model_path),
                yaml.safe_load(Path(context_path).read_text(encoding="utf-8")),
-               budget=budget)
+               budget=budget, tools=tools)

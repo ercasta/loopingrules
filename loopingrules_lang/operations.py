@@ -20,10 +20,12 @@ present/absent/eq/ne/gt/ge/lt/le. ``field:`` names a field of the current match;
 ``{field: n}``, ``{slot: c.f}``, or ``{sub|add|mul|div: [value, value]}``.
 
 Effects: ``set``/``unmark``/``mark``/``add``/``remove``/``spawn``/``destroy``/
-``clear``, each with an optional ``target:`` (``match`` -- the default,
+``clear``/``emit``, each with an optional ``target:`` (``match`` -- the default,
 ``winner``, ``losers``, or ``{component: c}`` for the oldest entity carrying it)
 and an optional per-target ``when:``. (``target:``, not ``on:`` -- YAML 1.1
-resolves a bare ``on`` key to boolean ``True``.)
+resolves a bare ``on`` key to boolean ``True``.) ``emit: {request: <capability>,
+args: [...]}`` deposits a ``tool_request`` the harness answers between ticks
+(ADR-11 §3).
 
 Rendered operations are **closures**: ``analyze`` cannot read their source (the
 calls use bound variables), so ``Loop.rule`` gets ``Opaque`` and would run them
@@ -39,9 +41,10 @@ import collections
 
 from loopingrules import schema
 
-Operation = collections.namedtuple("Operation", "name fn gate")
+Operation = collections.namedtuple("Operation", "name fn gate used")
 
-_VERBS = ("set", "mark", "unmark", "add", "remove", "spawn", "destroy", "clear")
+_VERBS = ("set", "mark", "unmark", "add", "remove", "spawn", "destroy", "clear",
+          "emit")
 _ARITH = (("sub", lambda a, b: a - b), ("add", lambda a, b: a + b),
           ("mul", lambda a, b: a * b), ("div", lambda a, b: a / b))
 
@@ -211,6 +214,14 @@ def _apply_effect(w, matches, winner, effect):
         component = payload if isinstance(payload, str) else payload["component"]
         w.mark(w.spawn(), component)
         return
+    if verb == "emit":
+        requested = payload["request"]
+        for row, entity in _targets(w, matches, winner, payload):
+            args = [_value(w, row, arg) for arg in (payload.get("args") or ())]
+            w.set(entity, "tool_request", "name", requested)
+            w.set(entity, "tool_request", "args",
+                  [None if arg is _MISSING else arg for arg in args])
+        return
     for row, entity in _targets(w, matches, winner, payload):
         if "when" in effect and not _all_true(w, row, effect["when"]):
             continue
@@ -218,6 +229,33 @@ def _apply_effect(w, matches, winner, effect):
             w.destroy(entity)
         else:
             _do(w, verb, payload, entity, row)
+
+
+# -- what an operation names (for a declared-schema check) ------------------
+
+def _used_components(node):
+    """Every component name an operation mentions -- so an undeclared one is a
+    `loopingrules.schema.Gap` at load time, not a silent no-op at run time."""
+    found = set()
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "component" and isinstance(value, str):
+                found.add(value)
+            elif key == "slot" and isinstance(value, str):
+                found.add(schema.parse_slot(value)[0])
+            elif key == "without":
+                found.update(v for v in (value or ()) if isinstance(v, str))
+            elif key in ("mark", "unmark", "clear", "spawn") and isinstance(value, str):
+                found.add(value)
+            elif key == "emit":
+                found.add("tool_request")
+                found |= _used_components(value)
+            else:
+                found |= _used_components(value)
+    elif isinstance(node, (list, tuple)):
+        for item in node:
+            found |= _used_components(item)
+    return found
 
 
 # -- the compiler -----------------------------------------------------------
@@ -243,5 +281,21 @@ def compile_operation(spec):
 
     operation.__name__ = name
     operation.__qualname__ = name
-    gate = match["component"] if match else None
-    return Operation(name=name, fn=operation, gate=gate)
+    return Operation(name=name, fn=operation, gate=_gate_components(spec),
+                     used=frozenset(_used_components(spec)))
+
+
+def _gate_components(spec) -> tuple:
+    """The components whose presence should wake the operation: the op-level
+    `when` slots AND the match component. Gating on `match.component` alone would
+    put a choose operation to sleep until its subject exists, so it could not mark
+    its directive resolved before a tool had loaded the subject."""
+    names = set()
+    for cond in spec.get("when") or ():
+        slot = cond.get("slot")
+        if isinstance(slot, str):
+            names.add(schema.parse_slot(slot)[0])
+    match = spec.get("match")
+    if match:
+        names.add(match["component"])
+    return tuple(sorted(names))

@@ -1,0 +1,56 @@
+# A second model: it READS a timetable through the tool seam, then chooses a
+# departure. `load_timetable` deposits a `tool_request`; the harness answers it
+# between ticks, spawning `departure` entities (tools.py); the choose/scope
+# operations then work over them -- no operation names a use case.
+model: trip
+
+components:
+  do: {what: singular, before: singular, timetable: singular}
+  departure: {train: singular, from: singular, to: singular,
+              depart: singular, arrive: singular, fare: singular}
+  tool_request: {name: singular, args: sequence}
+  tool_answered: {}
+  tool_failed: {reason: singular}
+  excluded: {}
+  chosen: {}
+  resolved: {}
+  unresolved: {name: singular}
+
+operations:
+  # the tool seam: ask once (guarded by the absence of a request), then a gap if
+  # the tool is unknown.
+  - name: load_timetable
+    when: [{slot: do.timetable, op: present}]
+    match: {component: do, fields: [timetable], without: [tool_request]}
+    effect:
+      - emit: {request: train_timetable, args: [{field: timetable}]}
+
+  - name: scope_before
+    when: [{slot: do.before, op: present}]
+    match: {component: departure, fields: [depart], without: [excluded]}
+    effect:
+      - when: [{field: depart, op: gt, value: {slot: do.before}}]
+        mark: excluded
+
+  - name: choose_cheapest
+    when: [{slot: do.what, op: eq, value: cheapest}]
+    match: {component: departure, fields: [fare], without: [excluded]}
+    reduce: {op: argmin, field: fare}
+    effect:
+      - clear: {component: chosen, target: losers}
+      - mark: {component: chosen, target: winner}
+      - mark: {component: resolved, target: {component: do}}
+
+  - name: choose_earliest
+    when: [{slot: do.what, op: eq, value: earliest}]
+    match: {component: departure, fields: [depart], without: [excluded]}
+    reduce: {op: argmin, field: depart}
+    effect:
+      - clear: {component: chosen, target: losers}
+      - mark: {component: chosen, target: winner}
+      - mark: {component: resolved, target: {component: do}}
+
+  - name: unresolved
+    match: {component: do, fields: [what], without: [resolved]}
+    effect:
+      - set: {component: unresolved, field: name, value: {field: what}}

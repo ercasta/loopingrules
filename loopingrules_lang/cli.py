@@ -12,7 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 
-from . import harness
+from . import harness, tools
 
 
 def _as_json(run) -> dict:
@@ -48,7 +48,8 @@ def _print_run(run) -> None:
 
 
 def _run(args) -> int:
-    run = harness.run_files(args.model, args.context, budget=args.budget)
+    run = harness.run_files(args.model, args.context, budget=args.budget,
+                            tools=tools.TOOLS)
     if args.json:
         print(json.dumps(_as_json(run), indent=2, default=str))
     else:
