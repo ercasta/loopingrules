@@ -1,0 +1,10 @@
+# A use case composing four models on one loop:
+#   lr run batteries/core.yaml batteries/scope.yaml batteries/rank.yaml \
+#          models/table.yaml -c models/table.context.yaml
+# The CSV is read by `read_table`, projected onto `candidate`, scoped by
+# `policy.limit` (50: the 90 and 60 fares are out), and ranked `min` by fare.
+entities:
+  - do: {source: loopingrules_lang/models/timetable.csv,
+         relation: departure,
+         columns: "train:str,from:str,to:str,depart:minutes,arrive:minutes,fare:float"}
+  - policy: {order: min, limit: 50}

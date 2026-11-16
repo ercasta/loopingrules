@@ -218,9 +218,15 @@ def _apply_effect(w, matches, winner, effect):
         requested = payload["request"]
         for row, entity in _targets(w, matches, winner, payload):
             args = [_value(w, row, arg) for arg in (payload.get("args") or ())]
+            args = [None if arg is _MISSING else arg for arg in args]
+            for arg in args:
+                if isinstance(arg, (list, tuple)):
+                    raise ValueError(
+                        "emit: argument %r is a list; the substrate stores flat "
+                        "values only -- pass a joined string (e.g. a comma-"
+                        "separated schema)" % (arg,))
             w.set(entity, "tool_request", "name", requested)
-            w.set(entity, "tool_request", "args",
-                  [None if arg is _MISSING else arg for arg in args])
+            w.set(entity, "tool_request", "args", args)
         return
     for row, entity in _targets(w, matches, winner, payload):
         if "when" in effect and not _all_true(w, row, effect["when"]):

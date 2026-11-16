@@ -1,10 +1,10 @@
-"""The `lr` command line: run a model against a context.
+"""The `lr` command line: run one or more models against a context.
 
-The smallest usable surface: load a model (YAML components + operations), seed a
-context (the anchor), run the loop to a fixpoint, and report what happened --
-the **applications** (which operation fired, per tick), the settled world, and any
-**gaps**. `--json` is for scripting; a `session` subcommand (load once, re-run many
-contexts) is the next step.
+Load the models (YAML components + operations), seed a context (the anchor), run
+the loop to a fixpoint, and report what happened -- the **applications** (which
+operation fired, per tick), the settled world, and any **gaps**. Models compose:
+``lr run core.yaml scope.yaml rank.yaml -c ctx.yaml`` installs all three on one
+loop, their schemas unioned. ``--json`` is for scripting.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from . import harness, tools
 def _as_json(run) -> dict:
     world = run.world
     return {
-        "model": run.model.name,
+        "models": [model.name for model in run.models],
         "ticks": run.ticks,
         "settled": run.settled,
         "applied": [list(tick) for tick in run.applied],
@@ -35,7 +35,7 @@ def _as_json(run) -> dict:
 def _print_run(run) -> None:
     world = run.world
     print("%s: %s in %d tick%s"
-          % (run.model.name, "settled" if run.settled else "HOT", run.ticks,
+          % (run.label, "settled" if run.settled else "HOT", run.ticks,
              "" if run.ticks == 1 else "s"))
     print("applied:")
     for index, tick in enumerate(run.applied, 1):
@@ -48,7 +48,7 @@ def _print_run(run) -> None:
 
 
 def _run(args) -> int:
-    run = harness.run_files(args.model, args.context, budget=args.budget,
+    run = harness.run_files(args.models, args.context, budget=args.budget,
                             tools=tools.TOOLS)
     if args.json:
         print(json.dumps(_as_json(run), indent=2, default=str))
@@ -60,9 +60,11 @@ def _run(args) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="lr", description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
-    run_parser = sub.add_parser("run", help="run a model against a context")
-    run_parser.add_argument("model", help="a model YAML (components + operations)")
-    run_parser.add_argument("context", help="a context YAML (the anchor)")
+    run_parser = sub.add_parser("run", help="run models against a context")
+    run_parser.add_argument("models", nargs="+",
+                            help="one or more model YAMLs (components + operations)")
+    run_parser.add_argument("-c", "--context", required=True,
+                            help="a context YAML (the anchor)")
     run_parser.add_argument("--budget", type=int, default=200)
     run_parser.add_argument("--json", action="store_true")
     run_parser.set_defaults(func=_run)

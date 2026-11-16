@@ -81,7 +81,7 @@ def test_an_unknown_tool_is_world_data_not_a_crash():
 
 
 def test_cli_runs_the_trip_model(capsys):
-    code = cli.main(["run", str(TRIP), str(TRIP_CTX), "--json"])
+    code = cli.main(["run", str(TRIP), "-c", str(TRIP_CTX), "--json"])
     out = capsys.readouterr().out
     assert code == 0
     assert '"settled": true' in out

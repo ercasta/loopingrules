@@ -89,7 +89,7 @@ def test_context_seeds_tags_and_fields():
 
 
 def test_cli_run_prints_the_world_and_exits_zero(capsys):
-    code = cli.main(["run", str(MARKET), str(MARKET_CTX)])
+    code = cli.main(["run", str(MARKET), "-c", str(MARKET_CTX)])
     out = capsys.readouterr().out
     assert code == 0
     assert "goblin" in out

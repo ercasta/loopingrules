@@ -1,0 +1,28 @@
+# table -- a domain that READS a CSV through the generic `read_table` tool and
+# PROJECTS each row onto the shared `candidate` shape, so the `scope`/`rank`
+# batteries work over it unchanged. This is the D6 bridge: the domain owns the
+# projection, the batteries own the decision.
+model: table
+
+components:
+  do: {source: singular, relation: singular, columns: singular}
+  departure: {train: singular, from: singular, to: singular,
+              depart: singular, arrive: singular, fare: singular}
+  tool_request: {name: singular, args: sequence}
+  tool_answered: {}
+  tool_failed: {reason: singular}
+
+operations:
+  - name: load
+    when: [{slot: do.source, op: present}]
+    match: {component: do, fields: [source, relation, columns],
+            without: [tool_request]}
+    effect:
+      - emit: {request: read_table,
+               args: [{field: source}, {field: relation}, {field: columns}]}
+
+  - name: project
+    match: {component: departure, fields: [fare, train], without: [candidate]}
+    effect:
+      - set: {component: candidate, field: worth, value: {field: fare}}
+      - set: {component: candidate, field: label, value: {field: train}}

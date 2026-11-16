@@ -1,0 +1,23 @@
+# rank -- choose the best in-scope candidate by a policy order.
+#
+# Thin interface: reads `candidate.worth` and `policy.order` (`min`/`max`); writes
+# `chosen` (the winner) and clears it from the losers. `argmin`/`argmax` is the
+# one reducer; a domain that projects `candidate{worth}` gets both operations.
+model: rank
+
+operations:
+  - name: rank_min
+    when: [{slot: policy.order, op: eq, value: min}]
+    match: {component: candidate, fields: [worth], without: [excluded]}
+    reduce: {op: argmin, field: worth}
+    effect:
+      - clear: {component: chosen, target: losers}
+      - mark: {component: chosen, target: winner}
+
+  - name: rank_max
+    when: [{slot: policy.order, op: eq, value: max}]
+    match: {component: candidate, fields: [worth], without: [excluded]}
+    reduce: {op: argmax, field: worth}
+    effect:
+      - clear: {component: chosen, target: losers}
+      - mark: {component: chosen, target: winner}

@@ -1,17 +1,16 @@
-"""The harness: load a model (YAML), install it, seed a context, run to a fixpoint.
+"""The harness: load models (YAML), install them, seed a context, run to a fixpoint.
 
 A **model** is a name, a declared **schema** (`components.py`) and a set of
-**operations** (`operations.py`). A **context** (`context.py`) is the anchor. The
-harness ties them to the existing `Loop` and reports what happened -- the
-trajectory (which operations applied, per tick), the settled world, and any
-**gaps**.
+**operations** (`operations.py`). A **context** (`context.py`) is the anchor.
+Several models compose on ONE loop -- each operation's name is model-qualified, and
+their schemas are **unioned**, so a battery that reads `candidate` and a domain
+that declares it meet through the shared shape.
 
 ::
 
     from loopingrules_lang import harness
-    model = harness.load("market.yaml")
-    run = harness.run_files("market.yaml", "session.yaml")
-    print(run.settled, run.applied, run.chosen(), run.gaps())
+    run = harness.run_files(["core.yaml", "scope.yaml", "rank.yaml"], "ctx.yaml")
+    run.settled, run.applied, run.chosen_of("candidate", "label"), run.gaps()
 """
 
 from __future__ import annotations
@@ -21,6 +20,7 @@ from pathlib import Path
 
 import yaml
 
+from loopingrules import schema as _schema
 from loopingrules.loop import Loop
 
 from . import components as _components
@@ -37,7 +37,7 @@ class Model:
 
 @dataclasses.dataclass
 class Run:
-    model: Model
+    models: tuple
     world: object
     applied: tuple          # one tuple of applied operation names per tick
     hot: tuple              # the operations still firing when the budget ran out
@@ -51,15 +51,19 @@ class Run:
     def settled(self) -> bool:
         return not self.hot
 
-    def chosen(self) -> set:
-        """The `candidate.name`s carrying `chosen` -- the answer, when a model uses
-        that vocabulary."""
-        return self.chosen_of("candidate", "name")
+    @property
+    def label(self) -> str:
+        return ", ".join(model.name for model in self.models)
 
     def chosen_of(self, component, field) -> set:
         """Every `component.field` among the entities carrying `chosen`."""
         return {self.world.get(entity, component, field)
                 for entity, in self.world.each("chosen")}
+
+    def chosen(self) -> set:
+        """The `candidate.name`s carrying `chosen` -- the answer, when a model uses
+        that vocabulary."""
+        return self.chosen_of("candidate", "name")
 
     def gaps(self) -> list:
         """Every `unresolved.name` -- the terms with no definer."""
@@ -74,12 +78,30 @@ def load(path) -> Model:
 
 def parse(doc, *, name=None) -> Model:
     name = name or doc.get("model") or "model"
-    schema = _components.parse(doc.get("components") or {})
-    operations = tuple(_operations.parse(doc.get("operations") or ()))
-    for operation in operations:
-        for component in sorted(operation.used):
-            schema.component(component)      # raises Gap -- refuse rather than guess
-    return Model(name=name, schema=schema, operations=operations)
+    return Model(name=name,
+                 schema=_components.parse(doc.get("components") or {}),
+                 operations=tuple(_operations.parse(doc.get("operations") or ())))
+
+
+def combine(models) -> "_schema.Schema":
+    """The union of the models' schemas, and the DECLARED check: every component an
+    operation names must be declared by SOME model. Two models may declare the same
+    component only if identically (a shared shape)."""
+    combined = _schema.Schema()
+    for model in models:
+        for name, component in model.schema.components.items():
+            if name in combined.components:
+                if combined.components[name] != component:
+                    raise _schema.Gap(
+                        "component %r is declared differently by %r and another "
+                        "model" % (name, model.name))
+            else:
+                combined.components[name] = component
+    for model in models:
+        for operation in model.operations:
+            for component in sorted(operation.used):
+                combined.component(component)   # raises Gap -- refuse rather than guess
+    return combined
 
 
 def install(loop, model) -> None:
@@ -117,10 +139,15 @@ def _answer(world, tools) -> int:
     return answered
 
 
-def run(model, context_doc, *, budget: int = 200, tools=None) -> Run:
+def run(models, context_doc, *, budget: int = 200, tools=None) -> Run:
+    if isinstance(models, Model):
+        models = (models,)
+    models = tuple(models)
+    combine(models)                 # the declared check, before anything runs
     tools = tools or {}
     loop = Loop(budget=budget)
-    install(loop, model)
+    for model in models:
+        install(loop, model)
     seeded = _context.seed(loop.world, context_doc)
     applied = []
     hot = ()
@@ -133,11 +160,13 @@ def run(model, context_doc, *, budget: int = 200, tools=None) -> Run:
             break
     else:
         hot = applied[-1] if applied else ()
-    return Run(model=model, world=loop.world, applied=tuple(applied), hot=hot,
+    return Run(models=models, world=loop.world, applied=tuple(applied), hot=hot,
                seeded=tuple(seeded))
 
 
-def run_files(model_path, context_path, *, budget: int = 200, tools=None) -> Run:
-    return run(load(model_path),
+def run_files(model_paths, context_path, *, budget: int = 200, tools=None) -> Run:
+    if isinstance(model_paths, (str, Path)):
+        model_paths = [model_paths]
+    return run([load(path) for path in model_paths],
                yaml.safe_load(Path(context_path).read_text(encoding="utf-8")),
                budget=budget, tools=tools)

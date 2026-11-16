@@ -15,9 +15,16 @@ This page is the whole of what exists. Two worked models ship in
 ## Run it
 
 ```
-lr run loopingrules_lang/models/market.yaml  loopingrules_lang/models/market.context.yaml
-lr run loopingrules_lang/models/trip.yaml    loopingrules_lang/models/trip.context.yaml --json
-python -m loopingrules_lang run <model> <context>          # same thing, no install
+lr run loopingrules_lang/models/market.yaml -c loopingrules_lang/models/market.context.yaml
+lr run loopingrules_lang/models/trip.yaml   -c loopingrules_lang/models/trip.context.yaml --json
+
+# several models compose on ONE loop (schemas unioned, operation names qualified);
+# see docs/batteries.md:
+lr run loopingrules_lang/batteries/core.yaml loopingrules_lang/batteries/scope.yaml \
+       loopingrules_lang/batteries/rank.yaml loopingrules_lang/models/table.yaml \
+       -c loopingrules_lang/models/table.context.yaml
+
+python -m loopingrules_lang run <model> [<model> ...] -c <context>   # same, no install
 ```
 
 It prints the **applications** (which operation fired, per tick), the settled

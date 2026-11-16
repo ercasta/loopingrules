@@ -1,0 +1,12 @@
+# core -- the shared vocabulary the evaluation batteries project onto.
+#
+# A battery never names a domain. A domain declares `candidate{worth, label}` (the
+# thing to choose among); a context supplies `policy{order, limit}` (the knobs);
+# `chosen`/`excluded` are the roles the batteries confer. Components only.
+model: core
+
+components:
+  candidate: {worth: singular, label: singular}
+  policy: {order: singular, limit: singular}
+  chosen: {}
+  excluded: {}

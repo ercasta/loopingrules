@@ -55,4 +55,43 @@ def echo(world, *args) -> None:
               " ".join(str(arg) for arg in args))
 
 
-TOOLS = {"train_timetable": train_timetable, "echo": echo}
+def _coerce(text, kind):
+    """A CSV cell -> a primitive. The type is a COERCION at the edge, never a
+    stored type (PRINCIPLES.md: values are primitives only)."""
+    text = str(text).strip()
+    if kind in ("str", "string"):
+        return text
+    if kind == "int":
+        return int(float(text))
+    if kind == "float":
+        return float(text)
+    if kind == "minutes":
+        return _minutes(text)
+    if kind == "bool":
+        return text.lower() in ("true", "1", "yes")
+    raise ValueError("unknown column type %r (use str/int/float/minutes/bool)"
+                     % kind)
+
+
+def read_table(world, path, component, columns) -> None:
+    """The generic tabular reader. ``columns`` is a ``"name:type"`` string, comma
+    separated, or a list of them; a missing type is ``str``. **Return schema**: one
+    ``component{name: value, ...}`` entity per CSV row, the values coerced. A
+    ``"name:type"`` string (not a list) keeps the request a FLAT value -- the
+    substrate stores flat values only. ``train_timetable`` is this with the schema
+    baked in."""
+    if isinstance(columns, str):
+        columns = [part for part in columns.split(",") if part.strip()]
+    spec = []
+    for item in columns:
+        name, _, kind = str(item).partition(":")
+        spec.append((name.strip(), kind.strip() or "str"))
+    with open(path, newline="", encoding="utf-8") as handle:
+        for row in csv.DictReader(handle):
+            entity = world.spawn()
+            for name, kind in spec:
+                world.set(entity, component, name, _coerce(row[name], kind))
+
+
+TOOLS = {"train_timetable": train_timetable, "read_table": read_table,
+         "echo": echo}

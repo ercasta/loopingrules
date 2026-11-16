@@ -1,0 +1,13 @@
+# scope -- take candidates out of play by a policy limit.
+#
+# Thin interface: reads `candidate.worth` and `policy.limit`; writes `excluded`.
+# It names no domain, so any model that projects a `candidate{worth}` gets it.
+model: scope
+
+operations:
+  - name: scope_limit
+    when: [{slot: policy.limit, op: present}]
+    match: {component: candidate, fields: [worth], without: [excluded]}
+    effect:
+      - when: [{field: worth, op: gt, value: {slot: policy.limit}}]
+        mark: excluded
