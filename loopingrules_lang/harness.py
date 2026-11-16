@@ -115,27 +115,35 @@ def install(loop, model) -> None:
             operation.fn._loopingrules_watches = operation.gate
 
 
-def _answer(world, tools) -> int:
-    """The tool seam (ADR-11 §3): between ticks, answer every unanswered
-    `tool_request` by calling its tool and marking the outcome. Returns how many
-    were answered, so the loop knows a tool may have written new entities and it
-    should keep ticking."""
+def _answer(world, tools, requests) -> int:
+    """The tool seam (ADR-11 §3): between ticks, answer every unanswered request.
+    A request is an entity carrying a capability's OWN component
+    (``<capability>_request``); the answerer keys on that component (the same
+    hub+own-vocabulary read the patterns doc describes), gathers its fields as
+    keyword arguments, calls the tool, and marks the outcome. `requests` is the set
+    of capabilities some model DECLARED -- so a request with no tool is a reported
+    failure, not silence. Returns how many were answered, so the loop keeps ticking
+    when a tool has written new entities."""
     answered = 0
-    for entity, name in world.each("tool_request", "name",
-                                   without=("tool_answered", "tool_failed")):
-        tool = tools.get(name)
-        if tool is None:
-            world.set(entity, "tool_failed", "reason", "no tool named %r" % name)
+    for capability in sorted(requests):
+        component = capability + "_request"
+        for entity, in world.each(component, without=("tool_done", "tool_failed")):
+            tool = tools.get(capability)
+            if tool is None:
+                world.set(entity, "tool_failed", "capability", capability)
+                world.set(entity, "tool_failed", "reason",
+                          "no tool named %r" % capability)
+                answered += 1
+                continue
+            kwargs = dict(world.components(entity).get(component, {}))
+            try:
+                tool(world, **kwargs)
+                world.set(entity, "tool_done", "capability", capability)
+            except Exception as exc:  # noqa: BLE001 -- a tool's failure is world data
+                world.set(entity, "tool_failed", "capability", capability)
+                world.set(entity, "tool_failed", "reason",
+                          "%s: %s" % (type(exc).__name__, exc))
             answered += 1
-            continue
-        args = world.get(entity, "tool_request", "args") or []
-        try:
-            tool(world, *args)
-            world.mark(entity, "tool_answered")
-        except Exception as exc:  # noqa: BLE001 -- a tool's failure is world data
-            world.set(entity, "tool_failed", "reason",
-                      "%s: %s" % (type(exc).__name__, exc))
-        answered += 1
     return answered
 
 
@@ -143,7 +151,9 @@ def run(models, context_doc, *, budget: int = 200, tools=None) -> Run:
     if isinstance(models, Model):
         models = (models,)
     models = tuple(models)
-    combine(models)                 # the declared check, before anything runs
+    combined = combine(models)      # the declared check, before anything runs
+    requests = {name[:-len("_request")] for name in combined.components
+                if name.endswith("_request")}
     tools = tools or {}
     loop = Loop(budget=budget)
     for model in models:
@@ -153,7 +163,7 @@ def run(models, context_doc, *, budget: int = 200, tools=None) -> Run:
     hot = ()
     for _ in range(budget):
         step = loop.tick()
-        answered = _answer(loop.world, tools)
+        answered = _answer(loop.world, tools, requests)
         if step:
             applied.append(tuple(step))
         if not step and not answered:

@@ -6,5 +6,6 @@
 entities:
   - do: {source: loopingrules_lang/models/timetable.csv,
          relation: departure,
-         columns: "train:str,from:str,to:str,depart:minutes,arrive:minutes,fare:float"}
+         columns: ["train:str", "from:str", "to:str",
+                   "depart:minutes", "arrive:minutes", "fare:float"]}
   - policy: {order: min, limit: 50}

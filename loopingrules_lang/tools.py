@@ -1,10 +1,12 @@
 """The tool seam: a registry of capabilities the harness answers between ticks.
 
-A tool is ``fn(world, *args) -> None``: it **reifies** its result into the world as
-ordinary entities and components (ADR-11's "reifies the output back as ordinary
-entities"). The operation that wants it deposits a ``tool_request{name, args}``
-(``emit``); the harness calls ``tools[name]`` and marks the outcome, and the model
-reads whatever the tool wrote by component. Free Python is confined here.
+A tool is ``fn(world, **kwargs) -> None``: it **reifies** its result into the world
+as ordinary entities and components (ADR-11's "reifies the output back as ordinary
+entities"). The operation that wants it deposits the capability's OWN request
+component (``<capability>_request``, via ``emit`` with named ``with:`` arguments);
+the answerer keys on that component, passes its fields as keyword arguments, and
+marks the outcome. The model reads whatever the tool wrote, by component. Free
+Python is confined here.
 
 ## The train timetable reader
 
@@ -73,13 +75,12 @@ def _coerce(text, kind):
                      % kind)
 
 
-def read_table(world, path, component, columns) -> None:
-    """The generic tabular reader. ``columns`` is a ``"name:type"`` string, comma
-    separated, or a list of them; a missing type is ``str``. **Return schema**: one
-    ``component{name: value, ...}`` entity per CSV row, the values coerced. A
-    ``"name:type"`` string (not a list) keeps the request a FLAT value -- the
-    substrate stores flat values only. ``train_timetable`` is this with the schema
-    baked in."""
+def read_table(world, path, relation, columns) -> None:
+    """The generic tabular reader. ``relation`` is the component the rows become;
+    ``columns`` is a list of ``"name:type"`` strings (or one comma-separated
+    string); a missing type is ``str``. **Return schema**: one
+    ``relation{name: value, ...}`` entity per CSV row, the values coerced.
+    ``train_timetable`` is this with the schema baked in."""
     if isinstance(columns, str):
         columns = [part for part in columns.split(",") if part.strip()]
     spec = []
@@ -90,7 +91,7 @@ def read_table(world, path, component, columns) -> None:
         for row in csv.DictReader(handle):
             entity = world.spawn()
             for name, kind in spec:
-                world.set(entity, component, name, _coerce(row[name], kind))
+                world.set(entity, relation, name, _coerce(row[name], kind))
 
 
 TOOLS = {"train_timetable": train_timetable, "read_table": read_table,

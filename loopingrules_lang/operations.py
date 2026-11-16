@@ -24,8 +24,9 @@ Effects: ``set``/``unmark``/``mark``/``add``/``remove``/``spawn``/``destroy``/
 ``winner``, ``losers``, or ``{component: c}`` for the oldest entity carrying it)
 and an optional per-target ``when:``. (``target:``, not ``on:`` -- YAML 1.1
 resolves a bare ``on`` key to boolean ``True``.) ``emit: {request: <capability>,
-args: [...]}`` deposits a ``tool_request`` the harness answers between ticks
-(ADR-11 §3).
+with: {<arg>: <value>}}`` writes the capability's OWN request component
+(``<capability>_request``) -- named, schema-checked arguments the harness answers
+between ticks (ADR-11 §3).
 
 Rendered operations are **closures**: ``analyze`` cannot read their source (the
 calls use bound variables), so ``Loop.rule`` gets ``Opaque`` and would run them
@@ -215,18 +216,11 @@ def _apply_effect(w, matches, winner, effect):
         w.mark(w.spawn(), component)
         return
     if verb == "emit":
-        requested = payload["request"]
+        capability = payload["request"]
+        component = capability + "_request"
         for row, entity in _targets(w, matches, winner, payload):
-            args = [_value(w, row, arg) for arg in (payload.get("args") or ())]
-            args = [None if arg is _MISSING else arg for arg in args]
-            for arg in args:
-                if isinstance(arg, (list, tuple)):
-                    raise ValueError(
-                        "emit: argument %r is a list; the substrate stores flat "
-                        "values only -- pass a joined string (e.g. a comma-"
-                        "separated schema)" % (arg,))
-            w.set(entity, "tool_request", "name", requested)
-            w.set(entity, "tool_request", "args", args)
+            for name, spec in (payload.get("with") or {}).items():
+                w.set(entity, component, name, _value(w, row, spec))
         return
     for row, entity in _targets(w, matches, winner, payload):
         if "when" in effect and not _all_true(w, row, effect["when"]):
@@ -254,7 +248,10 @@ def _used_components(node):
             elif key in ("mark", "unmark", "clear", "spawn") and isinstance(value, str):
                 found.add(value)
             elif key == "emit":
-                found.add("tool_request")
+                request = value.get("request") if isinstance(value, dict) else None
+                if isinstance(request, str):
+                    # the request component is the CAPABILITY's own vocabulary
+                    found.add(request + "_request")
                 found |= _used_components(value)
             else:
                 found |= _used_components(value)

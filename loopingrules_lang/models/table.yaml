@@ -5,21 +5,22 @@
 model: table
 
 components:
-  do: {source: singular, relation: singular, columns: singular}
+  do: {source: singular, relation: singular, columns: sequence}
   departure: {train: singular, from: singular, to: singular,
               depart: singular, arrive: singular, fare: singular}
-  tool_request: {name: singular, args: sequence}
-  tool_answered: {}
-  tool_failed: {reason: singular}
+  read_table_request: {path: singular, relation: singular, columns: sequence}
+  tool_done: {capability: singular}
+  tool_failed: {capability: singular, reason: singular}
 
 operations:
   - name: load
     when: [{slot: do.source, op: present}]
     match: {component: do, fields: [source, relation, columns],
-            without: [tool_request]}
+            without: [read_table_request]}
     effect:
       - emit: {request: read_table,
-               args: [{field: source}, {field: relation}, {field: columns}]}
+               with: {path: {field: source}, relation: {field: relation},
+                      columns: {field: columns}}}
 
   - name: project
     match: {component: departure, fields: [fare, train], without: [candidate]}

@@ -36,7 +36,7 @@ applied:
   1   trip.load_timetable, trip.choose_cheapest
   2   trip.scope_before, trip.choose_cheapest
 world:
-  #1    do{what='cheapest', before=480, ...}  tool_request{...}  resolved  tool_answered
+  #1    do{what='cheapest', before=480, ...}  train_timetable_request{...}  resolved  tool_done
   #4    departure{train='R1', ..., depart=390, fare=45.0}  chosen
 gaps: (none)
 ```
@@ -110,18 +110,23 @@ A term no operation defines is a **gap** (`unresolved{name}`), never a guess.
 
 An operation may `emit` a request; the harness answers it **between ticks** by
 calling a registered tool, which **reifies its result into the world** as ordinary
-entities and components (ADR-11 §3). Free Python is confined to the tool.
+entities and components (ADR-11 §3). Free Python is confined to the tool. A
+request is the **capability's own component** (`<capability>_request`) with
+**named** arguments -- so no positional coupling, no nesting, and the request is
+schema-checked like anything else:
 
 ```yaml
   - name: load_timetable
     when: [{slot: do.timetable, op: present}]
-    match: {component: do, fields: [timetable], without: [tool_request]}
+    match: {component: do, fields: [timetable], without: [train_timetable_request]}
     effect:
-      - emit: {request: train_timetable, args: [{field: timetable}]}
+      - emit: {request: train_timetable, with: {path: {field: timetable}}}
 ```
 
-`loopingrules_lang.tools` ships `train_timetable`, whose **return schema** is one
-**`departure`** per CSV row:
+The model declares `train_timetable_request{path}`; the tool's parameters ARE that
+shape. `loopingrules_lang.tools` ships `train_timetable` and the generic
+`read_table(path, relation, columns)`, whose **return schema** is one **`relation`**
+per CSV row:
 
 ```
 train,from,to,depart,arrive,fare

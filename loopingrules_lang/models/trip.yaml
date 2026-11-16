@@ -1,6 +1,6 @@
 # A second model: it READS a timetable through the tool seam, then chooses a
-# departure. `load_timetable` deposits a `tool_request`; the harness answers it
-# between ticks, spawning `departure` entities (tools.py); the choose/scope
+# departure. `load_timetable` deposits a `train_timetable_request`; the harness
+# answers it between ticks, spawning `departure` entities (tools.py); the choose/scope
 # operations then work over them -- no operation names a use case.
 model: trip
 
@@ -8,9 +8,9 @@ components:
   do: {what: singular, before: singular, timetable: singular}
   departure: {train: singular, from: singular, to: singular,
               depart: singular, arrive: singular, fare: singular}
-  tool_request: {name: singular, args: sequence}
-  tool_answered: {}
-  tool_failed: {reason: singular}
+  train_timetable_request: {path: singular}
+  tool_done: {capability: singular}
+  tool_failed: {capability: singular, reason: singular}
   excluded: {}
   chosen: {}
   resolved: {}
@@ -21,9 +21,9 @@ operations:
   # the tool is unknown.
   - name: load_timetable
     when: [{slot: do.timetable, op: present}]
-    match: {component: do, fields: [timetable], without: [tool_request]}
+    match: {component: do, fields: [timetable], without: [train_timetable_request]}
     effect:
-      - emit: {request: train_timetable, args: [{field: timetable}]}
+      - emit: {request: train_timetable, with: {path: {field: timetable}}}
 
   - name: scope_before
     when: [{slot: do.before, op: present}]

@@ -1,6 +1,7 @@
-"""The tool seam: `emit` -> a `tool_request` answered between ticks, and the train
-timetable reader's return schema. The timetable is world data the model reads by
-component; a scope and a choice then compose over it with no per-use-case code.
+"""The tool seam: `emit` -> the capability's own request component, answered
+between ticks, and the train timetable reader's return schema. The timetable is
+world data the model reads by component; a scope and a choice then compose over it
+with no per-use-case code.
 """
 
 from __future__ import annotations
@@ -66,13 +67,14 @@ def test_an_unknown_tool_is_world_data_not_a_crash():
     model = harness.parse({
         "model": "t",
         "components": {"do": {"timetable": "singular"},
-                       "tool_request": {"name": "singular", "args": "sequence"},
-                       "tool_failed": {"reason": "singular"}},
+                       "nope_request": {"timetable": "singular"},
+                       "tool_failed": {"capability": "singular",
+                                       "reason": "singular"}},
         "operations": [{"name": "ask",
                         "match": {"component": "do", "fields": ["timetable"],
-                                  "without": ["tool_request"]},
+                                  "without": ["nope_request"]},
                         "effect": [{"emit": {"request": "nope",
-                                             "args": [{"field": "timetable"}]}}]}],
+                                             "with": {"timetable": {"field": "timetable"}}}}]}],
     })
     run = harness.run(model, {"entities": [{"do": {"timetable": "x"}}]}, tools={})
     assert run.settled

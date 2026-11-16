@@ -96,13 +96,15 @@ primitives, `PRINCIPLES.md`):
 
 ```yaml
 - do: {source: timetables/2026.csv, relation: departure,
-       columns: "train:str,from:str,to:str,depart:minutes,arrive:minutes,fare:float"}
+       columns: ["train:str", "from:str", "to:str",
+                 "depart:minutes", "arrive:minutes", "fare:float"]}
 ```
 
-`read_table` coerces `minutes` (`"07:00"` → 420), `int`, `float`, `bool`, `str`.
-A model that reads the relation declares the component -- an undeclared use is a
-`schema.Gap`, refused at load. *(The columns are one flat string, not a list: a
-request's `args` are a flat list, and the substrate stores flat values only.)*
+`read_table`'s parameters (`path`, `relation`, `columns`) ARE the request component's
+fields -- named, not positional; `minutes` coerces `"07:00"` → 420, and
+`int`/`float`/`bool`/`str` do the obvious. A model that reads
+the relation declares the component -- an undeclared use is a `schema.Gap`,
+refused at load.
 
 ## The core to ship first, and the order
 
