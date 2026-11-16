@@ -23,7 +23,12 @@ keywords = ["ecs", "entity-component", "game-loop", "world-model"]
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+# `pyyaml` is the authoring surface's dependency (`loopingrules_lang`), not the
+# core's -- the engine still ships none.
+dev = ["pytest>=8.0", "pyyaml>=6.0"]
+
+[project.scripts]
+lr = "loopingrules_lang.cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -37,4 +42,5 @@ pythonpath = ["."]
 
 [tool.setuptools]
 py-modules = []
-packages = ["loopingrules", "loopingrules_calibration", "loopingrules_patterns"]
+packages = ["loopingrules", "loopingrules_calibration", "loopingrules_patterns",
+            "loopingrules_lang"]

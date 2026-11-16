@@ -1,0 +1,9 @@
+# A use case: the context. The `do` entity is the anchor; everything else is the
+# world the operations act on. spendable = 30 - 10 = 20, so `limit: 20` excludes
+# wand (25) and dragon (40), leaving goblin (5) as the cheapest in scope.
+entities:
+  - candidate: {worth: 5.0, name: goblin}
+  - candidate: {worth: 25.0, name: wand}
+  - candidate: {worth: 40.0, name: dragon}
+  - funds: {cash: 30.0, reserve: 10.0}
+  - do: {what: cheapest, limit: 20.0}

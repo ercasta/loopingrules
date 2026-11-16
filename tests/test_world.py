@@ -188,6 +188,19 @@ def test_each_without_excludes_a_component():
     assert w.each("trader", "cash", without=("done",)) == [(a, 10)]
 
 
+def test_each_without_accepts_a_bare_component_name():
+    """`without="done"` is the ONE component, not the characters of "done" --
+    the same thing `analyze` already assumes (`resolve_name_list`)."""
+    w = _world()
+    a, b = w.spawn(), w.spawn()
+    w.set(a, "trader", "cash", 10)
+    w.set(b, "trader", "cash", 20)
+    w.mark(b, "done")
+    assert w.each("trader", "cash", without="done") == [(a, 10)]
+    assert w.each("trader", "cash", without="done") == \
+        w.each("trader", "cash", without=("done",))
+
+
 def test_each_with_no_fields_asks_only_for_the_component():
     w = _world()
     a, b = w.spawn(), w.spawn()

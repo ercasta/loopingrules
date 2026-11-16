@@ -1,0 +1,57 @@
+# A minimal model: a fixed set of one-concept operations over one vocabulary.
+# The `do` entity is the ANCHOR -- a context initialises what to do; no operation
+# names a use case. `what` is a CHOOSE concept, `limit`/`affordable` are SCOPE
+# concepts, so any combination composes with no code that names the combination.
+model: market
+
+components:
+  candidate: {worth: singular, name: singular}
+  funds: {cash: singular, reserve: singular}
+  spendable: {amount: singular}
+  do: {what: singular, limit: singular, affordable: flag}
+  excluded: {}          # a scope has set this candidate aside
+  chosen: {}            # the answer
+  resolved: {}          # some choose operation understood the directive
+  unresolved: {name: singular}   # a GAP: a `what` no operation defines
+
+operations:
+  - name: spendable
+    match: {component: funds, fields: [cash, reserve], without: [spendable]}
+    effect:
+      - set: {component: spendable, field: amount,
+              value: {sub: [{field: cash}, {field: reserve}]}}
+
+  - name: scope_limit
+    when: [{slot: do.limit, op: present}]
+    match: {component: candidate, fields: [worth], without: [excluded]}
+    effect:
+      - when: [{field: worth, op: gt, value: {slot: do.limit}}]
+        mark: excluded
+
+  - name: scope_affordable
+    when: [{slot: do.affordable, op: present}]
+    match: {component: candidate, fields: [worth], without: [excluded]}
+    effect:
+      - when: [{field: worth, op: gt, value: {slot: spendable.amount}}]
+        mark: excluded
+
+  - name: choose_cheapest
+    when: [{slot: do.what, op: eq, value: cheapest}]
+    match: {component: candidate, fields: [worth], without: [excluded]}
+    reduce: {op: argmin, field: worth}
+    effect:
+      - clear: {component: chosen, target: losers}
+      - mark: {component: chosen, target: winner}
+      - mark: {component: resolved, target: {component: do}}
+
+  - name: choose_all
+    when: [{slot: do.what, op: eq, value: all}]
+    match: {component: candidate, fields: [worth], without: [excluded]}
+    effect:
+      - mark: chosen
+      - mark: {component: resolved, target: {component: do}}
+
+  - name: unresolved
+    match: {component: do, fields: [what], without: [resolved]}
+    effect:
+      - set: {component: unresolved, field: name, value: {field: what}}

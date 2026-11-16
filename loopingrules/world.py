@@ -601,8 +601,12 @@ class World:
         for. No `fields` asks only that the COMPONENT is present (a tag). A
         multi-valued field is a list, and the row's value for it IS that list.
 
-        `without` excludes any entity carrying one of those COMPONENTS.
+        `without` excludes any entity carrying one of those COMPONENTS. A single
+        name may be given bare (`without="done"`) or as an iterable
+        (`without=("done",)`); a bare str is one component, NOT its characters.
         """
+        if isinstance(without, str):
+            without = (without,)
         if fields:
             buckets = [self._by_field.get((component, f)) or set()
                        for f in fields]
