@@ -44,3 +44,4 @@ nav:
   - Plan U:
       - The UX plan: plan-ux.md
       - Architectural decisions: decisions.md
+  - The scale probe: plan-scale-probe.md
