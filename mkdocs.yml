@@ -45,3 +45,4 @@ nav:
       - The UX plan: plan-ux.md
       - Architectural decisions: decisions.md
   - The scale probe: plan-scale-probe.md
+  - Oblivious composition: patterns-oblivious-composition.md
