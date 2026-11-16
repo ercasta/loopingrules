@@ -277,6 +277,17 @@ as the model set grows, and as the use-case family grows.
 - **No per-case leakage**: the held-out family must share no authored case
   verbatim; a paraphrase of a seen case is not held-out.
 
+**Probe status — the mechanism slice is built.** `loopingrules_ux.t1` (a spike,
+pinned by `tests/test_ux_t1.py`) implements the mechanism half: a fixed
+three-concept model set (a `what` **choose** concept, and `limit`/`affordable`
+**scope** concepts, each rule reading exactly one) over one anchor, plus the
+falsifier. Measured: held-out **combinations 5/5**; an unknown concept is a
+**gap**; the branch-per-case control passes seen (2/2) and fails **every**
+combination (0/5); **one added rule buys 3 use cases**; directives take **9/10
+distinct trajectories**. Not yet built: the four baselines (§5.4), the use-case
+generator of §5.3, and the **fan-out curve** over a growing model set — `t1`
+measures fan-out at a single step.
+
 ## 6. Feasibility, and where this sits in the handoff
 
 - **Provable now (cheap):** P1–P4, as soon as `checks` lands (stage 5b, currently

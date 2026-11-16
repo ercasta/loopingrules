@@ -48,7 +48,7 @@ def install(loop, *, audit=False) -> None:
         world.mark(entity, domain)
 
     def evaluate(w):
-        for entity, worth in w.each("candidate", "worth", without="verdict"):
+        for entity, worth in w.each("candidate", "worth", without=("verdict",)):
             w.set(entity, "verdict", "ok", worth > 0.0)
             if audit:
                 w.set(entity, "verdict", "reason", "seen")   # SAME component, new field
@@ -123,7 +123,7 @@ def measure_m1() -> dict:
 
 def consider(w) -> None:
     """Negation in the match: candidates with NO `item` component."""
-    for entity, _worth in w.each("candidate", "worth", without="item"):
+    for entity, _worth in w.each("candidate", "worth", without=("item",)):
         w.mark(entity, "item")
 
 

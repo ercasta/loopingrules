@@ -14,4 +14,8 @@ is a named probe from `docs/plan-ux.md`, pinned by its own `tests/test_ux_*`.
   candidate **moves**, the budget excludes the unaffordable, a **distinct** pure
   scorer selects one and writes nothing, the trip is **executed**, and the
   selection is **recorded** -- so the trajectory is a sequence (ADR-13).
+* `t1` -- trajectories and **coverage**: a fixed model set covers held-out
+  **combinations** of its concepts with no per-case code, **gaps** an unknown
+  concept, and buys several use cases per added rule (`docs/plan-scale-probe.md`
+  §5, axis B).
 """
