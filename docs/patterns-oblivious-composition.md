@@ -1,17 +1,16 @@
 # Patterns for oblivious composition: a vocabulary-only hub and keyed reads
 
-Status: **design note**, not a probe — nothing here is built beyond the D6 spike
-(`loopingrules_islands`, `i0`). It answers a question the D6 doc left half-stated:
-*how can two models compose when neither names the other?* The answer turned out
-to be narrow and checkable, so this records the patterns, the invariant that makes
-them checkable, and the two things that must be built before the check can run. It
-extends D6 (`archived-old/plan-islands.md`: island / bridge / role / convergence) and
+Status: **one design note, one probe now built.** The note is the D6 question
+half-asked — *how can two models compose when neither names the other?* — and its
+answer is narrow and checkable. §7's A/B is **built** (`loopingrules_linda`, a
+spike, pinned by `tests/test_linda_ab.py`); the rest is design. It extends D6
+(`archived-old/plan-islands.md`: island / bridge / role / convergence) and
 ADR-10/11/12; `docs/plan-scale-probe.md` is where the claim is *measured*.
 
 It also corrects two overclaims made while finding this shape, kept visible on
 purpose: "islands that compose obliviously" (too broad — see §1) and "the neutral
 hub and the frozen judge coincide" (a conflation of two different meanings of
-*checks* — see §7).
+*checks* — see §8).
 
 ## 1. The question, and what was wrong with the first answer
 
@@ -133,7 +132,82 @@ impossible*. The advantage is at the **coordination/decoupling** level only — 
 not a claim over pub/sub's operational properties (delivery, distribution,
 backpressure, fan-out at scale).
 
-## 7. The worked hub: business constraints
+## 7. Is the advantage real? — the Linda check
+
+§6 named the prior art — a **tuple space** (Linda's `out`/`rd`/`in`, "generative
+communication") — and claimed an advantage. That claim needs a check, and it needs
+one narrowing first:
+
+> "The substrate overcomes Linda" is **not a proposition**. Linda is
+> Turing-complete; any coordination can be emulated with a tag field and extra
+> `rd`s. Nothing can "overcome" it in expressiveness.
+
+What *is* checkable is whether the substrate's **match primitive** has properties
+Linda's does not, and whether they survive a *fair* encoding. Linda's match is a
+**single positive positional tuple**; the substrate's is a **conjunctive,
+name-keyed query with negation** over an entity. Four axes:
+
+| # | axis | substrate | Linda (basic) | honest status |
+|---|---|---|---|---|
+| **M1** | **layout decoupling** | a reader names `verdict`; the writer may add components freely | a template fixes arity + positions → adding a field **breaks** the reader | **structural** — named vs positional |
+| **M2** | **negation / conjunction, one match** | `each("candidate", without="item")`; `each("verdict","ok")` + `has("alpha")` | one template = one tuple; a cross-tuple join or an absence test needs several `rd`s, and absence needs the non-blocking `rdp`/`inp` probe | **real but emulable** |
+| **M3** | **derived obliviousness** | `analyze` derives the read-set → OCI is **decidable** | the template *is* explicit, but positional; with a tag convention obliviousness re-appears | **partly a wash** |
+| **M4** | **blocking vs reactive** | rules re-evaluate to a fixpoint; nothing blocks | `rd`/`in` **block** until a match; the consumer must be driven | **a model difference, not a power one** |
+
+### The A/B
+
+Cheap, in the repo's spike idiom — `loopingrules_linda` (a **spike**: absent from
+`pyproject.toml`'s `packages=`, pinned by a test, like `loopingrules_islands` and
+`loopingrules_forge`):
+
+- **Instrument A** — the substrate: `world`/`loop`, one hub writer (`evaluate`) and
+  domain readers (`alpha`, `beta`) joining a shared `verdict` with their **own**
+  component.
+- **Instrument B** — `loopingrules_linda.linda`, a minimal faithful tuple space
+  (`out`/`rd`/`in`, typed formals, plus the non-blocking `rdp`/`inp` probes), the
+  *same* coordination.
+- **Fairness concession:** B may use a **tag-field convention** (a fixed-arity keyed
+  tuple). Comparing A to *B-naive* would be a straw man; the real question is A vs
+  *B-conventioned*.
+
+`ab.py` measures:
+
+| test | measure | pre-registered prediction |
+|---|---|---|
+| **M1** | writer adds a field; does the reader still match? | A: unchanged; B-naive: **0 matches**; B-conventioned: unchanged |
+| **M2** | express `without=` / a conjunction | A: one match; B: a scan + a probe per candidate |
+| **M3** | derive the reader's read-set | A: `analyze` → named slots; B: the literal templates (positional) |
+| **M4** | does anything block? | A: settles with no blocking; B: `rd` raises `Blocked` |
+
+**Pre-registered verdict:** A wins **M1** and **M2**; **M3** is a wash (both
+explicit — A's by name, B's by position); **M4** is a model difference, not a power
+one. So the defensible claim is **narrower than §6 implies**: the advantage is
+**named-component matching decoupled from layout** plus **negation in the match** —
+an advantage over *positional* templates, which a tag convention largely erases for
+M3 (and may erase for M2 as well; that is why the A/B is run rather than asserted).
+
+**Prior art.** Blackboard vs tuple space — both *shared associative dataspace*
+coordination models — is studied ground (Gelernter & Carriero on generative
+communication; Papadopoulos & Arbab's survey of coordination models). The substrate
+is a blackboard with **named, scoped, declared** components and **derived analysis**
+on top; that is the defensible positioning.
+
+**Probe status: built.** `loopingrules_linda` (a spike) + `tests/test_linda_ab.py`
+are this A/B, and all four measurements came back as pre-registered:
+
+| axis | measured |
+|---|---|
+| **M1** | the substrate reader is **unchanged** when the writer adds `verdict.reason`; the naive Linda template matches **nothing** (`[]`), the tag convention restores it (`['a','c']`) |
+| **M2** | one `each("candidate", "worth", without="item")` vs **6 calls** (a scan + a probe) for 3 candidates, same outcome |
+| **M3** | the reader's read-set is **derived** — `{('verdict','ok'), ('alpha',None)}` (the shared shape *and* its own component) |
+| **M4** | the substrate settles with no blocking; Linda's `rd` raises `Blocked` |
+
+So the residual is exactly the pre-registered one: the advantage is **named-component
+matching (M1)** and **negation in the match (M2)**; M3 and M4 are concessions. The
+doc's §6 wording ("an advantage at the coordination/decoupling level only") is what
+this supports — not "overcomes Linda."
+
+## 8. The worked hub: business constraints
 
 "Constraint checking" here means a **business** check ("is this within budget") —
 **not** the repo's `checks` (`loopingrules_calibration`, ADR-4's *mechanical base
@@ -156,7 +230,7 @@ none of them. Composition happens because budget's `Constraint` *and* trip's leg
 *and* planning's `Candidate`s land in the same vocabulary, and the domains' keyed
 reads close the loop — nobody having called anyone.
 
-## 8. The check (four levels)
+## 9. The check (four levels)
 
 | level | assertion | instrument |
 |---|---|---|
@@ -169,7 +243,7 @@ The negative row pins the question exactly: *"does P know T?"* becomes *"does an
 rule read a slot outside `{own, hub}`?"* — and an accidentally-leaky hub is caught
 the way `fabricating_consider` is.
 
-## 9. Anti-patterns
+## 10. Anti-patterns
 
 From D6, plus two this shape adds:
 
@@ -193,6 +267,9 @@ From D6, plus two this shape adds:
 - **Expressiveness** — can T, P, and B each express their contribution in the hub
   vocabulary without naming their own domain? If one cannot, the hub fails for
   that model and the mediator returns.
+- **Whether the Linda advantage survives a fair encoding** (§7) — the A/B in
+  `loopingrules_linda` answers this; the predicted residual is named-component
+  matching (M1) and negation (M2), with M3/M4 conceded.
 - **Where the verdict-writer lives** — domain-owned (conjunction) vs neutral
   (`{hub}`); the hub stays inert either way, but the amortization differs.
 - **Vocabulary breadth** — how generic a shared shape can be before every domain
