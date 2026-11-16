@@ -11,7 +11,8 @@ that collides (ADR-2's discipline). An operation is::
     name:    the operation's name (model-qualified at install)
     when:    op-level conditions over SINGLETON slots -- false => do nothing
     match:   {component, fields?, without?} -- the entities it iterates
-    reduce:  {op: argmin|argmax, field} -- the one winner among the matches
+    reduce:  {op: argmin|argmax, field, unique?} -- the one winner among the
+             matches; `unique: true` returns NO winner on a tie (abstain)
     effect:  an ordered list of verbs
 
 Conditions are ``{slot|field, op, value?}`` with op one of
@@ -159,14 +160,20 @@ def _reduce(w, reduce, matches):
         raise ValueError("reduce op is argmin/argmax, not %r" % (op,))
     field = reduce["field"]
     best = None
+    ties = 0
     for match in matches:
         if field not in match.fields:
             continue
         if best is None:
-            best = match
-        elif ((match.fields[field] < best.fields[field]) if op == "argmin"
-              else (match.fields[field] > best.fields[field])):
-            best = match
+            best, ties = match, 1
+            continue
+        value, best_value = match.fields[field], best.fields[field]
+        if (value < best_value) if op == "argmin" else (value > best_value):
+            best, ties = match, 1
+        elif value == best_value:
+            ties += 1
+    if reduce.get("unique") and ties > 1:
+        return None          # a TIE has no winner -- abstain, do not pick arbitrarily
     return best
 
 
@@ -221,6 +228,17 @@ def _apply_effect(w, matches, winner, effect):
         for row, entity in _targets(w, matches, winner, payload):
             for name, spec in (payload.get("with") or {}).items():
                 w.set(entity, component, name, _value(w, row, spec))
+        return
+    if verb == "clear":
+        # Retract the role from EVERY holder except the winner -- not only from the
+        # current matches. Otherwise a role left on a candidate that later became
+        # EXCLUDED (so is no longer matched) would survive, and two entities would
+        # carry `chosen`.
+        component = payload if isinstance(payload, str) else payload["component"]
+        winner_entity = winner.entity if winner is not None else None
+        for entity, in w.each(component):
+            if entity != winner_entity:
+                w.unmark(entity, component)
         return
     for row, entity in _targets(w, matches, winner, payload):
         if "when" in effect and not _all_true(w, row, effect["when"]):

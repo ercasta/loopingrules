@@ -68,6 +68,7 @@ neutral shapes, and *that* is what keeps the library small:
 | battery | thin interface | decides | vers. | status |
 |---|---|---|---|---|
 | `resolve` (disambiguate) | several definers of a term → one, by context | which meaning fires | ★★ | `s3`; control-network-adjacent |
+| `interpret` | `reading{confidence}` → `candidate`; `select` (unique) | which reading of one input is right -- **abstains on a tie** | ★★★ | **shipped** (`interpret.yaml`) |
 | `lexicon` | token → attribute/value | coerce text to a value | ★★ | ADR-2 L4 / U7 |
 | `referent` | a name/description → an entity | coreference ("the cheap one") | ★★ | `deixis`/`memory` |
 
@@ -75,7 +76,7 @@ neutral shapes, and *that* is what keeps the library small:
 | battery | thin interface | decides | vers. | status |
 |---|---|---|---|---|
 | `table_io` (`read_table`) | `request{read_table, path, relation, columns}` → row entities | bring a table in | ★★★ | **shipped** |
-| `adapters` | `request{capability, args}` → world entities | reach files/HTTP/JSON | ★★★ | `read_table`/`train_timetable`/`echo` |
+| `adapters` | `<capability>_request{...}` → world entities | reach files/CSV/dates/HTTP | ★★★ | `read_table`/`train_timetable`/`interpret_datetime`/`echo` |
 | `clock` | time as world data → minutes/dates/timers | deadlines, "before 9am" | ★★★ | planned (tiny) |
 | `doubt` | nothing covered → `Doubt` | novelty / training signal | ★★ | the scheduler's `Doubt` |
 | `controls` | `RuleControl` → enable/disable/reorder | runtime steering | ★ | shipped (`reflect`) |
@@ -108,7 +109,8 @@ refused at load.
 
 ## The core to ship first, and the order
 
-**Shipped:** `core` (the shared vocabulary), `scope`, `rank`, `table_io`.
+**Shipped:** `core` (the shared vocabulary), `scope` (cap **and** floor), `rank`,
+`interpret` (competing readings, tie ⇒ abstain), `table_io`.
 
 **Next, in order:** `threshold` + `feasibility` (finish the evaluation quartet) →
 `clock` → `graph` + `sequence` → `memory` + `focus` → `table`'s algebra

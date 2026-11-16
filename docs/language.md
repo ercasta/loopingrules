@@ -74,7 +74,8 @@ operations:
 
 An operation is: `when` (op-level, over **singleton** slots -- false ⇒ do
 nothing), `match` (`{component, fields?, without?}` -- the entities it iterates),
-`reduce` (`argmin`/`argmax` -- the one `winner`), and an ordered `effect` list.
+`reduce` (`argmin`/`argmax` -- the one `winner`; `unique: true` returns **no**
+winner on a tie, so the operation abstains), and an ordered `effect` list.
 **Every rule reads one concept**, so any *combination* of concepts composes with no
 code that names the combination.
 

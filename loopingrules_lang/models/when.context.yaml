@@ -1,0 +1,7 @@
+# "03/04/2026 09:00" is d/m OR m/d -- two readings at EQUAL confidence, so the
+# interpretation is UNDETERMINED and the input is marked `unresolved` rather than
+# guessed. A single-format text ("2026-04-03 09:00") is chosen instead; a weak
+# one is dropped by `policy.floor`.
+entities:
+  - input: {text: "03/04/2026 09:00"}
+  - policy: {floor: 0.5}

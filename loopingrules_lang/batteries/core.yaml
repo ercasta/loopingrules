@@ -7,6 +7,7 @@ model: core
 
 components:
   candidate: {worth: singular, label: singular}
-  policy: {order: singular, limit: singular}
+  policy: {order: singular, limit: singular, floor: singular}
   chosen: {}
   excluded: {}
+  unresolved: {name: singular}

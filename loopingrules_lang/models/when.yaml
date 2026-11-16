@@ -1,0 +1,26 @@
+# when -- a domain that INTERPRETS a date/time text through the `interpret`
+# battery. It declares its input, asks the adapter for readings, and marks the
+# input UNDETERMINED when the tool has answered but nothing was chosen (a tie, or
+# every reading too weak, or no format parsed at all) -- ADR-8's honesty boundary,
+# the input never guessed.
+model: when
+
+components:
+  input: {text: singular}
+  interpret_datetime_request: {text: singular}
+  tool_done: {capability: singular}
+  tool_failed: {capability: singular, reason: singular}
+
+operations:
+  - name: load
+    when: [{slot: input.text, op: present}]
+    match: {component: input, fields: [text],
+            without: [interpret_datetime_request]}
+    effect:
+      - emit: {request: interpret_datetime, with: {text: {field: text}}}
+
+  - name: undetermined
+    when: [{slot: tool_done, op: present}, {slot: chosen, op: absent}]
+    match: {component: input, fields: [text]}
+    effect:
+      - set: {component: unresolved, field: name, value: {field: text}}

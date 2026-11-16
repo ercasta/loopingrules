@@ -1,0 +1,29 @@
+# interpret -- evaluation of COMPETING INTERPRETATIONS of one input.
+#
+# Use it when a field could be read several ways (a date "03/04/2026" is d/m or
+# m/d; a name is one of several entities; a request is one of several plans): an
+# adapter produces one `reading` per interpretation, each with a `confidence`; the
+# projection turns each into a `candidate`; `select` picks the most confident --
+# **and abstains on a tie** (`unique`), which is ADR-8's ambiguity discipline.
+#
+# Thin interface: reads `reading{confidence, format}`; writes `candidate{worth,
+# label}` and `chosen`. Reuse `scope` (`policy.floor`) to drop weak readings first.
+model: interpret
+
+components:
+  reading: {tool: singular, text: singular, format: singular,
+            value: singular, confidence: singular}
+
+operations:
+  - name: project
+    match: {component: reading, fields: [confidence, format], without: [candidate]}
+    effect:
+      - set: {component: candidate, field: worth, value: {field: confidence}}
+      - set: {component: candidate, field: label, value: {field: format}}
+
+  - name: select
+    match: {component: candidate, fields: [worth], without: [excluded]}
+    reduce: {op: argmax, field: worth, unique: true}
+    effect:
+      - clear: {component: chosen, target: losers}
+      - mark: {component: chosen, target: winner}

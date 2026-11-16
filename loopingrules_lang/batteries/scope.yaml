@@ -1,7 +1,8 @@
-# scope -- take candidates out of play by a policy limit.
+# scope -- take candidates out of play by a policy bound: a cap (`policy.limit`)
+# or a floor (`policy.floor`).
 #
-# Thin interface: reads `candidate.worth` and `policy.limit`; writes `excluded`.
-# It names no domain, so any model that projects a `candidate{worth}` gets it.
+# Thin interface: reads `candidate.worth` and the policy; writes `excluded`. It
+# names no domain, so any model that projects a `candidate{worth}` gets it.
 model: scope
 
 operations:
@@ -10,4 +11,11 @@ operations:
     match: {component: candidate, fields: [worth], without: [excluded]}
     effect:
       - when: [{field: worth, op: gt, value: {slot: policy.limit}}]
+        mark: excluded
+
+  - name: scope_floor
+    when: [{slot: policy.floor, op: present}]
+    match: {component: candidate, fields: [worth], without: [excluded]}
+    effect:
+      - when: [{field: worth, op: lt, value: {slot: policy.floor}}]
         mark: excluded

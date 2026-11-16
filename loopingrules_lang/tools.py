@@ -27,6 +27,7 @@ component -- an undeclared use is a ``schema.Gap``.
 from __future__ import annotations
 
 import csv
+from datetime import datetime
 
 
 def _minutes(text) -> int:
@@ -94,5 +95,49 @@ def read_table(world, path, relation, columns) -> None:
                 world.set(entity, relation, name, _coerce(row[name], kind))
 
 
+## The interpretation adapter: one `reading` per format that parses.
+#
+# Ambiguous formats (d/m vs m/d) get EQUAL confidence, so a tie stays a tie for
+# the `interpret` battery to abstain on rather than guess.
+_DATETIME_FORMATS = (
+    ("%Y-%m-%d %H:%M", "iso", 0.99),
+    ("%Y-%m-%dT%H:%M", "iso-t", 0.99),
+    ("%Y-%m-%d", "iso-date", 0.9),
+    ("%d/%m/%Y %H:%M", "dmy", 0.6),
+    ("%m/%d/%Y %H:%M", "mdy", 0.6),
+    ("%d/%m/%Y", "dmy-date", 0.55),
+    ("%m/%d/%Y", "mdy-date", 0.55),
+    ("%H:%M", "time", 0.5),
+)
+
+
+def _normalise(parsed, fmt) -> str:
+    if fmt == "%H:%M":
+        return parsed.strftime("%H:%M")
+    return parsed.strftime("%Y-%m-%dT%H:%M")
+
+
+def interpret_datetime(world, text) -> None:
+    """The interpretation adapter: try each known format, and emit one **`reading`**
+    per format that parses. Return schema::
+
+        reading{tool: str, text: str, format: str, value: str, confidence: number}
+
+    ``value`` is a normalised ``YYYY-MM-DDTHH:MM`` (or ``HH:MM`` for a time-only
+    text); ``confidence`` is the format's own weight. No format parses => no
+    readings, which the caller reports as a gap."""
+    for fmt, name, confidence in _DATETIME_FORMATS:
+        try:
+            parsed = datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+        entity = world.spawn()
+        world.set(entity, "reading", "tool", "interpret_datetime")
+        world.set(entity, "reading", "text", text)
+        world.set(entity, "reading", "format", name)
+        world.set(entity, "reading", "value", _normalise(parsed, fmt))
+        world.set(entity, "reading", "confidence", confidence)
+
+
 TOOLS = {"train_timetable": train_timetable, "read_table": read_table,
-         "echo": echo}
+         "interpret_datetime": interpret_datetime, "echo": echo}
