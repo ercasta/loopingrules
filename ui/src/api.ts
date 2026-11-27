@@ -66,6 +66,24 @@ export type State = {
   log: LogEntry[];
 };
 
+export type Suggestion = { value: string; hint: string; status?: "missing" | "ok" | "full" };
+
+export type ObjectConstraint = {
+  kind?: "iri" | "literal" | "enum";
+  class?: string;
+  datatype?: string;
+  nodeKind?: string;
+  pattern?: string;
+  full?: string;
+};
+
+export type SuggestResult = {
+  items: Suggestion[];
+  constraint: ObjectConstraint;
+  missing: Suggestion[];
+  hint: string | null;
+};
+
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`/api${path}`, {
     method,
@@ -87,6 +105,8 @@ export const api = {
       "GET",
       `/applications${contains ? `?contains=${encodeURIComponent(contains)}` : ""}`,
     ),
+  suggest: (field: "s" | "p" | "o", s: string, p: string, q: string) =>
+    call<SuggestResult>("GET", `/suggest?${new URLSearchParams({ field, s, p, q })}`),
   addTriple: (s: string, p: string, o: string) => call("POST", "/sheet/triples", { s, p, o }),
   deleteTriple: (t: Triple) => call("POST", "/sheet/delete", { s: t.s.n3, p: t.p.n3, o: t.o.n3 }),
   apply: (id: string) => call("POST", `/apply/${id}`),

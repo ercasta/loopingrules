@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, type Sheet, type Triple } from "../api";
+import { api, type ObjectConstraint, type Sheet, type Suggestion } from "../api";
+import { Combobox } from "./Combobox";
 import { TermView } from "./TermView";
 
 type Props = { sheet: Sheet | null; onError: (e: unknown) => void };
@@ -29,19 +30,43 @@ export function SheetPanel({ sheet, onError }: Props) {
     return q ? all.filter((t) => `${t.s.short} ${t.p.short} ${t.o.short}`.toLowerCase().includes(q)) : all;
   }, [sheet, query]);
 
-  // Suggestions for the add-row: every term already in the sheet.
-  const suggestions = useMemo(() => {
-    const pick = (f: (t: Triple) => string) => [...new Set((sheet?.triples ?? []).map(f))].sort();
-    return { s: pick((t) => t.s.short), p: pick((t) => t.p.short), o: pick((t) => t.o.short) };
-  }, [sheet]);
+  // --- SHACL-driven editing (D15) -------------------------------------
+  const pRef = useRef<HTMLInputElement>(null);
+  const oRef = useRef<HTMLInputElement>(null);
+  const [missing, setMissing] = useState<Suggestion[]>([]);
+  const [objInfo, setObjInfo] = useState<{ constraint: ObjectConstraint; hint: string | null } | null>(null);
+
+  useEffect(() => {
+    if (!draft.s.trim()) return setMissing([]);
+    const t = window.setTimeout(() => {
+      api.suggest("p", draft.s, "", "").then((r) => setMissing(r.missing), () => setMissing([]));
+    }, 150);
+    return () => window.clearTimeout(t);
+  }, [draft.s, sheet?.version]);
+
+  useEffect(() => {
+    if (!draft.p.trim()) return setObjInfo(null);
+    const t = window.setTimeout(() => {
+      api.suggest("o", draft.s, draft.p, "").then((r) => setObjInfo(r), () => setObjInfo(null));
+    }, 150);
+    return () => window.clearTimeout(t);
+  }, [draft.s, draft.p, sheet?.version]);
+
+  const objectProblem = checkObject(draft.o, objInfo?.constraint);
 
   const add = async () => {
     try {
       await api.addTriple(draft.s, draft.p, draft.o);
       setDraft({ s: draft.s, p: "", o: "" });
+      pRef.current?.focus();
     } catch (e) {
       onError(e);
     }
+  };
+
+  const editSubject = (s: string) => {
+    setDraft({ s, p: "", o: "" });
+    pRef.current?.focus();
   };
 
   let group = 0;
@@ -99,7 +124,7 @@ export function SheetPanel({ sheet, onError }: Props) {
                   ].join(" ")}
                 >
                   <td className="rownum">{i + 1}</td>
-                  <td className="subj" title={problems?.join("\n")}>
+                  <td className="subj" title={problems?.join("\n") ?? "click to add a property"} onClick={() => editSubject(t.s.short === "a" ? "" : t.s.short)}>
                     {first && (
                       <>
                         <TermView term={t.s} />
@@ -126,32 +151,106 @@ export function SheetPanel({ sheet, onError }: Props) {
         </table>
       </div>
 
-      <form
-        className="add-row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          add();
-        }}
-      >
-        {(["s", "p", "o"] as const).map((k) => (
-          <span key={k} className="add-cell">
-            <input
-              list={`sugg-${k}`}
-              placeholder={{ s: "subject  ex:thing", p: "predicate  a", o: 'object  "text" · 42 · ex:Class' }[k]}
-              value={draft[k]}
-              onChange={(e) => setDraft({ ...draft, [k]: e.target.value })}
-            />
-            <datalist id={`sugg-${k}`}>
-              {suggestions[k].map((x) => (
-                <option key={x} value={x} />
-              ))}
-            </datalist>
-          </span>
-        ))}
-        <button className="btn primary" disabled={!draft.s || !draft.p || !draft.o}>
-          + Add
-        </button>
-      </form>
+      <div className="add-zone">
+        {missing.length > 0 && (
+          <div className="assist missing">
+            <span className="label">
+              <TermLike text={draft.s} /> still needs
+            </span>
+            {missing.map((m) => (
+              <button
+                key={m.value}
+                className="need"
+                title={m.hint}
+                onClick={() => {
+                  setDraft({ ...draft, p: m.value, o: "" });
+                  oRef.current?.focus();
+                }}
+              >
+                + {m.value}
+              </button>
+            ))}
+          </div>
+        )}
+        {objInfo && describe(objInfo.constraint, objInfo.hint) && (
+          <div className={`assist expect ${objInfo.constraint.full ? "warn" : ""}`}>
+            <span className="label">{draft.p} expects</span> {describe(objInfo.constraint, objInfo.hint)}
+          </div>
+        )}
+        <form
+          className="add-row"
+          onSubmit={(e) => {
+            e.preventDefault();
+            add();
+          }}
+        >
+          <Combobox
+            value={draft.s}
+            onChange={(v) => setDraft((d) => ({ ...d, s: v }))}
+            load={(q) => api.suggest("s", "", "", q).then((r) => r.items)}
+            contextKey=""
+            placeholder="subject  ex:thing"
+            onPicked={() => pRef.current?.focus()}
+          />
+          <Combobox
+            ref={pRef}
+            value={draft.p}
+            onChange={(v) => setDraft((d) => ({ ...d, p: v }))}
+            load={(q) => api.suggest("p", draft.s, "", q).then((r) => r.items)}
+            contextKey={draft.s}
+            placeholder="predicate  a"
+            onPicked={() => oRef.current?.focus()}
+          />
+          <Combobox
+            ref={oRef}
+            value={draft.o}
+            onChange={(v) => setDraft((d) => ({ ...d, o: v }))}
+            load={(q) => (draft.p ? api.suggest("o", draft.s, draft.p, q).then((r) => r.items) : Promise.resolve([]))}
+            contextKey={draft.s + "|" + draft.p}
+            placeholder={'object  "text" · 42 · ex:Class'}
+            invalid={objectProblem}
+          />
+          <button className="btn primary" disabled={!draft.s || !draft.p || !draft.o}>
+            + Add
+          </button>
+        </form>
+        {objectProblem && <div className="assist problem">⚠ {objectProblem}</div>}
+      </div>
     </section>
   );
+}
+
+function TermLike({ text }: { text: string }) {
+  return <code className="termlike">{text}</code>;
+}
+
+/** One-line summary of what the object should look like, from the shape. */
+function describe(c: ObjectConstraint, hint: string | null): string {
+  const parts: string[] = [];
+  if (c.kind === "enum") parts.push("one of the listed values");
+  if (c.class) parts.push(`an instance of ${c.class}`);
+  if (c.datatype) parts.push(`a literal of ${c.datatype}`);
+  if (c.pattern) parts.push(`matching /${c.pattern}/`);
+  if (hint) parts.push(`(${hint})`);
+  if (c.full) parts.push(`— ${c.full}`);
+  return parts.join(" ");
+}
+
+/** Client-side check of the typed object against the shape, before sending. */
+function checkObject(o: string, c?: ObjectConstraint): string | null {
+  const v = o.trim();
+  if (!v || !c) return null;
+  const quoted = v.startsWith('"');
+  if (c.datatype === "xsd:integer" && !/^[+-]?\d+$/.test(v)) return "expects an integer, e.g. 42";
+  if (c.datatype === "xsd:boolean" && !/^(true|false)$/.test(v)) return "expects true or false";
+  if ((c.kind === "iri" || c.class) && quoted) return `expects a resource${c.class ? ` (${c.class})` : ""}, not a string`;
+  if (c.pattern && quoted) {
+    try {
+      const text = JSON.parse(v) as string;
+      if (!new RegExp(c.pattern).test(text)) return `does not match /${c.pattern}/`;
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }

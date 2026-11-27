@@ -7,6 +7,7 @@ triples changed (for UI highlighting) and broadcasts a `sheet-changed` event.
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from pathlib import Path
 from typing import Callable
@@ -23,6 +24,7 @@ from .engine import Engine
 from .operations import Application
 from .project import Project
 from .store import prologue
+from .suggest import Suggester
 
 UI_DIST = Path(__file__).resolve().parents[2] / "ui" / "dist"
 
@@ -51,6 +53,15 @@ class Terms:
             if t.datatype:
                 out["datatype"] = self.g.namespace_manager.normalizeUri(t.datatype)
         return out
+
+    def typable(self, t) -> str:
+        """The form a user would type to get exactly this term back from `parse`."""
+        if isinstance(t, Literal):
+            if t.datatype in (XSD.integer, XSD.decimal, XSD.boolean):
+                return str(t).lower() if t.datatype == XSD.boolean else str(t)
+            if (t.datatype in (None, XSD.string)) and not t.language:
+                return json.dumps(str(t), ensure_ascii=False)
+        return self.short(t)
 
     def triple(self, t, changed: set | None = None) -> dict:
         k = key(t)
@@ -280,6 +291,49 @@ def create_app(project_path: str | Path) -> FastAPI:
             "removed": session.removed,
             "violations": [{**v, "focus": _short_n3(session, v["focus"])} for v in violations],
         }
+
+    @app.get("/api/suggest")
+    async def suggest(field: str, s: str = "", p: str = "", q: str = ""):
+        """Autocomplete for the add-row, derived from the SHACL shapes (D15)."""
+        g, t = engine.sheet, session.terms
+        sug = Suggester(engine.shapes, g)
+
+        def term_or_none(text: str):
+            try:
+                return t.parse(text) if text.strip() else None
+            except Exception:
+                return None
+
+        subject, predicate = term_or_none(s), term_or_none(p)
+        items: list[dict] = []
+        constraint: dict = {}
+        missing: list[dict] = []
+        hint = None
+        if field == "s":
+            for subj in sorted(set(g.subjects()), key=lambda x: (isinstance(x, BNode), t.short(x))):
+                types = ", ".join(sorted(t.short(c) for c in g.objects(subj, RDF.type)))
+                items.append({"value": t.typable(subj), "hint": types or "untyped"})
+        elif field == "p":
+            seen = set()
+            if subject is not None:
+                for x in sug.predicates(subject):
+                    seen.add(x["term"])
+                    entry = {"value": t.typable(x["term"]), "hint": x["hint"], "status": x["status"]}
+                    items.append(entry)
+                    if x["status"] == "missing":
+                        missing.append(entry)
+            for pred in sorted(set(g.predicates()) - seen, key=t.short):
+                items.append({"value": t.typable(pred), "hint": "used in the sheet"})
+        elif field == "o" and predicate is not None:
+            r = sug.objects(subject, predicate)
+            items = [{"value": t.typable(x["term"]), "hint": x["hint"]} for x in r["values"]]
+            constraint, hint = r["constraint"], r.get("hint")
+        else:
+            raise HTTPException(400, "field must be s, p or o (o needs p)")
+        if q.strip():
+            ql = q.strip().lower()
+            items = [i for i in items if ql in i["value"].lower()]
+        return {"items": items[:60], "constraint": constraint, "missing": missing, "hint": hint}
 
     @app.post("/api/sheet/triples")
     async def add_triple(body: TripleIn):

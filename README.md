@@ -81,6 +81,15 @@ Models and controllers are **pure data**: RDF, SPARQL and SHACL. Sharing one car
 
 ![A shell call awaiting approval](doc/ui-approval.png)
 
+## Your shapes are your autocomplete
+
+The SHACL shapes that guard the state also **guide your editing**:
+- **Predicates.** Type a subject and you get the properties its shapes allow. Required ones come first, with their `sh:description`; full ones are struck through.
+- **Objects.** These come from `sh:in`, from existing instances of `sh:class`, or from `sh:datatype`. Your input is checked against the datatype and `sh:pattern` before it's sent.
+- **"Still needs".** A strip lists the properties the subject is still missing. Click one to fill it in.
+
+![SHACL-driven autocomplete: required properties first, with descriptions](doc/ui-autocomplete.png)
+
 ## Quick start
 
 ```bash
@@ -151,7 +160,7 @@ my-project/
 - [x] Shell tool with per-call approval, and the headless CLI
 - [x] HTTP + WebSocket API
 - [x] Spreadsheet-style web UI: edit triples, filter applications (including by a SPARQL pattern on the end state), preview deltas, approve calls
-- [ ] Autocomplete for editing, derived from the SHACL shapes
+- [x] Autocomplete for editing, derived from the SHACL shapes
 - [ ] Named graphs (full SPOG quads)
 - [ ] An allowlist for approving tool calls automatically
 - [ ] Controllers learned from your manual choices (anti-unification, RIPPER)

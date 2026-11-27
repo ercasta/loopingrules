@@ -110,7 +110,7 @@ An operation is an RDF resource whose parts are SPARQL fragments:
   `?call lr:stdoutLine [ lr:index 0 ; lr:text "a.txt" ]`.
 - Operations can then match the lines one by one.
 
-### D15. (Future) SHACL-driven autocomplete for editing
+### D15. SHACL-driven autocomplete for editing (implemented)
 The loaded shapes guide the user's editing:
 - **Subject.** Suggest existing subjects. For a new subject, suggest `rdf:type` values taken from the shapes' `sh:targetClass`.
 - **Predicate.** For a subject of type C, suggest the `sh:path` of the property shapes that target C.
@@ -125,7 +125,13 @@ The loaded shapes guide the user's editing:
 - **"Complete this resource".** One action that pre-fills every required property that is still missing.
 - **Engine side.** A `GET /suggest?s=&p=` endpoint that reads the shapes graph.
 
-Planned after v0 (a possible M4 stretch). v0 already loads shapes into their own graph, so nothing blocks this.
+Implemented in `engine/loopingrules/suggest.py` and `GET /api/suggest?field=s|p|o&s=&p=&q=`.
+- The "complete this resource" action is a "still needs" strip of the missing required properties; clicking one fills the predicate.
+- Not supported yet:
+  - complex `sh:path`s;
+  - `rdfs:subClassOf` inference for targets;
+  - `sh:targetSubjectsOf` / `sh:targetObjectsOf`;
+  - `sh:or` / `sh:and` / `sh:node`.
 
 ## Open questions
 

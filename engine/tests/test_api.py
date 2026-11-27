@@ -75,3 +75,39 @@ def test_autopilot_with_approvals(client):
     assert st["autopilot"] == "done"
     triples = client.get("/api/sheet").json()["triples"]
     assert any(t["p"]["short"] == "ex:lineCount" and t["o"]["value"] == "2" for t in triples)
+
+
+def test_suggest_predicates_for_new_file(client):
+    client.post("/api/sheet/triples", json={"s": "ex:f1", "p": "a", "o": "ex:File"})
+    r = client.get("/api/suggest", params={"field": "p", "s": "ex:f1"}).json()
+    missing = {m["value"] for m in r["missing"]}
+    assert missing == {"ex:name", "ex:inFolder"}
+    values = [i["value"] for i in r["items"]]
+    assert values.index("ex:name") < values.index("ex:extension")  # missing first
+
+
+def test_suggest_objects(client):
+    client.post("/api/sheet/triples", json={"s": "ex:f1", "p": "a", "o": "ex:File"})
+    # sh:class -> existing instances
+    r = client.get("/api/suggest", params={"field": "o", "s": "ex:f1", "p": "ex:inFolder"}).json()
+    assert [i["value"] for i in r["items"]] == ["ex:target"]
+    assert r["constraint"]["class"] == "ex:Folder"
+    # sh:datatype
+    r = client.get("/api/suggest", params={"field": "o", "s": "ex:f1", "p": "ex:lineCount"}).json()
+    assert r["constraint"] == {"kind": "literal", "datatype": "xsd:integer"}
+    # rdf:type -> target classes
+    r = client.get("/api/suggest", params={"field": "o", "s": "ex:new", "p": "a"}).json()
+    assert {"ex:File", "ex:Folder", "lr:ShellCall"} <= {i["value"] for i in r["items"]}
+    # sh:in on the built-in tool shape
+    client.post("/api/sheet/triples", json={"s": "ex:c", "p": "a", "o": "lr:ShellCall"})
+    r = client.get("/api/suggest", params={"field": "o", "s": "ex:c", "p": "lr:status"}).json()
+    assert [i["value"] for i in r["items"]] == ["lr:Pending", "lr:Done", "lr:Rejected", "lr:Failed"]
+
+
+def test_suggest_full_and_typable(client):
+    r = client.get("/api/suggest", params={"field": "o", "s": "ex:target", "p": "ex:path"}).json()
+    assert "full" in r["constraint"]
+    r = client.get("/api/suggest", params={"field": "p", "s": "ex:target"}).json()
+    assert next(i for i in r["items"] if i["value"] == "ex:path")["status"] == "full"
+    r = client.get("/api/suggest", params={"field": "s", "q": "targ"}).json()
+    assert r["items"] == [{"value": "ex:target", "hint": "ex:Folder"}]

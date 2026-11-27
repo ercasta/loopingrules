@@ -8,14 +8,19 @@
 
 ex:FolderShape a sh:NodeShape ;
   sh:targetClass ex:Folder ;
-  sh:property [ sh:path ex:path ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] .
+  sh:property [ sh:path ex:path ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                sh:description "folder to scan, relative to where the engine runs" ] .
 
 ex:FileShape a sh:NodeShape ;
   sh:targetClass ex:File ;
-  sh:property [ sh:path ex:name ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
-  sh:property [ sh:path ex:inFolder ; sh:minCount 1 ; sh:maxCount 1 ; sh:class ex:Folder ] ;
-  sh:property [ sh:path ex:extension ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
-  sh:property [ sh:path ex:lineCount ; sh:maxCount 1 ; sh:datatype xsd:integer ] .
+  sh:property [ sh:path ex:name ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                sh:description "file name, without the folder" ] ;
+  sh:property [ sh:path ex:inFolder ; sh:minCount 1 ; sh:maxCount 1 ; sh:class ex:Folder ;
+                sh:description "the folder that contains the file" ] ;
+  sh:property [ sh:path ex:extension ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                sh:pattern "^[a-z0-9]+$" ; sh:description "lower-case extension, no dot" ] ;
+  sh:property [ sh:path ex:lineCount ; sh:maxCount 1 ; sh:datatype xsd:integer ;
+                sh:description "number of lines (text files only)" ] .
 
 # ------------------------------------------------------------ operations
 

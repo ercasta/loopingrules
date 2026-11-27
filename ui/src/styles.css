@@ -310,3 +310,42 @@ tr:hover .icon { opacity: 1; }
   background: var(--panel-2); border: 1px solid var(--line-2); padding: 8px 16px; border-radius: 9px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
 }
+
+/* ------------------------------------------------------------ editing assist (D15) */
+.grid td.subj { cursor: pointer; }
+.add-zone { border-top: 1px solid var(--line); background: var(--panel-2); }
+.add-zone .add-row { border-top: none; }
+.assist { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px 0; font-size: 12px; color: var(--muted); }
+.assist .label { color: var(--dim); }
+.termlike { font-size: 12px; color: var(--iri); }
+.need {
+  font-family: var(--mono); font-size: 11px; cursor: pointer;
+  border: 1px dashed #7a5a1e; color: var(--warn); background: rgba(255, 181, 71, 0.08);
+  border-radius: 6px; padding: 2px 8px;
+}
+.need:hover { border-style: solid; }
+.assist.expect { color: var(--accent-2); font-family: var(--mono); font-size: 11px; }
+.assist.expect.warn { color: var(--warn); }
+.assist.problem { color: var(--bad); padding-bottom: 8px; font-size: 11px; }
+
+.combo { position: relative; flex: 1; }
+.combo input { width: 100%; font-family: var(--mono); font-size: 12px; }
+.combo.invalid input { border-color: var(--bad); }
+.combo-list {
+  position: absolute; bottom: calc(100% + 40px); left: 0; z-index: 20;
+  min-width: 100%; width: max-content; max-width: 440px; max-height: 214px; overflow: auto;
+  margin: 0; padding: 4px; list-style: none;
+  background: #151a2b; border: 1px solid var(--line-2); border-radius: 9px;
+  box-shadow: 0 -12px 30px rgba(0, 0, 0, 0.45);
+}
+.combo-list li {
+  display: grid; grid-template-columns: auto auto 1fr; gap: 8px; align-items: baseline;
+  padding: 5px 8px; border-radius: 6px; cursor: pointer;
+}
+.combo-list li.active { background: rgba(139, 124, 255, 0.16); }
+.combo-list .v { font-family: var(--mono); font-size: 12px; color: var(--text); }
+.combo-list .h { color: var(--dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.combo-list li.full .v { color: var(--dim); text-decoration: line-through; }
+.badge { font-size: 9px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; border-radius: 4px; padding: 0 5px; }
+.badge.req { color: var(--warn); border: 1px solid #7a5a1e; }
+.badge.full { color: var(--dim); border: 1px solid var(--line-2); }
