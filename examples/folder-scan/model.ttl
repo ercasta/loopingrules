@@ -38,9 +38,10 @@ ex:registerFile a lr:Operation ;
     ?line lr:text ?name .
     FILTER(!STRENDS(?name, "/"))
     FILTER NOT EXISTS { ?other ex:inFolder ?folder ; ex:name ?name }
+    BIND(IRI(CONCAT(STR(ex:), "file_", ENCODE_FOR_URI(?name))) AS ?file)
   """ ;
   lr:insert """
-    _:file a ex:File ; ex:name ?name ; ex:inFolder ?folder .
+    ?file a ex:File ; ex:name ?name ; ex:inFolder ?folder .
   """ .
 
 ex:classifyFile a lr:Operation ;

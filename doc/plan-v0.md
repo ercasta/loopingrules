@@ -99,7 +99,9 @@ doc/
 - `approval-needed`
 - `autopilot-stopped`
 
-## UI (React + Vite + TanStack Table)
+## UI (React + Vite)
+
+The tables are hand-styled; TanStack Table turned out not to be needed.
 
 - **Sheet panel.** An editable S | P | O grid with prefix-compacted IRIs, add/delete rows and violation badges.
 - **Applications panel.** One row per application, showing:
@@ -119,8 +121,8 @@ doc/
 |---|---|---|
 | ✅ M1 | Engine core: store, operations, validation, controllers, tick | pytest on folder-scan; tool calls stubbed |
 | ✅ M2 | Shell tool + approval queue + headless CLI (`lr run examples/folder-scan`) | autopilot completes end to end from the CLI, with approvals prompted in the terminal |
-| M3 | FastAPI + WebSocket | API tests |
-| M4 | UI | manual drive + autopilot of folder-scan in the browser |
+| ✅ M3 | FastAPI + WebSocket | API tests |
+| ✅ M4 | UI | manual drive + autopilot of folder-scan in the browser |
 
 ## Known v0 limitations, accepted for now
 

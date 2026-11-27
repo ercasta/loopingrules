@@ -9,9 +9,11 @@ LoopingRules replaces rows and columns with **RDF triples** and replaces hand-wr
 
 Then you either drive the computation one step at a time, or put it on **autopilot** and watch it loop until there's nothing left to do.
 
-![LoopingRules autopilot scanning a folder](doc/screenshot.svg)
+![LoopingRules web UI: the sheet, scored applications with delta previews, controllers and activity](doc/ui.png)
 
-*Above: a real run of the `folder-scan` example. The engine lists the files in a folder with `ls`, registers and classifies each one, and counts the lines of the `.txt` files with `wc`. Every shell command is approved before it runs. There is no workflow script: it's 5 rules, a few SHACL shapes and 2 scoring queries.*
+*Above: the `folder-scan` example in mid-run. On the left is the **sheet**, where the triples the last tick changed glow green. In the middle are the **applications** that could fire next: each one shows its delta and how every controller scores the state it would produce, and the autopilot's pick is outlined. On the right are the **controllers** you can switch on and off, and the **activity** log.*
+
+The example lists the files in a folder with `ls`, registers and classifies each one, and counts the lines of the `.txt` files with `wc`. There is no workflow script: it's 5 rules, a few SHACL shapes and 2 scoring queries.
 
 ---
 
@@ -75,21 +77,41 @@ _:call lr:status lr:Done ; lr:exitCode 0 ;
 
 ## Share models, not code
 
-Models and controllers are **pure data**: RDF, SPARQL and SHACL. Sharing one carries none of the risks of sharing a script. The only way a model can touch the outside world is through tool calls, and **every tool call needs approval**.
+Models and controllers are **pure data**: RDF, SPARQL and SHACL. Sharing one carries none of the risks of sharing a script. The only way a model can touch the outside world is through tool calls, and **every tool call needs approval**. Autopilot pauses until you decide:
+
+![A shell call awaiting approval](doc/ui-approval.png)
 
 ## Quick start
 
 ```bash
+# 1. the engine
 cd engine
 python -m venv .venv
 .venv/Scripts/pip install -e ".[dev]"     # on Linux/macOS: .venv/bin/pip
 
+# 2. the web UI
+cd ../ui
+npm install
+npm run build
+
+# 3. serve a project and open http://127.0.0.1:8765
+cd ..
+engine/.venv/Scripts/lr serve examples/folder-scan
+```
+
+For UI development, run `npm run dev` in `ui/` (port 5173) while `lr serve` is running. Vite proxies the API to it.
+
+### Headless
+
+```bash
 # list what could happen right now
-.venv/Scripts/lr apps ../examples/folder-scan
+engine/.venv/Scripts/lr apps examples/folder-scan
 
 # put it on autopilot (it asks before every shell command)
-.venv/Scripts/lr run ../examples/folder-scan
+engine/.venv/Scripts/lr run examples/folder-scan
 ```
+
+![The headless CLI running autopilot](doc/screenshot-cli.svg)
 
 | Option | Effect |
 |---|---|
@@ -106,6 +128,14 @@ Run the tests with:
 .venv/Scripts/python -m pytest
 ```
 
+## Architecture
+
+```
+engine/   Python: rdflib + pySHACL engine, FastAPI server, `lr` CLI
+ui/       TypeScript: React + Vite, talks to the engine over /api and a WebSocket
+examples/ ready-to-run projects
+```
+
 ## A project is just a folder
 
 ```
@@ -119,8 +149,8 @@ my-project/
 
 - [x] Engine core: operations, SHACL guard, scoring controllers, autopilot
 - [x] Shell tool with per-call approval, and the headless CLI
-- [ ] HTTP + WebSocket API
-- [ ] Spreadsheet-style web UI: edit triples, filter applications, preview deltas, approve calls
+- [x] HTTP + WebSocket API
+- [x] Spreadsheet-style web UI: edit triples, filter applications (including by a SPARQL pattern on the end state), preview deltas, approve calls
 - [ ] Autocomplete for editing, derived from the SHACL shapes
 - [ ] Named graphs (full SPOG quads)
 - [ ] An allowlist for approving tool calls automatically

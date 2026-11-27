@@ -96,6 +96,18 @@ def cmd_run(args, console: Console) -> int:
     return 0
 
 
+def cmd_serve(args, console: Console) -> int:
+    import uvicorn
+
+    from .api import UI_DIST, create_app
+
+    console.print(f"[bold magenta]LoopingRules[/] serving [cyan]{args.project}[/] on http://{args.host}:{args.port}")
+    if not UI_DIST.exists():
+        console.print("[yellow]ui/dist not found: API only (run `npm run build` in ui/, or use `npm run dev`)[/]")
+    uvicorn.run(create_app(args.project), host=args.host, port=args.port, log_level="warning")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="lr", description="LoopingRules semantic spreadsheet engine")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -106,13 +118,18 @@ def main(argv: list[str] | None = None) -> int:
     p_run.add_argument("--yes", action="store_true", help="approve every tool call")
     p_run.add_argument("--max-ticks", type=int, default=None)
     p_run.add_argument("--save", action="store_true", help="write the sheet back to the project")
+    p_serve = sub.add_parser("serve", help="serve the API and web UI")
+    p_serve.add_argument("project")
+    p_serve.add_argument("--host", default="127.0.0.1")
+    p_serve.add_argument("--port", type=int, default=8765)
     for p in (p_apps, p_run):
         p.add_argument("--svg", help="also export the console output as an SVG")
     args = ap.parse_args(argv)
 
-    console = Console(record=bool(args.svg), width=110 if args.svg else None)
-    code = {"apps": cmd_apps, "run": cmd_run}[args.cmd](args, console)
-    if args.svg:
+    svg = getattr(args, "svg", None)
+    console = Console(record=bool(svg), width=110 if svg else None)
+    code = {"apps": cmd_apps, "run": cmd_run, "serve": cmd_serve}[args.cmd](args, console)
+    if getattr(args, "svg", None):
         console.save_svg(args.svg, title="lr " + " ".join(argv if argv is not None else sys.argv[1:]))
     return code
 
