@@ -77,9 +77,16 @@ _:call lr:status lr:Done ; lr:exitCode 0 ;
 
 ## Share models, not code
 
-Models and controllers are **pure data**: RDF, SPARQL and SHACL. Sharing one carries none of the risks of sharing a script. The only way a model can touch the outside world is through tool calls, and **every tool call needs approval**. Autopilot pauses until you decide:
+Models and controllers are **pure data**: RDF, SPARQL and SHACL. Sharing one carries none of the risks of sharing a script. The only way a model can touch the outside world is through tool calls, and **every tool call needs approval**. Autopilot pauses until you decide.
 
-![A shell call awaiting approval](doc/ui-approval.png)
+![A shell call awaiting approval, with the "always allow" template](doc/ui-approval.png)
+
+**Trusted commands** let autopilot run unattended. Click *Always allow…* and LoopingRules proposes a template such as `wc -l < '{}'`:
+- each `'{}'` matches exactly one single-quoted argument;
+- an argument cannot contain quotes or newlines;
+- nothing can be appended to the command.
+
+So `wc -l < 'x'; rm -rf /` never matches. Trust belongs to **you**, not to the project: rules are stored in `~/.loopingrules/trust.ttl` (or `$LR_TRUST`), scoped to the project's path. A shared project can't bring its own approvals. The headless `lr run` honours the same rules.
 
 ## Your shapes are your autocomplete
 
@@ -107,6 +114,8 @@ npm run build
 cd ..
 engine/.venv/Scripts/lr serve examples/folder-scan
 ```
+
+The UI starts in a light theme. The ☾ button switches to dark, and the choice is remembered.
 
 For UI development, run `npm run dev` in `ui/` (port 5173) while `lr serve` is running. Vite proxies the API to it.
 
@@ -162,7 +171,7 @@ my-project/
 - [x] Spreadsheet-style web UI: edit triples, filter applications (including by a SPARQL pattern on the end state), preview deltas, approve calls
 - [x] Autocomplete for editing, derived from the SHACL shapes
 - [ ] Named graphs (full SPOG quads)
-- [ ] An allowlist for approving tool calls automatically
+- [x] An allowlist for approving tool calls automatically
 - [ ] Controllers learned from your manual choices (anti-unification, RIPPER)
 - [ ] Layered controllers: freeze what works, and add new ones that beat it in specific situations
 

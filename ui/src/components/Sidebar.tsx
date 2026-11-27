@@ -1,8 +1,8 @@
-import { api, type Controller, type LogEntry } from "../api";
+import { api, type Controller, type LogEntry, type TrustRule } from "../api";
 
-type Props = { controllers: Controller[]; log: LogEntry[]; onError: (e: unknown) => void };
+type Props = { controllers: Controller[]; trust: TrustRule[]; log: LogEntry[]; onError: (e: unknown) => void };
 
-export function Sidebar({ controllers, log, onError }: Props) {
+export function Sidebar({ controllers, trust, log, onError }: Props) {
   return (
     <aside className="panel side">
       <header className="panel-head">
@@ -26,6 +26,23 @@ export function Sidebar({ controllers, log, onError }: Props) {
 
       <header className="panel-head">
         <h2>
+          <span className="glyph">★</span> Trusted commands
+        </h2>
+      </header>
+      <div className="trust">
+        {trust.length === 0 && <div className="trust-empty">Every tool call asks first.</div>}
+        {trust.map((r) => (
+          <div key={r.id} className="trust-rule">
+            <code>{r.template}</code>
+            <button className="icon" title="Stop trusting" onClick={() => api.untrust(r.id).catch(onError)}>
+              ×
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <header className="panel-head">
+        <h2>
           <span className="glyph">≋</span> Activity
         </h2>
       </header>
@@ -38,6 +55,7 @@ export function Sidebar({ controllers, log, onError }: Props) {
             </span>
             <span className="text">
               {e.kind === "tool" ? <code>{e.text}</code> : e.text}
+              {e.rule && <span className="trusted">trusted</span>}
               {e.bindings && (
                 <span className="lb">
                   {Object.entries(e.bindings)

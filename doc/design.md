@@ -89,7 +89,11 @@ An operation is an RDF resource whose parts are SPARQL fragments:
 ### D10. Tool calls need approval
 - Before the engine runs a tool call, such as a shell command, the call must be approved.
 - v0 approval is per call.
-- Later, an allowlist of command patterns, stored in the project, can approve matching calls automatically.
+- **Allowlist (implemented):** command *templates* approve matching calls automatically, e.g. `wc -l < '{}'`.
+  - Each `'{}'` matches one single-quoted argument without quotes or newlines, and the whole command must match, so nothing can be appended.
+  - Regexes were rejected as too easy to make dangerously broad.
+- **Trust is stored per user, not per project:** `~/.loopingrules/trust.ttl` (override with `LR_TRUST`), scoped to the project's absolute path. A shared project folder cannot carry its own approvals; this is required by D9.
+- "Always allow…" proposes a template by replacing each quoted argument of the command with `'{}'`.
 - In autopilot, a call waiting for approval pauses the loop until it is approved or rejected.
 
 ### D11. User input is through the sheet

@@ -37,7 +37,9 @@ export type Application = {
   total: number;
 };
 
-export type PendingCall = { id: string; tool: string; command: string };
+export type PendingCall = { id: string; tool: string; command: string; suggested: string };
+
+export type TrustRule = { id: string; template: string };
 
 export type LogEntry = {
   n: number;
@@ -47,6 +49,7 @@ export type LogEntry = {
   score?: number;
   manual?: boolean;
   approved?: boolean;
+  rule?: string;
   bindings?: Record<string, string>;
 };
 
@@ -64,6 +67,7 @@ export type State = {
   operations: string[];
   controllers: Controller[];
   log: LogEntry[];
+  trust: TrustRule[];
 };
 
 export type Suggestion = { value: string; hint: string; status?: "missing" | "ok" | "full" };
@@ -113,7 +117,9 @@ export const api = {
   start: (delay_ms: number) => call("POST", "/autopilot/start", { delay_ms }),
   stop: () => call("POST", "/autopilot/stop"),
   step: () => call<{ status: string }>("POST", "/autopilot/step"),
-  decide: (id: string, approve: boolean) => call("POST", "/approvals", { id, approve }),
+  decide: (id: string, approve: boolean, remember?: string) => call("POST", "/approvals", { id, approve, remember }),
+  trust: (template: string) => call("POST", "/trust", { template }),
+  untrust: (id: string) => call("DELETE", `/trust/${id}`),
   toggleController: (name: string) => call("POST", `/controllers/${encodeURIComponent(name)}/toggle`),
   save: () => call<{ saved: string }>("POST", "/project/save"),
 };

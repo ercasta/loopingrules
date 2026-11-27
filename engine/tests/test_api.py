@@ -19,7 +19,7 @@ def client(tmp_path):
     shutil.copytree(EXAMPLE, proj)
     sheet = (proj / "sheet.ttl").read_text().replace('ex:path "."', f'ex:path "{data.as_posix()}"')
     (proj / "sheet.ttl").write_text(sheet)
-    with TestClient(create_app(proj)) as c:
+    with TestClient(create_app(proj, trust_path=tmp_path / "trust.ttl")) as c:
         yield c
 
 
@@ -111,3 +111,22 @@ def test_suggest_full_and_typable(client):
     assert next(i for i in r["items"] if i["value"] == "ex:path")["status"] == "full"
     r = client.get("/api/suggest", params={"field": "s", "q": "targ"}).json()
     assert r["items"] == [{"value": "ex:target", "hint": "ex:Folder"}]
+
+
+def test_remember_approval_then_autopilot_runs_unattended(client):
+    client.post("/api/autopilot/step")  # scan folder -> ls call pending
+    [call] = client.get("/api/state").json()["pending"]
+    assert call["suggested"] == "ls -1p '{}'"
+    bad = client.post("/api/approvals", json={"id": call["id"], "approve": True, "remember": "ls {}"})
+    assert bad.status_code == 400
+    client.post("/api/approvals", json={"id": call["id"], "approve": True, "remember": call["suggested"]})
+    client.post("/api/trust", json={"template": "wc -l < '{}'"})
+    assert {r["template"] for r in client.get("/api/trust").json()["rules"]} == {"ls -1p '{}'", "wc -l < '{}'"}
+    for _ in range(50):
+        if client.post("/api/autopilot/step").json()["status"] == "done":
+            break
+    st = client.get("/api/state").json()
+    assert st["pending"] == []
+    assert any(e.get("rule") == "wc -l < '{}'" for e in st["log"])
+    triples = client.get("/api/sheet").json()["triples"]
+    assert any(t["p"]["short"] == "ex:lineCount" for t in triples)

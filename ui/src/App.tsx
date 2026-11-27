@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, connectEvents, type Application, type Sheet, type State } from "./api";
 import { ApplicationsPanel } from "./components/ApplicationsPanel";
+import { ApprovalBanner } from "./components/ApprovalBanner";
 import { SheetPanel } from "./components/SheetPanel";
 import { Sidebar } from "./components/Sidebar";
 
@@ -21,6 +22,14 @@ export function App() {
   const [toast, setToast] = useState<string | null>(null);
   const [speed, setSpeed] = useState(400);
   const refreshTimer = useRef<number | undefined>(undefined);
+  const [theme, setTheme] = useState<"light" | "dark">(
+    () => (localStorage.getItem("lr-theme") as "light" | "dark" | null) ?? "light",
+  );
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem("lr-theme", theme);
+  }, [theme]);
 
   const flash = useCallback((msg: string) => {
     setToast(msg);
@@ -110,24 +119,20 @@ export function App() {
           >
             ⤓ Save
           </button>
+          <button
+            className="btn ghost theme"
+            onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+            title={theme === "light" ? "Switch to dark theme" : "Switch to light theme"}
+          >
+            {theme === "light" ? "☾" : "☀"}
+          </button>
         </div>
       </header>
 
       {pending.length > 0 && (
         <div className="approvals">
           {pending.map((c) => (
-            <div key={c.id} className="approval">
-              <span className="badge">⚙ {c.tool}</span>
-              <span className="label">wants to run</span>
-              <code>{c.command}</code>
-              <span className="spacer" />
-              <button className="btn approve" onClick={() => api.decide(c.id, true).catch(onError)}>
-                ✓ Approve
-              </button>
-              <button className="btn ghost" onClick={() => api.decide(c.id, false).catch(onError)}>
-                ✕ Reject
-              </button>
-            </div>
+            <ApprovalBanner key={c.id} call={c} onError={onError} />
           ))}
         </div>
       )}
@@ -143,7 +148,7 @@ export function App() {
           containsError={containsError}
           onError={onError}
         />
-        <Sidebar controllers={state?.controllers ?? []} log={state?.log ?? []} onError={onError} />
+        <Sidebar controllers={state?.controllers ?? []} trust={state?.trust ?? []} log={state?.log ?? []} onError={onError} />
       </main>
 
       {toast && <div className="toast">{toast}</div>}

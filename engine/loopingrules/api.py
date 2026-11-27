@@ -25,6 +25,7 @@ from .operations import Application
 from .project import Project
 from .store import prologue
 from .suggest import Suggester
+from .trust import TemplateError, TrustStore, generalize
 
 UI_DIST = Path(__file__).resolve().parents[2] / "ui" / "dist"
 
@@ -228,6 +229,12 @@ class Session:
         if not self.engine.pending_calls():
             self.approval_event.set()
 
+    async def run_trusted(self) -> None:
+        """Run pending calls that now match a trust rule (e.g. right after adding one)."""
+        await self._mutate(self.engine.tool_phase)
+        if not self.engine.pending_calls():
+            self.approval_event.set()
+
 
 # ---------------------------------------------------------------- app
 
@@ -240,17 +247,36 @@ class TripleIn(BaseModel):
 class Decision(BaseModel):
     id: str
     approve: bool
+    remember: str | None = None  # a template to trust from now on
+
+
+class TemplateIn(BaseModel):
+    template: str
 
 
 class AutopilotIn(BaseModel):
     delay_ms: int | None = None
 
 
-def create_app(project_path: str | Path) -> FastAPI:
+def create_app(project_path: str | Path, trust_path: str | Path | None = None) -> FastAPI:
     engine = Engine(Project.load(project_path))
     session = Session(engine)
+    trust = TrustStore(project_path, trust_path)
     app = FastAPI(title="LoopingRules")
     app.state.session = session
+
+    def trusted(call):
+        """Approver: run calls matching a trust rule, leave the rest pending."""
+        rule = trust.match(call.command)
+        if rule is None:
+            return None
+        session._log("tool", call.command, approved=True, rule=rule.template)
+        return True
+
+    engine.approver = trusted
+
+    def trust_json():
+        return [{"id": r.id, "template": r.template} for r in trust.rules()]
 
     def to_triple(body: TripleIn):
         try:
@@ -264,8 +290,10 @@ def create_app(project_path: str | Path) -> FastAPI:
             "project": str(Path(project_path).name),
             "version": session.version, "tick": session.tick,
             "autopilot": session.autopilot_status, "delay_ms": int(session.delay * 1000),
-            "pending": [{"id": session.terms.short(c.iri), "tool": "shell", "command": c.command}
+            "pending": [{"id": session.terms.short(c.iri), "tool": "shell", "command": c.command,
+                         "suggested": generalize(c.command)}
                         for c in engine.pending_calls()],
+            "trust": trust_json(),
             "operations": [o.name for o in engine.operations],
             "controllers": [{"name": c.name, "active": c.active, "query": c.query.strip()}
                             for c in engine.controllers],
@@ -397,11 +425,42 @@ def create_app(project_path: str | Path) -> FastAPI:
 
     @app.post("/api/approvals")
     async def decide(body: Decision):
+        if body.remember:
+            if not body.approve:
+                raise HTTPException(400, "only approvals can be remembered")
+            try:
+                trust.add(body.remember)
+            except TemplateError as e:
+                raise HTTPException(400, str(e))
         try:
             await session.resolve(body.id, body.approve)
         except KeyError:
             raise HTTPException(404, "no such pending call")
+        if body.remember:
+            await session.run_trusted()
         return {"version": session.version}
+
+    @app.get("/api/trust")
+    async def trust_list():
+        return {"rules": trust_json(), "file": str(trust.path)}
+
+    @app.post("/api/trust")
+    async def trust_add(body: TemplateIn):
+        try:
+            rule = trust.add(body.template)
+        except TemplateError as e:
+            raise HTTPException(400, str(e))
+        await session.run_trusted()
+        return {"id": rule.id, "template": rule.template}
+
+    @app.delete("/api/trust/{rule_id}")
+    async def trust_remove(rule_id: str):
+        try:
+            trust.remove(rule_id)
+        except KeyError:
+            raise HTTPException(404, "no such rule")
+        await session.broadcast({"type": "trust-changed"})
+        return {"rules": trust_json()}
 
     @app.post("/api/controllers/{name}/toggle")
     async def toggle(name: str):

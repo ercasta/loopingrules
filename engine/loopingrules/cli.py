@@ -20,6 +20,7 @@ from .engine import Engine, StepResult
 from .operations import Application
 from .project import Project
 from .tools.shell import PendingCall
+from .trust import TrustStore
 
 
 _bnode_labels: dict = {}
@@ -60,8 +61,13 @@ def cmd_apps(args, console: Console) -> int:
 def cmd_run(args, console: Console) -> int:
     project = Project.load(args.project)
 
+    trust = TrustStore(args.project)
+
     def approver(call: PendingCall) -> bool:
         console.print(f"   [yellow]⚙ shell[/] [bold]{call.command}[/]")
+        if rule := trust.match(call.command):
+            console.print(f"     approved by trust rule [green]{rule.template}[/]")
+            return True
         if args.yes:
             console.print("     approve? [y/n] [green]y[/] [dim](--yes)[/]")
             return True
