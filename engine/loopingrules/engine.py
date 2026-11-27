@@ -75,10 +75,33 @@ class Engine:
         apply_delta(state, app.deletes, app.inserts)
         return state
 
-    def apply(self, app: Application, run_tools: bool = True) -> None:
+    def apply(self, app: Application, run_tools: bool = True, kind: str = "tick") -> None:
         apply_delta(self.sheet, app.deletes, app.inserts)
+        nm = self.sheet.namespace_manager
+        self.project.record(app.inserts, app.deletes, kind=kind, label=app.operation.name,
+                            bindings=" ".join(f"?{k}={v.n3(nm)}" for k, v in sorted(app.bindings.items())))
         if run_tools:
             self.tool_phase()
+
+    # --- journaled changes outside operations -----------------------------
+    def _journaled(self, fn: Callable[[], None], **headers) -> None:
+        before = set(self.sheet)
+        fn()
+        after = set(self.sheet)
+        self.project.record(after - before, before - after, **headers)
+
+    def edit(self, add=(), remove=()) -> None:
+        """A manual change to the sheet, journaled as one transaction."""
+        def do():
+            for t in remove:
+                self.sheet.remove(t)
+            for t in add:
+                self.sheet.add(t)
+        self._journaled(do, kind="edit")
+
+    def undo(self):
+        """Revert the latest journaled change; returns its transaction or None."""
+        return self.project.undo()
 
     # --- tools -----------------------------------------------------------
     def pending_calls(self) -> list[PendingCall]:
@@ -91,14 +114,16 @@ class Engine:
         for call in self.pending_calls():
             decision = self.approver(call)
             if decision is True:
-                self.shell.run(self.sheet, call)
+                self._journaled(lambda: self.shell.run(self.sheet, call), kind="tool", label=call.command)
             elif decision is False:
-                self.shell.reject(self.sheet, call)
+                self._journaled(lambda: self.shell.reject(self.sheet, call), kind="tool-rejected", label=call.command)
 
     def resolve(self, call_id: str, approve: bool) -> None:
         for call in self.pending_calls():
             if call.iri.n3() == call_id:
-                (self.shell.run if approve else self.shell.reject)(self.sheet, call)
+                action = self.shell.run if approve else self.shell.reject
+                self._journaled(lambda: action(self.sheet, call),
+                                kind="tool" if approve else "tool-rejected", label=call.command)
                 return
         raise KeyError(f"No pending call {call_id}")
 

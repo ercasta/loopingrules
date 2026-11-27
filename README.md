@@ -121,6 +121,51 @@ The SHACL shapes that guard the state also **guide your editing**:
 
 ![SHACL-driven autocomplete: required properties first, with descriptions](doc/ui-autocomplete.png)
 
+## Nothing is lost, everything can be undone
+
+Every change is **saved automatically** in an append-only journal, `.lr/history.rdfp`: each tick, edit and tool result is one transaction in RDF Patch style (`A`/`D` lines).
+- **Restart** the server and you continue exactly where you were.
+- **↶ Undo** reverts the latest change, also across restarts. It does this by appending the inverse change, so the journal itself is never rewritten.
+- **Your files are never rewritten.** `sheet.ttl`, `model.ttl` and `controllers.ttl` are what you wrote, comments included; `sheet.ttl` is just the starting point. Delete `.lr/` to start over.
+- **Minted names, not blank nodes.** Things the engine creates get stable names like `gen:3f2a9c1e`, so the journal can always refer to them.
+
+## Share models, controllers and examples
+
+![The export menu](doc/ui-export.png)
+
+**Export** from the UI menu, or with `lr export my-project`. You get a single `.lr.zip` containing:
+
+| File | |
+|---|---|
+| `package.ttl` | the manifest: title, version, description, author, license, and **`lr:mayRun`**: every command the model may ask to run |
+| `model.ttl`, `controllers.ttl` | the model and its controllers |
+| `sheet.ttl` | optional: your example seed sheet, the current state, or nothing |
+| `README.md` | optional |
+
+Your journal and your trusted commands are **never** exported.
+
+**Import** with `lr import some-model.lr.zip my-copy`. LoopingRules shows the manifest and the commands the model may run. Nothing is trusted unless you pass `--trust-declared`. If a model ever asks to run a command its manifest didn't declare, the approval banner flags it.
+
+Importing is defensive:
+- only the files listed above are accepted, with size limits;
+- everything must parse;
+- **queries that could reach the network (`SERVICE`, `FROM`) are refused**, so a shared model cannot leak your data.
+
+👉 **Try it:** download one of the [example exports](exports/) and import it.
+
+A minimal manifest:
+
+```turtle
+@prefix lr: <https://loopingrules.org/ns#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+<urn:lr:package> a lr:Package ;
+  dcterms:title "folder-scan" ; lr:version "0.1.0" ;
+  dcterms:description "Lists a folder and counts the lines of its .txt files." ;
+  dcterms:creator "Your Name" ; dcterms:license "MIT" ;
+  lr:mayRun "ls -1p '{}'" , "wc -l < '{}'" .
+```
+
 ## Quick start
 
 ```bash
@@ -155,11 +200,19 @@ engine/.venv/Scripts/lr run examples/folder-scan
 
 ![The headless CLI running autopilot](doc/screenshot-cli.svg)
 
+### Sharing from the command line
+
+```bash
+engine/.venv/Scripts/lr export examples/folder-scan            # → folder-scan-0.1.0.lr.zip
+engine/.venv/Scripts/lr export examples/folder-scan --sheet none
+engine/.venv/Scripts/lr import exports/folder-scan-0.1.0.lr.zip my-copy [--trust-declared]
+```
+
 | Option | Effect |
 |---|---|
 | `--yes` | approve every call automatically |
 | `--max-ticks N` | stop after N ticks |
-| `--save` | write the resulting sheet back to the project |
+| `--save` | also write a snapshot (every change is journaled anyway) |
 | `--svg out.svg` | export the console output as an SVG |
 
 To scan a different folder, edit `ex:path` in `examples/folder-scan/sheet.ttl`. On Windows, shell calls go through Git Bash. You can override this with the `LR_SHELL` environment variable.
@@ -182,9 +235,12 @@ examples/ ready-to-run projects
 
 ```
 my-project/
-  sheet.ttl         # the state
+  sheet.ttl         # the seed state (yours, never rewritten)
   model.ttl         # SHACL shapes + lr:Operations
   controllers.ttl   # lr:Controllers
+  package.ttl       # optional manifest, used when sharing
+  README.md         # optional
+  .lr/              # runtime state: journal + snapshot (delete to reset)
 ```
 
 ## Roadmap
@@ -195,6 +251,9 @@ my-project/
 - [x] Spreadsheet-style web UI: edit triples, filter applications (including by a SPARQL pattern on the end state), preview deltas, approve calls
 - [x] Autocomplete for editing, derived from the SHACL shapes
 - [x] Goal-driven computation as a modeling pattern (no engine changes)
+- [x] Automatic persistence with an append-only journal, and undo
+- [x] Sharing through `.lr.zip` exports with a manifest of declared commands
+- [ ] Performance: lazy validation, overlays, incremental SHACL
 - [ ] Named graphs (full SPOG quads)
 - [x] An allowlist for approving tool calls automatically
 - [ ] Controllers learned from your manual choices (anti-unification, RIPPER)

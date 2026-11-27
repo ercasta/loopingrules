@@ -463,3 +463,25 @@ tr:hover .icon { opacity: 1; }
   color: var(--good); border: 1px solid var(--good-line); border-radius: 4px; padding: 0 4px;
 }
 .btn.theme { width: 32px; padding: 6px 0; font-size: 14px; }
+
+/* ------------------------------------------------------------ export menu, package, undeclared */
+.project .pkg { color: var(--dim); }
+.menu { position: relative; }
+.menu > summary { list-style: none; display: inline-block; }
+.menu > summary::-webkit-details-marker { display: none; }
+.menu-list {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; width: 300px;
+  background: var(--popup-bg); border: 1px solid var(--line-2); border-radius: 10px; padding: 5px;
+  box-shadow: 0 12px 30px var(--shadow-strong); display: flex; flex-direction: column;
+}
+.menu-list a {
+  color: var(--text); text-decoration: none; padding: 7px 10px; border-radius: 7px; font-weight: 600; font-size: 12px;
+}
+.menu-list a span { display: block; color: var(--dim); font-weight: 400; font-size: 11px; }
+.menu-list a:hover { background: var(--accent-soft-2); }
+.undeclared {
+  font-size: 11px; font-weight: 700; color: var(--bad);
+  border: 1px solid var(--bad-line); background: var(--bad-bg); border-radius: 6px; padding: 2px 7px;
+}
+.log-undo .icon { color: var(--muted); }
+.topbar { position: relative; z-index: 20; }

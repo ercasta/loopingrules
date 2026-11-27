@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from rdflib import RDF, RDFS, BNode, Graph, URIRef, Variable
 from rdflib.term import Node
 
+from .project import mint
 from .security import check_query
 from .store import Triple, prologue
 from .vocab import LR
@@ -69,6 +70,14 @@ def _instantiate(template: str, bindings: dict, prefixes: str, sheet: Graph) -> 
     return set(sheet.query(q, initBindings=bindings))
 
 
+def _mint_fresh(triples: set[Triple], bindings: dict) -> set[Triple]:
+    """Fresh blank nodes from INSERT templates become minted IRIs (stable across reloads)."""
+    bound = set(bindings.values())
+    names: dict[BNode, object] = {}
+    sub = lambda x: names.setdefault(x, mint()) if isinstance(x, BNode) and x not in bound else x  # noqa: E731
+    return {tuple(sub(x) for x in t) for t in triples}
+
+
 def _app_id(op: Operation, bindings: dict) -> str:
     key = str(op.iri) + "|" + "|".join(f"{k}={v.n3()}" for k, v in sorted(bindings.items()))
     return hashlib.sha1(key.encode()).hexdigest()[:12]
@@ -90,7 +99,8 @@ def enumerate_applications(sheet: Graph, ops: list[Operation], model: Graph) -> 
             deletes = {t for t in _instantiate(op.delete, init, prefixes, sheet) if t in sheet}
             if any(isinstance(term, BNode) and term not in bindings.values() for t in deletes for term in t):
                 raise ValueError(f"{op.name}: DELETE templates may not introduce blank nodes")
-            inserts = {t for t in _instantiate(op.insert, init, prefixes, sheet) if t not in sheet}
+            inserts = _mint_fresh(_instantiate(op.insert, init, prefixes, sheet), bindings)
+            inserts = {t for t in inserts if t not in sheet}
             if not deletes and not inserts:
                 continue
             apps.append(Application(_app_id(op, bindings), op, bindings, deletes, inserts))

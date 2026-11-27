@@ -1,0 +1,10 @@
+@prefix lr:      <https://loopingrules.org/ns#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+<urn:lr:package> a lr:Package ;
+  dcterms:title "folder-scan-goal" ;
+  lr:version "0.1.0" ;
+  dcterms:description "Goal-driven folder-scan: nothing happens until you add a CountLinesGoal for a folder." ;
+  dcterms:creator "Antonio Castaldo D'Ursi" ;
+  dcterms:license "MIT" ;
+  lr:mayRun "ls -1p '{}'" , "wc -l < '{}'" .

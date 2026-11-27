@@ -16,7 +16,7 @@ def client(tmp_path):
     data.mkdir()
     (data / "a.txt").write_text("1\n2\n")
     proj = tmp_path / "proj"
-    shutil.copytree(EXAMPLE, proj)
+    shutil.copytree(EXAMPLE, proj, ignore=shutil.ignore_patterns(".lr"))
     sheet = (proj / "sheet.ttl").read_text().replace('ex:path "."', f'ex:path "{data.as_posix()}"')
     (proj / "sheet.ttl").write_text(sheet)
     with TestClient(create_app(proj, trust_path=tmp_path / "trust.ttl")) as c:
@@ -130,3 +130,18 @@ def test_remember_approval_then_autopilot_runs_unattended(client):
     assert any(e.get("rule") == "wc -l < '{}'" for e in st["log"])
     triples = client.get("/api/sheet").json()["triples"]
     assert any(t["p"]["short"] == "ex:lineCount" for t in triples)
+
+
+def test_undo_and_export_over_http(client):
+    client.post("/api/sheet/triples", json={"s": "ex:x", "p": "rdfs:label", "o": '"hello"'})
+    st = client.get("/api/state").json()
+    assert st["undo"] == "edit"
+    assert client.post("/api/undo").status_code == 200
+    assert not any(t["s"]["short"] == "ex:x" for t in client.get("/api/sheet").json()["triples"])
+    r = client.get("/api/export", params={"sheet": "state"})
+    assert r.status_code == 200 and r.headers["content-type"] == "application/zip"
+    assert "folder-scan-0.1.0.lr.zip" in r.headers["content-disposition"]
+    # pending calls say whether the package declared them
+    client.post("/api/autopilot/step")
+    [call] = client.get("/api/state").json()["pending"]
+    assert call["declared"] is True

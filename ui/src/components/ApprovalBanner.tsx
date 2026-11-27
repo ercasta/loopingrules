@@ -11,6 +11,11 @@ export function ApprovalBanner({ call, onError }: { call: PendingCall; onError: 
         <span className="badge">⚙ {call.tool}</span>
         <span className="label">wants to run</span>
         <code>{call.command}</code>
+        {call.declared === false && (
+          <span className="undeclared" title="The package manifest does not list this command (lr:mayRun)">
+            ⚠ not declared by the package
+          </span>
+        )}
         <span className="spacer" />
         <button className="btn approve" onClick={() => api.decide(call.id, true).catch(onError)}>
           ✓ Approve

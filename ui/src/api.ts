@@ -37,13 +37,20 @@ export type Application = {
   total: number;
 };
 
-export type PendingCall = { id: string; tool: string; command: string; suggested: string };
+export type PendingCall = {
+  id: string;
+  tool: string;
+  command: string;
+  suggested: string;
+  /** null when the project has no package manifest */
+  declared: boolean | null;
+};
 
 export type TrustRule = { id: string; template: string };
 
 export type LogEntry = {
   n: number;
-  kind: "tick" | "tool" | "edit" | "info";
+  kind: "tick" | "tool" | "edit" | "info" | "undo";
   text: string;
   tick: number;
   score?: number;
@@ -68,6 +75,9 @@ export type State = {
   controllers: Controller[];
   log: LogEntry[];
   trust: TrustRule[];
+  undo: string | null;
+  journal: number;
+  package: { title: string; version: string } | null;
 };
 
 export type Suggestion = { value: string; hint: string; status?: "missing" | "ok" | "full" };
@@ -121,7 +131,8 @@ export const api = {
   trust: (template: string) => call("POST", "/trust", { template }),
   untrust: (id: string) => call("DELETE", `/trust/${id}`),
   toggleController: (name: string) => call("POST", `/controllers/${encodeURIComponent(name)}/toggle`),
-  save: () => call<{ saved: string }>("POST", "/project/save"),
+  undo: () => call("POST", "/undo"),
+  exportUrl: (sheet: "seed" | "state" | "none") => `/api/export?sheet=${sheet}`,
 };
 
 export function connectEvents(onEvent: (e: { type: string }) => void): () => void {

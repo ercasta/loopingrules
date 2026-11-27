@@ -21,6 +21,7 @@ from typing import Callable
 from rdflib import RDF, BNode, Graph, Literal, URIRef
 from rdflib.namespace import XSD
 
+from ..project import mint
 from ..vocab import DONE, FAILED, LR, PENDING, REJECTED
 
 Executor = Callable[[str], tuple[int, str, str]]
@@ -84,7 +85,7 @@ class ShellTool:
 
 def _lines(g: Graph, call, prop, text: str) -> None:
     for i, line in enumerate(text.splitlines()):
-        node = BNode()
+        node = mint()
         g.add((call, prop, node))
         g.add((node, LR["index"], Literal(i, datatype=XSD.integer)))
         g.add((node, LR.text, Literal(line)))

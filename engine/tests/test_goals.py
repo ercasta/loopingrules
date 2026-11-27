@@ -29,7 +29,7 @@ def stub_shell():
 @pytest.fixture
 def project(tmp_path):
     proj = tmp_path / "proj"
-    shutil.copytree(EXAMPLE, proj)
+    shutil.copytree(EXAMPLE, proj, ignore=shutil.ignore_patterns(".lr"))
     p = Project.load(proj)
     # a second folder that no goal mentions
     p.sheet.add((EX.other, RDF.type, EX.Folder))

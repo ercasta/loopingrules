@@ -97,8 +97,7 @@ def cmd_run(args, console: Console) -> int:
     console.print(f"sheet: {len(eng.sheet)} triples, "
                   + ("[green]valid[/]" if not violations else f"[red]{len(violations)} violations[/]"))
     if args.save:
-        project.save()
-        console.print(f"saved to {project.path}")
+        console.print(f"snapshot written to {project.snapshot()}")
     return 0
 
 
@@ -114,6 +113,46 @@ def cmd_serve(args, console: Console) -> int:
     return 0
 
 
+def cmd_export(args, console: Console) -> int:
+    from .package import export_project
+
+    state = Project.load(args.project).sheet if args.sheet == "state" else None
+    out = export_project(args.project, args.out, sheet=args.sheet, state_sheet=state)
+    console.print(f"[green]exported[/] {out}")
+    return 0
+
+
+def cmd_import(args, console: Console) -> int:
+    from pathlib import Path
+
+    from .package import PackageError, import_export
+
+    try:
+        manifest = import_export(Path(args.file).read_bytes(), args.dest)
+    except PackageError as e:
+        console.print(f"[red]refused:[/] {e}")
+        return 1
+    console.print(Panel.fit(
+        f"[bold]{manifest.title}[/] {manifest.version}"
+        + (f"\n{manifest.description}" if manifest.description else "")
+        + (f"\nby {manifest.creator}" if manifest.creator else "")
+        + (f" · {manifest.license}" if manifest.license else ""),
+        title="imported", border_style="green"))
+    if manifest.may_run:
+        console.print("This model may ask to run:")
+        for t in manifest.may_run:
+            console.print(f"   [yellow]{t}[/]")
+        if args.trust_declared:
+            trust = TrustStore(args.dest)
+            for t in manifest.may_run:
+                trust.add(t)
+            console.print(f"[green]trusted[/] these templates for {args.dest}")
+        else:
+            console.print("[dim]Each call will ask for approval. Use --trust-declared to trust them now.[/]")
+    console.print(f"Run it with: lr serve {args.dest}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="lr", description="LoopingRules semantic spreadsheet engine")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -123,18 +162,28 @@ def main(argv: list[str] | None = None) -> int:
     p_run.add_argument("project")
     p_run.add_argument("--yes", action="store_true", help="approve every tool call")
     p_run.add_argument("--max-ticks", type=int, default=None)
-    p_run.add_argument("--save", action="store_true", help="write the sheet back to the project")
+    p_run.add_argument("--save", action="store_true", help="also write a snapshot (every change is journaled anyway)")
     p_serve = sub.add_parser("serve", help="serve the API and web UI")
     p_serve.add_argument("project")
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--port", type=int, default=8765)
+    p_exp = sub.add_parser("export", help="write a shareable .lr.zip of a project's model and controllers")
+    p_exp.add_argument("project")
+    p_exp.add_argument("-o", "--out", help="output file (default: <title>-<version>.lr.zip next to the project)")
+    p_exp.add_argument("--sheet", choices=["seed", "state", "none"], default="seed",
+                       help="include the authored seed sheet (default), the current state, or no sheet")
+    p_imp = sub.add_parser("import", help="create a project from a .lr.zip export")
+    p_imp.add_argument("file")
+    p_imp.add_argument("dest", help="new project folder")
+    p_imp.add_argument("--trust-declared", action="store_true",
+                       help="trust the command templates the package declares")
     for p in (p_apps, p_run):
         p.add_argument("--svg", help="also export the console output as an SVG")
     args = ap.parse_args(argv)
 
     svg = getattr(args, "svg", None)
     console = Console(record=bool(svg), width=110 if svg else None)
-    code = {"apps": cmd_apps, "run": cmd_run, "serve": cmd_serve}[args.cmd](args, console)
+    code = {"apps": cmd_apps, "run": cmd_run, "serve": cmd_serve, "export": cmd_export, "import": cmd_import}[args.cmd](args, console)
     if getattr(args, "svg", None):
         console.save_svg(args.svg, title="lr " + " ".join(argv if argv is not None else sys.argv[1:]))
     return code

@@ -79,7 +79,10 @@ export function App() {
           </span>
           <span className="tagline">semantic spreadsheet</span>
         </div>
-        <span className="project">▸ {state?.project ?? "…"}</span>
+        <span className="project" title={`${state?.journal ?? 0} changes journaled in .lr/`}>
+          ▸ {state?.project ?? "…"}
+          {state?.package && <span className="pkg"> · {state.package.title} {state.package.version}</span>}
+        </span>
         <div className="counters">
           <span>
             tick <b>{state?.tick ?? 0}</b>
@@ -110,15 +113,31 @@ export function App() {
           </label>
           <button
             className="btn ghost"
-            onClick={() =>
-              api
-                .save()
-                .then(() => flash("Project saved."))
-                .catch(onError)
-            }
+            disabled={!state?.undo || running}
+            onClick={() => api.undo().catch(onError)}
+            title={state?.undo ? `Undo ${state.undo}` : "Nothing to undo"}
           >
-            ⤓ Save
+            ↶ Undo
           </button>
+          <details className="menu">
+            <summary className="btn ghost" title="Download a shareable .lr.zip">
+              ⇩ Export
+            </summary>
+            <div className="menu-list">
+              <a href={api.exportUrl("seed")} download>
+                Model + controllers + example sheet
+                <span>what you authored: the usual way to share</span>
+              </a>
+              <a href={api.exportUrl("state")} download>
+                Model + controllers + current state
+                <span>share where you are right now</span>
+              </a>
+              <a href={api.exportUrl("none")} download>
+                Model + controllers only
+                <span>no data at all</span>
+              </a>
+            </div>
+          </details>
           <button
             className="btn ghost theme"
             onClick={() => setTheme(theme === "light" ? "dark" : "light")}

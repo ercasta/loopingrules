@@ -152,6 +152,28 @@ Lessons from `examples/folder-scan-goal`:
 - **Greedy plateaus remain the author's problem.** Steps that don't raise any controller's score need subgoals with their own controllers.
 - **Minted IRIs must be unique per context.** File IRIs now include the folder; without that, a second goal on another folder was blocked by SHACL.
 
+### D17. Persistence: seed + journal + snapshot
+- **Authored files are never rewritten by the engine.** This covers `sheet.ttl`, `model.ttl`, `controllers.ttl` and `package.ttl`. `sheet.ttl` is the seed state.
+- **Runtime state lives in `.lr/`:**
+  - `history.rdfp` is an append-only journal in RDF Patch style. Each transaction is a `TX` … `TC` block with `H` headers (kind, label, bindings, time) and `A`/`D` lines. There is one transaction per tick, edit, tool call result or undo, written immediately, so saving is automatic.
+  - `snapshot.ttl` holds the sheet after the first N transactions; its first line is `# lr:snapshot-tx N`. It is written every 100 transactions and on request.
+- **Load** = the snapshot, or the seed, plus a replay of the later transactions. An incomplete transaction at the end of the journal (a crash mid-write) is ignored.
+- **Undo** appends the inverse of the latest change that hasn't already been undone (header `undoes`), so the journal stays append-only.
+- **No blank nodes at runtime.** Fresh nodes from INSERT templates and tool results are minted as `urn:lr:gen:<8 hex>` (prefix `gen:`). Blank nodes in the seed are minted on load, and `_:x` typed in the UI becomes `gen:u_x`. Without this, journal entries could not refer to a node across reloads.
+
+### D18. Sharing: `.lr.zip` exports
+- **An export is a zip with a fixed set of files:** `package.ttl` (manifest), `model.ttl`, optional `controllers.ttl`, optional `sheet.ttl` (the seed, the current state, or none), optional `README.md`. The journal and trust rules are never included.
+- **The manifest declares `lr:mayRun` command templates.** Import shows them, and nothing is trusted unless the user asks (`--trust-declared`). A call that matches no declared template still goes through normal approval, but the banner flags it as undeclared.
+- **Import is defensive:**
+  - exact file names only, so no paths or folders (prevents zip-slip);
+  - size limits;
+  - every file must parse;
+  - operations and controllers must pass the security check (D9);
+  - declared templates must be valid trust templates;
+  - the destination folder must be new or empty.
+- Exports were chosen over git repos as the sharing channel; a registry can come later.
+- **Security (D9 addendum):** rdflib executes `SERVICE` and may dereference `FROM` graphs. Both are refused in operations, controllers and UI filters, and `SPARQL_LOAD_GRAPHS` is disabled. Still to do: query time limits.
+
 ## Open questions
 
 - **Q3. Ties and no-ops.**

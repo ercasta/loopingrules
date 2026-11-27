@@ -51,7 +51,7 @@ export function Sidebar({ controllers, trust, log, onError }: Props) {
           <li key={e.n} className={`log-${e.kind} ${e.approved === false ? "rejected" : ""}`}>
             <span className="tick">{e.kind === "tick" ? `#${e.tick}` : ""}</span>
             <span className="icon">
-              {e.kind === "tick" ? (e.manual ? "✋" : "⟳") : e.kind === "tool" ? (e.approved ? "⚙" : "⊘") : e.kind === "edit" ? "✎" : "■"}
+              {e.kind === "tick" ? (e.manual ? "✋" : "⟳") : e.kind === "tool" ? (e.approved ? "⚙" : "⊘") : e.kind === "edit" ? "✎" : e.kind === "undo" ? "↶" : "■"}
             </span>
             <span className="text">
               {e.kind === "tool" ? <code>{e.text}</code> : e.text}

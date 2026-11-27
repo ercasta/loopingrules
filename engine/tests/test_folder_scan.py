@@ -22,10 +22,13 @@ def project(tmp_path):
     (data / "B.MD").write_text("# hi\n")
     (data / "noext").write_text("x")
     proj_dir = tmp_path / "proj"
-    shutil.copytree(EXAMPLE, proj_dir)
-    p = Project.load(proj_dir)
-    p.sheet.set((EX.target, EX.path, Literal(data.as_posix())))
-    return p
+    shutil.copytree(EXAMPLE, proj_dir, ignore=shutil.ignore_patterns(".lr"))
+    seed = proj_dir / "sheet.ttl"
+    seed.write_text(seed.read_text().replace('ex:path "."', f'ex:path "{data.as_posix()}"'))
+    return Project.load(proj_dir)
+
+
+SMALL = {"ls": "a.txt\n", "wc": "3\n"}
 
 
 def fake_shell(outputs):
@@ -102,10 +105,40 @@ def test_invalid_sheet_does_not_block(project):
     assert all(a.valid for a in eng.applications())
 
 
-def test_save_and_reload(project, tmp_path):
-    eng = Engine(project, shell=fake_shell({"ls": "a.txt\n", "wc": "3\n"}), approver=lambda c: True)
+def test_journal_survives_restart_and_undo(project):
+    eng = Engine(project, shell=fake_shell(SMALL), approver=lambda c: True)
     eng.run(max_ticks=50)
-    project.save(tmp_path / "saved")
-    again = Project.load(tmp_path / "saved")
-    assert len(again.sheet) == len(project.sheet)
+    n_triples = len(project.sheet)
+    assert (project.path / ".lr" / "history.rdfp").exists()
+    # authored files are never rewritten
+    assert "Point this at a folder" in (project.path / "sheet.ttl").read_text()
+
+    again = Project.load(project.path)  # replay the journal on top of the seed
+    assert set(again.sheet) == set(project.sheet)
+    assert len(again.sheet) == n_triples
     assert Engine(again).applications() == []
+
+    # undo the last change, also across a restart
+    last = again.last_undoable()
+    Engine(again).undo()
+    assert len(again.sheet) != n_triples
+    third = Project.load(again.path)
+    assert set(third.sheet) == set(again.sheet)
+    assert third.last_undoable().n < last.n  # the undone change is not offered again
+
+
+def test_snapshot_then_replay(project):
+    eng = Engine(project, shell=fake_shell(SMALL), approver=lambda c: True)
+    eng.run(max_ticks=3)
+    project.snapshot()
+    eng.run(max_ticks=50)
+    again = Project.load(project.path)
+    assert again.snapshot_tx > 0
+    assert set(again.sheet) == set(project.sheet)
+
+
+def test_no_blank_nodes_after_ticks(project):
+    from rdflib import BNode
+    eng = Engine(project, shell=fake_shell(SMALL), approver=lambda c: True)
+    eng.run(max_ticks=50)
+    assert not any(isinstance(x, BNode) for t in project.sheet for x in t)

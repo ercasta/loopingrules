@@ -1,0 +1,11 @@
+@prefix lr:      <https://loopingrules.org/ns#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+<urn:lr:package> a lr:Package ;
+  dcterms:title "folder-scan" ;
+  lr:version "0.1.0" ;
+  dcterms:description "Lists a folder, registers and classifies its files, counts the lines of .txt files." ;
+  dcterms:creator "Antonio Castaldo D'Ursi" ;
+  dcterms:license "MIT" ;
+  # every shell command this model may ask to run
+  lr:mayRun "ls -1p '{}'" , "wc -l < '{}'" .

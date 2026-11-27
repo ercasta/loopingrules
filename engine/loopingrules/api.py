@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Callable
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from rdflib import RDF, BNode, Graph, Literal, URIRef
@@ -22,8 +22,9 @@ from rdflib.util import from_n3
 
 from .engine import Engine
 from .operations import Application
-from .project import Project
+from .project import GEN, Project
 from .store import prologue
+from .package import PackageError, declared, export_bytes, read_manifest
 from .security import check_query
 from .suggest import Suggester
 from .trust import TemplateError, TrustStore, generalize
@@ -48,7 +49,8 @@ class Terms:
         return t.n3(self.g.namespace_manager)
 
     def term(self, t) -> dict:
-        kind = "bnode" if isinstance(t, BNode) else "literal" if isinstance(t, Literal) else "uri"
+        minted = isinstance(t, URIRef) and str(t).startswith(str(GEN))
+        kind = "bnode" if isinstance(t, BNode) or minted else "literal" if isinstance(t, Literal) else "uri"
         out = {"n3": t.n3(), "short": self.short(t), "kind": kind}
         if isinstance(t, Literal):
             out["value"] = str(t)
@@ -77,6 +79,9 @@ class Terms:
             raise ValueError("empty term")
         if s == "a":
             return RDF.type
+        if s.startswith("_:") and len(s) > 2:
+            # user-typed blank node labels become stable minted names (journal-safe)
+            return GEN["u_" + re.sub(r"[^A-Za-z0-9_-]", "_", s[2:])]
         if s.startswith("_:"):
             for node, label in self.bnodes.items():
                 if label == s:
@@ -263,6 +268,7 @@ def create_app(project_path: str | Path, trust_path: str | Path | None = None) -
     engine = Engine(Project.load(project_path))
     session = Session(engine)
     trust = TrustStore(project_path, trust_path)
+    manifest = read_manifest(Path(project_path))
     app = FastAPI(title="LoopingRules")
     app.state.session = session
 
@@ -289,16 +295,20 @@ def create_app(project_path: str | Path, trust_path: str | Path | None = None) -
     async def state():
         return {
             "project": str(Path(project_path).name),
+            "package": None if manifest is None else {"title": manifest.title, "version": manifest.version},
             "version": session.version, "tick": session.tick,
             "autopilot": session.autopilot_status, "delay_ms": int(session.delay * 1000),
             "pending": [{"id": session.terms.short(c.iri), "tool": "shell", "command": c.command,
-                         "suggested": generalize(c.command)}
+                         "suggested": generalize(c.command),
+                         "declared": declared(manifest, c.command)}
                         for c in engine.pending_calls()],
             "trust": trust_json(),
             "operations": [o.name for o in engine.operations],
             "controllers": [{"name": c.name, "active": c.active, "query": c.query.strip()}
                             for c in engine.controllers],
             "log": session.log[-50:],
+            "undo": _undo_label(engine.project.last_undoable()),
+            "journal": len(engine.project.journal),
         }
 
     @app.get("/api/sheet")
@@ -368,7 +378,7 @@ def create_app(project_path: str | Path, trust_path: str | Path | None = None) -
     async def add_triple(body: TripleIn):
         t = to_triple(body)
         entry = session._log("edit", f"+ {' '.join(session.terms.short(x) for x in t)}")
-        await session._mutate(lambda: engine.sheet.add(t), log=entry)
+        await session._mutate(lambda: engine.edit(add=[t]), log=entry)
         return {"version": session.version}
 
     @app.post("/api/sheet/delete")
@@ -380,7 +390,7 @@ def create_app(project_path: str | Path, trust_path: str | Path | None = None) -
         if t not in engine.sheet:
             raise HTTPException(404, "no such triple")
         entry = session._log("edit", f"− {' '.join(session.terms.short(x) for x in t)}")
-        await session._mutate(lambda: engine.sheet.remove(t), log=entry)
+        await session._mutate(lambda: engine.edit(remove=[t]), log=entry)
         return {"version": session.version}
 
     @app.get("/api/applications")
@@ -474,10 +484,32 @@ def create_app(project_path: str | Path, trust_path: str | Path | None = None) -
         await session.broadcast({"type": "controllers-changed"})
         return {"active": c.active}
 
+    @app.get("/api/export")
+    async def export(sheet: str = "seed"):
+        if sheet not in ("seed", "state", "none"):
+            raise HTTPException(400, "sheet must be seed, state or none")
+        try:
+            name, data = export_bytes(project_path, sheet, engine.sheet if sheet == "state" else None)
+        except PackageError as e:
+            raise HTTPException(400, str(e))
+        return Response(data, media_type="application/zip",
+                        headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+    @app.post("/api/undo")
+    async def undo():
+        if session.autopilot_status in ("running", "awaiting-approval"):
+            raise HTTPException(409, "stop autopilot before undoing")
+        tx = engine.project.last_undoable()
+        if tx is None:
+            raise HTTPException(404, "nothing to undo")
+        entry = session._log("undo", f"undo {tx.headers.get('kind', '')} {tx.headers.get('label', '')}".strip())
+        await session._mutate(engine.undo, log=entry)
+        return {"version": session.version}
+
     @app.post("/api/project/save")
     async def save():
-        engine.project.save()
-        return {"saved": str(engine.project.path)}
+        snap = engine.project.snapshot()
+        return {"saved": str(snap) if snap else None, "journal": len(engine.project.journal)}
 
     @app.websocket("/api/events")
     async def events(ws: WebSocket):
@@ -497,6 +529,12 @@ def create_app(project_path: str | Path, trust_path: str | Path | None = None) -
             return FileResponse(UI_DIST / "index.html")
 
     return app
+
+
+def _undo_label(tx) -> str | None:
+    if tx is None:
+        return None
+    return f"{tx.headers.get('kind', 'change')}: {tx.headers.get('label', '')}".strip(": ")
 
 
 def _short_n3(session: Session, n3: str | None) -> str | None:
