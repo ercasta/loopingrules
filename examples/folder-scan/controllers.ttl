@@ -18,3 +18,12 @@ ex:preferFewPendingCalls a lr:Controller ;
   lr:query """
     SELECT ((0 - COUNT(?c)) AS ?score) WHERE { ?c lr:status lr:Pending }
   """ .
+
+# Of the two counting strategies the model offers, prefer one call per file:
+# each count is a separate, auditable call. Controller packs can override this.
+ex:preferPerFileCounts a lr:Controller ;
+  rdfs:label "prefer per-file counts" ;
+  lr:active true ;
+  lr:query """
+    SELECT ((0 - 2 * COUNT(?b)) AS ?score) WHERE { ?b ex:batchOf ?folder }
+  """ .

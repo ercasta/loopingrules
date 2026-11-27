@@ -174,6 +174,14 @@ Lessons from `examples/folder-scan-goal`:
 - Exports were chosen over git repos as the sharing channel; a registry can come later.
 - **Security (D9 addendum):** rdflib executes `SERVICE` and may dereference `FROM` graphs. Both are refused in operations, controllers and UI filters, and `SPARQL_LOAD_GRAPHS` is disabled. Still to do: query time limits.
 
+### D19. Controller packs (layered controllers)
+- **A controller pack is an export with `lr:extends "<base package title>"`** that contains only `package.ttl`, `controllers.ttl` and an optional `README.md`. A model or sheet inside it is refused.
+- **Install:** `lr add-layer pack.lr.zip project` puts it in `project/layers/<title>/`. It is checked against the project's own `package.ttl` title and refused if already installed. Remove it by deleting the folder. `lr import` refuses a pack and points the user to `add-layer`.
+- **Engine:** a layer's controllers are loaded with `layer=<title>`. Their scores are summed with the project's own controllers like any other controller, and the UI marks them with the pack's name.
+- **A pack can only steer; it cannot add behaviour.** So a model that wants to be steerable must *offer* alternatives. `folder-scan` 0.2.0 offers per-file and batch line counting; its own controllers prefer per-file, and the `big-folders` pack prefers the batch above a threshold that is read from the sheet.
+- **Observation:** a pack's condition is evaluated on what the sheet knows at each tick, so a decision can flip as knowledge grows. With `big-folders`, the batch wins as soon as the 5th file is registered, even before all files are known. That's fine here, because the batch counts every `*.txt` in the folder anyway.
+- **Not yet:** pinning the version of the base package (`lr:extends` matches the title only), packs that extend other packs, and freezing a layer's controllers versus editing them.
+
 ## Open questions
 
 - **Q3. Ties and no-ops.**

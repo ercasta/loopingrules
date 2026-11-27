@@ -11,6 +11,11 @@ An export is a zip with a fixed set of files:
 
 Never included: the runtime state (.lr/) and trust rules (they belong to the user).
 
+A *controller pack* declares lr:extends "<base package title>" and contains only
+package.ttl, controllers.ttl and README.md. It cannot add operations or data: it
+can only steer the choices the base model already offers. It is installed into an
+existing project with add_layer, into layers/<title>/.
+
 Importing is defensive: only those file names, size limits, every file must parse,
 every query must pass the security check (no SERVICE / FROM), and every declared
 command template must be a valid trust template. Nothing is trusted automatically.
@@ -50,6 +55,7 @@ class Manifest:
     creator: str = ""
     license: str = ""
     may_run: list[str] = field(default_factory=list)
+    extends: str | None = None
 
     @classmethod
     def from_graph(cls, g: Graph, fallback_title: str) -> "Manifest":
@@ -59,7 +65,8 @@ class Manifest:
         v = lambda p: str(g.value(pkg, p) or "")  # noqa: E731
         return cls(title=v(DCT.title) or fallback_title, version=v(LR.version) or "0.0.0",
                    description=v(DCT.description), creator=v(DCT.creator), license=v(DCT.license),
-                   may_run=sorted(str(x) for x in g.objects(pkg, LR.mayRun)))
+                   may_run=sorted(str(x) for x in g.objects(pkg, LR.mayRun)),
+                   extends=str(g.value(pkg, LR.extends)) if g.value(pkg, LR.extends) is not None else None)
 
     def to_graph(self) -> Graph:
         g = Graph()
@@ -74,6 +81,8 @@ class Manifest:
                 g.add((pkg, p, Literal(val)))
         for t in self.may_run:
             g.add((pkg, LR.mayRun, Literal(t)))
+        if self.extends:
+            g.add((pkg, LR.extends, Literal(self.extends)))
         return g
 
 
@@ -97,10 +106,12 @@ def export_project(project: str | Path, out: str | Path | None = None, sheet: st
                    state_sheet: Graph | None = None) -> Path:
     """Write an export. sheet: "seed" (the authored sheet.ttl), "state" (state_sheet), or "none"."""
     p = Path(project)
-    if not (p / "model.ttl").exists():
+    manifest = read_manifest(p) or Manifest(title=p.name)
+    if manifest.extends:
+        sheet = "none"  # a controller pack carries no data
+    elif not (p / "model.ttl").exists():
         raise PackageError(f"{p} has no model.ttl")
     files: dict[str, bytes] = {}
-    manifest = read_manifest(p) or Manifest(title=p.name)
     files["package.ttl"] = manifest.to_graph().serialize(format="turtle").encode()
     for name in ("model.ttl", "controllers.ttl", "README.md"):
         if (p / name).exists():
@@ -156,9 +167,6 @@ def inspect_export(data: bytes) -> tuple[Manifest, dict[str, bytes]]:
 
 
 def _check(files: dict[str, bytes]) -> Manifest:
-    for name in REQUIRED:
-        if name not in files:
-            raise PackageError(f"export has no {name}")
     graphs = {}
     for name, data in files.items():
         if name.endswith(".ttl"):
@@ -166,13 +174,24 @@ def _check(files: dict[str, bytes]) -> Manifest:
                 graphs[name] = Graph().parse(data=data.decode("utf-8"), format="turtle")
             except Exception as e:
                 raise PackageError(f"{name} does not parse: {e}") from e
+    manifest = Manifest.from_graph(graphs.get("package.ttl", Graph()), "unnamed")
+    if manifest.extends:
+        extra = {"model.ttl", "sheet.ttl"} & set(files)
+        if extra:
+            raise PackageError(f"a controller pack may only contain controllers, not {', '.join(sorted(extra))}")
+        if "controllers.ttl" not in files:
+            raise PackageError("a controller pack needs controllers.ttl")
+    else:
+        for name in REQUIRED:
+            if name not in files:
+                raise PackageError(f"export has no {name}")
     try:
-        load_operations(graphs["model.ttl"])  # includes the SERVICE / FROM check
+        if "model.ttl" in graphs:
+            load_operations(graphs["model.ttl"])  # includes the SERVICE / FROM check
         if "controllers.ttl" in graphs:
             load_controllers(graphs["controllers.ttl"])
     except ValueError as e:
         raise PackageError(str(e)) from e
-    manifest = Manifest.from_graph(graphs.get("package.ttl", Graph()), "unnamed")
     for t in manifest.may_run:
         try:
             compile_template(t)
@@ -183,10 +202,32 @@ def _check(files: dict[str, bytes]) -> Manifest:
 
 def import_export(data: bytes, dest: str | Path) -> Manifest:
     manifest, files = inspect_export(data)
+    if manifest.extends:
+        raise PackageError(f"{manifest.title} is a controller pack for '{manifest.extends}': "
+                           f"add it to a project with: lr add-layer <file> <project>")
     d = Path(dest)
     if d.exists() and any(d.iterdir()):
         raise PackageError(f"{d} already exists and is not empty")
     d.mkdir(parents=True, exist_ok=True)
     for name, content in files.items():
         (d / name).write_bytes(content)
+    return manifest
+
+
+def add_layer(data: bytes, project: str | Path) -> Manifest:
+    """Install a controller pack into an existing project, in layers/<title>/."""
+    manifest, files = inspect_export(data)
+    if not manifest.extends:
+        raise PackageError(f"{manifest.title} is not a controller pack (it has no lr:extends)")
+    p = Path(project)
+    base = read_manifest(p)
+    if base is None or base.title != manifest.extends:
+        found = f"'{base.title}'" if base else "a project without package.ttl"
+        raise PackageError(f"{manifest.title} extends '{manifest.extends}', but {p} is {found}")
+    target = p / "layers" / manifest.title
+    if target.exists():
+        raise PackageError(f"layer {manifest.title} is already installed (delete {target} to replace it)")
+    target.mkdir(parents=True)
+    for name, content in files.items():
+        (target / name).write_bytes(content)
     return manifest

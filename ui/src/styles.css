@@ -485,3 +485,7 @@ tr:hover .icon { opacity: 1; }
 }
 .log-undo .icon { color: var(--muted); }
 .topbar { position: relative; z-index: 20; }
+.controller .layer {
+  margin-left: 6px; font-size: 10px; font-weight: 700; color: var(--accent);
+  border: 1px solid var(--accent-line); background: var(--accent-bg); border-radius: 999px; padding: 0 7px;
+}

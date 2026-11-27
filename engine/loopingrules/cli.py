@@ -153,6 +153,22 @@ def cmd_import(args, console: Console) -> int:
     return 0
 
 
+def cmd_add_layer(args, console: Console) -> int:
+    from pathlib import Path
+
+    from .package import PackageError, add_layer
+
+    try:
+        m = add_layer(Path(args.file).read_bytes(), args.project)
+    except PackageError as e:
+        console.print(f"[red]refused:[/] {e}")
+        return 1
+    console.print(f"[green]added layer[/] [bold]{m.title}[/] {m.version} on top of {m.extends}"
+                  + (f"\n{m.description}" if m.description else ""))
+    console.print(f"[dim]remove it by deleting {Path(args.project) / 'layers' / m.title}[/]")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="lr", description="LoopingRules semantic spreadsheet engine")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -177,13 +193,17 @@ def main(argv: list[str] | None = None) -> int:
     p_imp.add_argument("dest", help="new project folder")
     p_imp.add_argument("--trust-declared", action="store_true",
                        help="trust the command templates the package declares")
+    p_layer = sub.add_parser("add-layer", help="add a controller pack (.lr.zip with lr:extends) to a project")
+    p_layer.add_argument("file")
+    p_layer.add_argument("project")
     for p in (p_apps, p_run):
         p.add_argument("--svg", help="also export the console output as an SVG")
     args = ap.parse_args(argv)
 
     svg = getattr(args, "svg", None)
     console = Console(record=bool(svg), width=110 if svg else None)
-    code = {"apps": cmd_apps, "run": cmd_run, "serve": cmd_serve, "export": cmd_export, "import": cmd_import}[args.cmd](args, console)
+    code = {"apps": cmd_apps, "run": cmd_run, "serve": cmd_serve, "export": cmd_export, "import": cmd_import,
+            "add-layer": cmd_add_layer}[args.cmd](args, console)
     if getattr(args, "svg", None):
         console.save_svg(args.svg, title="lr " + " ".join(argv if argv is not None else sys.argv[1:]))
     return code

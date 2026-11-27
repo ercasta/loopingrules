@@ -68,6 +68,7 @@ ex:countLines a lr:Operation ;
     ?folder ex:path ?path .
     FILTER NOT EXISTS { ?file ex:lineCount ?n }
     FILTER NOT EXISTS { ?c ex:countOf ?file }
+    FILTER NOT EXISTS { ?b ex:batchOf ?folder }
     BIND(CONCAT("wc -l < '", ?path, "/", ?name, "'") AS ?cmd)
   """ ;
   lr:insert """
@@ -81,6 +82,43 @@ ex:recordCount a lr:Operation ;
     ?line lr:index 0 ; lr:text ?text .
     FILTER NOT EXISTS { ?file ex:lineCount ?n }
     BIND(xsd:integer(REPLACE(?text, "[^0-9]", "")) AS ?count)
+  """ ;
+  lr:insert """
+    ?file ex:lineCount ?count .
+  """ .
+
+# ------------------------------------------- a second strategy: count in one batch
+# The model only *offers* this alternative; controllers decide which strategy wins.
+# The base controllers prefer per-file counting; the big-folders controller pack
+# switches to the batch when a folder has many files.
+
+ex:countLinesBatch a lr:Operation ;
+  rdfs:label "count lines (batch)" ;
+  lr:where """
+    ?folder ex:path ?path ; ex:scanned true .
+    FILTER EXISTS {
+      ?f ex:inFolder ?folder ; ex:extension "txt" .
+      FILTER NOT EXISTS { ?f ex:lineCount ?n }
+      FILTER NOT EXISTS { ?c ex:countOf ?f }
+    }
+    FILTER NOT EXISTS { ?b ex:batchOf ?folder }
+    BIND(CONCAT("wc -l '", ?path, "'/*.txt") AS ?cmd)
+  """ ;
+  lr:insert """
+    _:call a lr:ShellCall ; lr:command ?cmd ; lr:status lr:Pending ; ex:batchOf ?folder .
+  """ .
+
+# wc prints "  42 data/notes.txt" per file, then "  45 total".
+ex:recordBatchCount a lr:Operation ;
+  rdfs:label "record batch count" ;
+  lr:where """
+    ?call ex:batchOf ?folder ; lr:status lr:Done ; lr:stdoutLine ?line .
+    ?line lr:text ?text .
+    FILTER(!STRENDS(?text, " total"))
+    BIND(REPLACE(?text, "^.*/", "") AS ?name)
+    ?file ex:inFolder ?folder ; ex:name ?name .
+    FILTER NOT EXISTS { ?file ex:lineCount ?n }
+    BIND(xsd:integer(REPLACE(?text, "^ *([0-9]+) .*$", "$1")) AS ?count)
   """ ;
   lr:insert """
     ?file ex:lineCount ?count .

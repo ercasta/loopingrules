@@ -6,6 +6,9 @@ Authored (never rewritten by the engine):
     controllers.ttl   lr:Controllers
     package.ttl       optional manifest, used when sharing (see package.py)
 
+Controller packs (layers), each in layers/<name>/ with controllers.ttl (+ package.ttl):
+    their controllers are summed with the project's own (see package.add_layer)
+
 Runtime state, in .lr/ (delete it to reset the project):
     history.rdfp      append-only journal, one transaction per change (RDF Patch style)
     snapshot.ttl      the sheet after the first N transactions; first line "# lr:snapshot-tx N"
@@ -117,6 +120,7 @@ class Project:
     model: Graph
     controllers: Graph
     journal: list[Transaction] = field(default_factory=list)
+    layers: list[tuple[str, Graph]] = field(default_factory=list)
     snapshot_tx: int = 0
     persist: bool = True
 
@@ -126,6 +130,10 @@ class Project:
         p = Path(path)
         sheet, model, controllers = (_load(p / f"{name}.ttl") for name in FILES)
         proj = cls(p, sheet, model, controllers, persist=persist)
+        layers_dir = p / "layers"
+        if layers_dir.is_dir():
+            for d in sorted(x for x in layers_dir.iterdir() if (x / "controllers.ttl").exists()):
+                proj.layers.append((d.name, _load(d / "controllers.ttl")))
         proj._restore()
         return proj
 

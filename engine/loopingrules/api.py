@@ -304,7 +304,7 @@ def create_app(project_path: str | Path, trust_path: str | Path | None = None) -
                         for c in engine.pending_calls()],
             "trust": trust_json(),
             "operations": [o.name for o in engine.operations],
-            "controllers": [{"name": c.name, "active": c.active, "query": c.query.strip()}
+            "controllers": [{"name": c.name, "active": c.active, "query": c.query.strip(), "layer": c.layer}
                             for c in engine.controllers],
             "log": session.log[-50:],
             "undo": _undo_label(engine.project.last_undoable()),

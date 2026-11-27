@@ -1,0 +1,11 @@
+@prefix lr:      <https://loopingrules.org/ns#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+<urn:lr:package> a lr:Package ;
+  dcterms:title "big-folders" ;
+  lr:version "0.1.0" ;
+  dcterms:description "Controller pack for folder-scan: count lines in one batch call when a folder has many files." ;
+  dcterms:creator "Antonio Castaldo D'Ursi" ;
+  dcterms:license "MIT" ;
+  # a controller pack: only controllers, layered on top of this package
+  lr:extends "folder-scan" .

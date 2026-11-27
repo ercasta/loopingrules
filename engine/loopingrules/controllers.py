@@ -17,6 +17,7 @@ class Controller:
     name: str
     query: str
     active: bool = True
+    layer: str | None = None  # the controller pack it comes from, None for the project's own
 
     def score(self, state: Graph, prefixes: str) -> float:
         rows = list(state.query(prefixes + self.query))
@@ -31,7 +32,7 @@ class Controller:
             raise ValueError(f"Controller {self.name}: ?score is not numeric: {value!r}") from e
 
 
-def load_controllers(g: Graph) -> list[Controller]:
+def load_controllers(g: Graph, layer: str | None = None) -> list[Controller]:
     out = []
     for iri in g.subjects(RDF.type, LR.Controller):
         q = g.value(iri, LR.query)
@@ -45,5 +46,6 @@ def load_controllers(g: Graph) -> list[Controller]:
             name=str(label) if label else g.namespace_manager.normalizeUri(iri),
             query=str(q),
             active=True if active is None else bool(active.toPython()),
+            layer=layer,
         ))
     return sorted(out, key=lambda c: str(c.iri))

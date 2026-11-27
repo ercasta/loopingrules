@@ -36,6 +36,8 @@ class Engine:
     def reload_model(self) -> None:
         self.operations: list[Operation] = load_operations(self.project.model)
         self.controllers: list[Controller] = load_controllers(self.project.controllers)
+        for name, g in self.project.layers:
+            self.controllers += load_controllers(g, layer=name)
         self.shapes = Graph()
         self.shapes += self.project.model
         self.shapes.parse(data=BUILTIN_SHAPES, format="turtle")
@@ -59,7 +61,8 @@ class Engine:
         if not apps:
             return apps
         baseline = {violation_key(v) for v in self.sheet_violations()}
-        prefixes = prologue(self.project.controllers, self.project.model, self.sheet)
+        prefixes = prologue(self.project.controllers, *(g for _, g in self.project.layers),
+                            self.project.model, self.sheet)
         active = [c for c in self.controllers if c.active]
         for app in apps:
             state = self.resulting_state(app)

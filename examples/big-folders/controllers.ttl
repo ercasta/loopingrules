@@ -1,0 +1,25 @@
+@prefix lr:   <https://loopingrules.org/ns#> .
+@prefix ex:   <https://example.org/folderscan#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+# Steer folder-scan towards batch counting when a folder has more files than a
+# threshold. The threshold is data: set it in the sheet with
+#     ex:settings ex:batchThreshold 10
+# (default: 4). Below the threshold this controller scores 0 and the base
+# controllers' preference for per-file counts wins.
+#
+# The +5 outweighs the base pack's "prefer per-file counts" (-2 per batch call).
+ex:batchWhenBig a lr:Controller ;
+  rdfs:label "batch when many files" ;
+  lr:query """
+    SELECT ((5 * COUNT(DISTINCT ?folder)) AS ?score) WHERE {
+      ?call ex:batchOf ?folder .
+      OPTIONAL { ?s ex:batchThreshold ?t }
+      BIND(COALESCE(?t, 4) AS ?threshold)
+      {
+        SELECT ?folder (COUNT(?f) AS ?files) WHERE { ?f ex:inFolder ?folder }
+        GROUP BY ?folder
+      }
+      FILTER(?files > ?threshold)
+    }
+  """ .

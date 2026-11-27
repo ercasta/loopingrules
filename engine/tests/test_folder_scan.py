@@ -47,7 +47,7 @@ def test_initial_applications(project):
     app = apps[0]
     assert app.valid
     # Resulting state has one pending call -> -1; no progress yet -> 0
-    assert app.scores == {"progress": 0.0, "prefer few pending calls": -1.0}
+    assert app.scores == {"progress": 0.0, "prefer few pending calls": -1.0, "prefer per-file counts": 0.0}
 
 
 def test_autopilot_pauses_for_approval(project):

@@ -17,7 +17,14 @@ export function Sidebar({ controllers, trust, log, onError }: Props) {
               <span />
             </button>
             <div>
-              <div className="cname">{c.name}</div>
+              <div className="cname">
+                {c.name}
+                {c.layer && (
+                  <span className="layer" title={`from the ${c.layer} controller pack (layers/${c.layer}/)`}>
+                    ⧉ {c.layer}
+                  </span>
+                )}
+              </div>
               <code className="query">{c.query.replace(/\s+/g, " ")}</code>
             </div>
           </div>

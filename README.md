@@ -129,6 +129,33 @@ Every change is **saved automatically** in an append-only journal, `.lr/history.
 - **Your files are never rewritten.** `sheet.ttl`, `model.ttl` and `controllers.ttl` are what you wrote, comments included; `sheet.ttl` is just the starting point. Delete `.lr/` to start over.
 - **Minted names, not blank nodes.** Things the engine creates get stable names like `gen:3f2a9c1e`, so the journal can always refer to them.
 
+## Controller packs: change the trajectory, not the model
+
+A **controller pack** contains only controllers. It can't add operations or data; it can only **steer** the choices a model already offers. Packs stack on top of a base model, and their scores are summed with the model's own controllers. These are the *layered controllers* from the original idea.
+
+The examples show how it works:
+- **The base model, [`folder-scan`](examples/folder-scan),** offers two ways to count lines: one `wc` call per file, or a single batch `wc -l 'folder'/*.txt`. Its own controllers prefer one call per file.
+- **The pack, [`big-folders`](examples/big-folders),** holds one controller that says *"if a folder has more than N files, prefer the batch"*. N is data in the sheet (`ex:settings ex:batchThreshold 10`, default 4), not code in the pack.
+
+![A controller pack steering the choice: batch counting wins because of the big-folders controller](doc/ui-layers.png)
+
+```bash
+lr import exports/folder-scan-0.2.0.lr.zip my-scan
+lr add-layer exports/big-folders-0.1.0.lr.zip my-scan    # → my-scan/layers/big-folders/
+```
+
+**What it looks like in practice.** With 7 files, autopilot makes **one** batch call instead of one call per `.txt` file. With 3 files, the pack scores 0 and nothing changes. The condition is evaluated on what the sheet knows *so far*, so the choice flips the moment the 5th file is registered.
+
+A pack declares what it extends:
+
+```turtle
+<urn:lr:package> a lr:Package ;
+  dcterms:title "big-folders" ; lr:version "0.1.0" ;
+  lr:extends "folder-scan" .
+```
+
+`lr add-layer` checks that the project *is* `folder-scan`, and refuses packs that contain a model or a sheet. To remove a pack, delete its folder under `layers/`.
+
 ## Share models, controllers and examples
 
 ![The export menu](doc/ui-export.png)
@@ -205,7 +232,8 @@ engine/.venv/Scripts/lr run examples/folder-scan
 ```bash
 engine/.venv/Scripts/lr export examples/folder-scan            # → folder-scan-0.1.0.lr.zip
 engine/.venv/Scripts/lr export examples/folder-scan --sheet none
-engine/.venv/Scripts/lr import exports/folder-scan-0.1.0.lr.zip my-copy [--trust-declared]
+engine/.venv/Scripts/lr import exports/folder-scan-0.2.0.lr.zip my-copy [--trust-declared]
+engine/.venv/Scripts/lr add-layer exports/big-folders-0.1.0.lr.zip my-copy
 ```
 
 | Option | Effect |
@@ -240,6 +268,7 @@ my-project/
   controllers.ttl   # lr:Controllers
   package.ttl       # optional manifest, used when sharing
   README.md         # optional
+  layers/<pack>/    # controller packs added with lr add-layer
   .lr/              # runtime state: journal + snapshot (delete to reset)
 ```
 
@@ -253,11 +282,11 @@ my-project/
 - [x] Goal-driven computation as a modeling pattern (no engine changes)
 - [x] Automatic persistence with an append-only journal, and undo
 - [x] Sharing through `.lr.zip` exports with a manifest of declared commands
+- [x] Controller packs (layered controllers) that steer a base model
 - [ ] Performance: lazy validation, overlays, incremental SHACL
 - [ ] Named graphs (full SPOG quads)
 - [x] An allowlist for approving tool calls automatically
 - [ ] Controllers learned from your manual choices (anti-unification, RIPPER)
-- [ ] Layered controllers: freeze what works, and add new ones that beat it in specific situations
 
 The design notes are in [`doc/design.md`](doc/design.md), the original vision in [`doc/info.md`](doc/info.md), and the current plan in [`doc/plan-v0.md`](doc/plan-v0.md).
 

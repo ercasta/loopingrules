@@ -140,7 +140,7 @@ def test_undo_and_export_over_http(client):
     assert not any(t["s"]["short"] == "ex:x" for t in client.get("/api/sheet").json()["triples"])
     r = client.get("/api/export", params={"sheet": "state"})
     assert r.status_code == 200 and r.headers["content-type"] == "application/zip"
-    assert "folder-scan-0.1.0.lr.zip" in r.headers["content-disposition"]
+    assert "folder-scan-0.2.0.lr.zip" in r.headers["content-disposition"]
     # pending calls say whether the package declared them
     client.post("/api/autopilot/step")
     [call] = client.get("/api/state").json()["pending"]
