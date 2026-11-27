@@ -24,6 +24,7 @@ from .engine import Engine
 from .operations import Application
 from .project import Project
 from .store import prologue
+from .security import check_query
 from .suggest import Suggester
 from .trust import TemplateError, TrustStore, generalize
 
@@ -388,6 +389,7 @@ def create_app(project_path: str | Path, trust_path: str | Path | None = None) -
         if contains and contains.strip():
             q = prologue(engine.project.model, engine.sheet) + f"ASK {{ {contains} }}"
             try:
+                check_query(q, "filter")
                 apps = [a for a in apps if a.valid and bool(engine.resulting_state(a).query(q).askAnswer)]
             except Exception as e:
                 raise HTTPException(400, f"bad pattern: {e}")

@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from rdflib import RDF, RDFS, BNode, Graph, URIRef, Variable
 from rdflib.term import Node
 
+from .security import check_query
 from .store import Triple, prologue
 from .vocab import LR
 
@@ -39,19 +40,25 @@ class Application:
 
 
 def load_operations(model: Graph) -> list[Operation]:
+    prefixes = prologue(model)
     ops = []
     for iri in model.subjects(RDF.type, LR.Operation):
         where = model.value(iri, LR.where)
         if where is None:
             raise ValueError(f"Operation {iri} has no lr:where")
         label = model.value(iri, RDFS.label)
-        ops.append(Operation(
+        op = Operation(
             iri=iri,
             name=str(label) if label else model.namespace_manager.normalizeUri(iri),
             where=str(where),
             delete=str(model.value(iri, LR.delete) or ""),
             insert=str(model.value(iri, LR.insert) or ""),
-        ))
+        )
+        check_query(f"{prefixes}SELECT * WHERE {{ {op.where} }}", f"operation {op.name}")
+        for part in (op.delete, op.insert):
+            if part.strip():
+                check_query(f"{prefixes}CONSTRUCT {{ {part} }} WHERE {{}}", f"operation {op.name}")
+        ops.append(op)
     return sorted(ops, key=lambda o: str(o.iri))
 
 
