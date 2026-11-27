@@ -5,3 +5,4 @@ node_modules/
 dist/
 *.tsbuildinfo
 .lr/
+scripts/dev/edgeprof/

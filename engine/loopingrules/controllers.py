@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from rdflib import RDF, RDFS, Graph, URIRef
 
 from .security import check_query
-from .store import prologue
+from .store import prepared, prologue
 from .vocab import LR
 
 
@@ -20,7 +20,7 @@ class Controller:
     layer: str | None = None  # the controller pack it comes from, None for the project's own
 
     def score(self, state: Graph, prefixes: str) -> float:
-        rows = list(state.query(prefixes + self.query))
+        rows = list(state.query(prepared(prefixes + self.query)))
         if not rows:
             return 0.0
         value = rows[0].asdict().get("score")

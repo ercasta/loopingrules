@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 from rdflib import Graph
+from rdflib.plugins.sparql import prepareQuery
+from rdflib.plugins.sparql.sparql import Query
 
 Triple = tuple  # (s, p, o) of rdflib terms
 
@@ -29,3 +33,12 @@ def prologue(*graphs: Graph) -> str:
         for prefix, ns in g.namespaces():
             seen.setdefault(prefix, str(ns))
     return "".join(f"PREFIX {p}: <{ns}>\n" for p, ns in seen.items())
+
+
+@lru_cache(maxsize=2048)
+def prepared(text: str) -> Query:
+    """Parse a SPARQL query once; rdflib otherwise re-parses the string on every call.
+
+    Parsing was ~80% of autopilot time before this cache (see engine/benchmarks).
+    """
+    return prepareQuery(text)

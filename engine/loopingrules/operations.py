@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
+from functools import lru_cache
 
-from rdflib import RDF, RDFS, BNode, Graph, URIRef, Variable
+from rdflib import RDF, RDFS, BNode, Graph, Literal, URIRef, Variable
 from rdflib.term import Node
 
 from .project import mint
 from .security import check_query
-from .store import Triple, prologue
+from .store import Triple, prepared, prologue
 from .vocab import LR
 
 
@@ -63,11 +64,35 @@ def load_operations(model: Graph) -> list[Operation]:
     return sorted(ops, key=lambda o: str(o.iri))
 
 
-def _instantiate(template: str, bindings: dict, prefixes: str, sheet: Graph) -> set[Triple]:
-    if not template.strip():
-        return set()
-    q = f"{prefixes}CONSTRUCT {{ {template} }} WHERE {{}}"
-    return set(sheet.query(q, initBindings=bindings))
+@lru_cache(maxsize=1024)
+def _template(text: str, prefixes: str) -> tuple:
+    """The triple patterns of a DELETE/INSERT template, parsed once."""
+    if not text.strip():
+        return ()
+    return tuple(prepared(f"{prefixes}CONSTRUCT {{ {text} }} WHERE {{}}").algebra.template)
+
+
+def _instantiate(template: str, bindings: dict[str, Node], prefixes: str) -> set[Triple]:
+    """Fill a template with one solution, with CONSTRUCT semantics, without running a query.
+
+    A triple with an unbound variable, or that would not be valid RDF (literal
+    subject, non-IRI predicate), is skipped.
+    """
+    out: set[Triple] = set()
+    for pattern in _template(template, prefixes):
+        terms = []
+        for x in pattern:
+            if isinstance(x, Variable):
+                x = bindings.get(str(x))
+                if x is None:
+                    break
+            terms.append(x)
+        else:
+            s, p, o = terms
+            if isinstance(s, Literal) or not isinstance(p, URIRef):
+                continue
+            out.add((s, p, o))
+    return out
 
 
 def _mint_fresh(triples: set[Triple], bindings: dict) -> set[Triple]:
@@ -92,14 +117,14 @@ def enumerate_applications(sheet: Graph, ops: list[Operation], model: Graph) -> 
     prefixes = prologue(model, sheet)
     apps: list[Application] = []
     for op in ops:
-        rows = sheet.query(f"{prefixes}SELECT * WHERE {{ {op.where} }}")
+        rows = sheet.query(prepared(f"{prefixes}SELECT * WHERE {{ {op.where} }}"))
         for row in rows:
             bindings = {str(k): v for k, v in row.asdict().items() if v is not None}
-            init = {Variable(k): v for k, v in bindings.items()}
-            deletes = {t for t in _instantiate(op.delete, init, prefixes, sheet) if t in sheet}
+            deletes = _instantiate(op.delete, bindings, prefixes)
             if any(isinstance(term, BNode) and term not in bindings.values() for t in deletes for term in t):
                 raise ValueError(f"{op.name}: DELETE templates may not introduce blank nodes")
-            inserts = _mint_fresh(_instantiate(op.insert, init, prefixes, sheet), bindings)
+            deletes = {t for t in deletes if t in sheet}
+            inserts = _mint_fresh(_instantiate(op.insert, bindings, prefixes), bindings)
             inserts = {t for t in inserts if t not in sheet}
             if not deletes and not inserts:
                 continue
