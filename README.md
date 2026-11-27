@@ -283,7 +283,8 @@ my-project/
 - [x] Automatic persistence with an append-only journal, and undo
 - [x] Sharing through `.lr.zip` exports with a manifest of declared commands
 - [x] Controller packs (layered controllers) that steer a base model
-- [ ] Performance: lazy validation, overlays, incremental SHACL
+- [x] Performance, step 1: each SPARQL query parsed once (7–10× faster)
+- [ ] Performance: lazy validation, overlays, incremental SHACL (see [`doc/handoff.md`](doc/handoff.md))
 - [ ] Named graphs (full SPOG quads)
 - [x] An allowlist for approving tool calls automatically
 - [ ] Controllers learned from your manual choices (anti-unification, RIPPER)
