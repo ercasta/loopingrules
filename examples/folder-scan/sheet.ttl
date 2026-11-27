@@ -1,0 +1,4 @@
+@prefix ex: <https://example.org/folderscan#> .
+
+# Point this at a folder to scan.
+ex:target a ex:Folder ; ex:path "." .

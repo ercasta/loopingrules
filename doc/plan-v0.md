@@ -42,7 +42,7 @@ doc/
    - In manual mode, the user picks an application.
    - On autopilot, the engine picks the highest score; ties go to the first one found.
    - The engine then applies the delta and runs the **tool phase**.
-6. **Tool phase.** This happens between ticks.
+6. **Tool phase.** This happens between ticks: in manual mode, right after the user applies an application; on autopilot, at the start of the next step.
    - Each `lr:ShellCall` with `lr:status lr:Pending` waits for approval.
    - Once approved, the engine runs the command synchronously and writes back:
      - `lr:exitCode`;
@@ -117,8 +117,8 @@ doc/
 
 | | Deliverable | Check |
 |---|---|---|
-| M1 | Engine core: store, operations, validation, controllers, tick | pytest on folder-scan; tool calls stubbed |
-| M2 | Shell tool + approval queue + headless CLI (`lr run examples/folder-scan`) | autopilot completes end to end from the CLI, with approvals prompted in the terminal |
+| ✅ M1 | Engine core: store, operations, validation, controllers, tick | pytest on folder-scan; tool calls stubbed |
+| ✅ M2 | Shell tool + approval queue + headless CLI (`lr run examples/folder-scan`) | autopilot completes end to end from the CLI, with approvals prompted in the terminal |
 | M3 | FastAPI + WebSocket | API tests |
 | M4 | UI | manual drive + autopilot of folder-scan in the browser |
 

@@ -1,0 +1,20 @@
+@prefix lr:   <https://loopingrules.org/ns#> .
+@prefix ex:   <https://example.org/folderscan#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+ex:progress a lr:Controller ;
+  rdfs:label "progress" ;
+  lr:active true ;
+  lr:query """
+    SELECT ((?classified + ?counted) AS ?score) WHERE {
+      { SELECT (COUNT(?f) AS ?classified) WHERE { ?f ex:extension ?e } }
+      { SELECT (COUNT(?g) AS ?counted)    WHERE { ?g ex:lineCount ?n } }
+    }
+  """ .
+
+ex:preferFewPendingCalls a lr:Controller ;
+  rdfs:label "prefer few pending calls" ;
+  lr:active true ;
+  lr:query """
+    SELECT ((0 - COUNT(?c)) AS ?score) WHERE { ?c lr:status lr:Pending }
+  """ .

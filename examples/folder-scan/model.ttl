@@ -1,0 +1,81 @@
+@prefix lr:   <https://loopingrules.org/ns#> .
+@prefix ex:   <https://example.org/folderscan#> .
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+# ---------------------------------------------------------------- shapes
+
+ex:FolderShape a sh:NodeShape ;
+  sh:targetClass ex:Folder ;
+  sh:property [ sh:path ex:path ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] .
+
+ex:FileShape a sh:NodeShape ;
+  sh:targetClass ex:File ;
+  sh:property [ sh:path ex:name ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path ex:inFolder ; sh:minCount 1 ; sh:maxCount 1 ; sh:class ex:Folder ] ;
+  sh:property [ sh:path ex:extension ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path ex:lineCount ; sh:maxCount 1 ; sh:datatype xsd:integer ] .
+
+# ------------------------------------------------------------ operations
+
+ex:scanFolder a lr:Operation ;
+  rdfs:label "scan folder" ;
+  lr:where """
+    ?folder a ex:Folder ; ex:path ?path .
+    FILTER NOT EXISTS { ?folder ex:scanned true }
+    BIND(CONCAT("ls -1p '", ?path, "'") AS ?cmd)
+  """ ;
+  lr:insert """
+    ?folder ex:scanned true .
+    _:call a lr:ShellCall ; lr:command ?cmd ; lr:status lr:Pending ; ex:scanOf ?folder .
+  """ .
+
+ex:registerFile a lr:Operation ;
+  rdfs:label "register file" ;
+  lr:where """
+    ?call ex:scanOf ?folder ; lr:status lr:Done ; lr:stdoutLine ?line .
+    ?line lr:text ?name .
+    FILTER(!STRENDS(?name, "/"))
+    FILTER NOT EXISTS { ?other ex:inFolder ?folder ; ex:name ?name }
+  """ ;
+  lr:insert """
+    _:file a ex:File ; ex:name ?name ; ex:inFolder ?folder .
+  """ .
+
+ex:classifyFile a lr:Operation ;
+  rdfs:label "classify file" ;
+  lr:where """
+    ?file a ex:File ; ex:name ?name .
+    FILTER(CONTAINS(?name, "."))
+    FILTER NOT EXISTS { ?file ex:extension ?any }
+    BIND(LCASE(REPLACE(?name, "^.*[.]", "")) AS ?ext)
+  """ ;
+  lr:insert """
+    ?file ex:extension ?ext .
+  """ .
+
+ex:countLines a lr:Operation ;
+  rdfs:label "count lines" ;
+  lr:where """
+    ?file ex:extension "txt" ; ex:name ?name ; ex:inFolder ?folder .
+    ?folder ex:path ?path .
+    FILTER NOT EXISTS { ?file ex:lineCount ?n }
+    FILTER NOT EXISTS { ?c ex:countOf ?file }
+    BIND(CONCAT("wc -l < '", ?path, "/", ?name, "'") AS ?cmd)
+  """ ;
+  lr:insert """
+    _:call a lr:ShellCall ; lr:command ?cmd ; lr:status lr:Pending ; ex:countOf ?file .
+  """ .
+
+ex:recordCount a lr:Operation ;
+  rdfs:label "record line count" ;
+  lr:where """
+    ?call ex:countOf ?file ; lr:status lr:Done ; lr:stdoutLine ?line .
+    ?line lr:index 0 ; lr:text ?text .
+    FILTER NOT EXISTS { ?file ex:lineCount ?n }
+    BIND(xsd:integer(REPLACE(?text, "[^0-9]", "")) AS ?count)
+  """ ;
+  lr:insert """
+    ?file ex:lineCount ?count .
+  """ .
