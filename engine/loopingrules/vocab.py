@@ -9,6 +9,8 @@ LR = Namespace("https://loopingrules.org/ns#")
 # Tool calls:  lr:ShellCall with lr:command, lr:status,
 #              lr:exitCode, lr:stdoutLine / lr:stderrLine -> [ lr:index ; lr:text ]
 # Statuses:    lr:Pending, lr:Done, lr:Rejected, lr:Failed
+# Goals (D16): a convention only, the engine gives them no meaning:
+#              goal classes are rdfs:subClassOf lr:Goal; achievement is lr:reached true
 
 PENDING = LR.Pending
 DONE = LR.Done

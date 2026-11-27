@@ -1,0 +1,28 @@
+@prefix lr:   <https://loopingrules.org/ns#> .
+@prefix ex:   <https://example.org/folderscan#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+# Reaching a goal beats everything else, so "goal reached" fires as soon as it can.
+ex:goalReached a lr:Controller ;
+  rdfs:label "goal reached" ;
+  lr:query """
+    SELECT ((100 * COUNT(?g)) AS ?score) WHERE { ?g lr:reached true }
+  """ .
+
+# Progress counts only work done for a goal's folder.
+ex:goalProgress a lr:Controller ;
+  rdfs:label "goal progress" ;
+  lr:query """
+    SELECT ((?classified + ?counted) AS ?score) WHERE {
+      { SELECT (COUNT(?f) AS ?classified) WHERE {
+          ?g a ex:CountLinesGoal ; ex:folder ?d . ?f ex:inFolder ?d ; ex:extension ?e } }
+      { SELECT (COUNT(?h) AS ?counted) WHERE {
+          ?g2 a ex:CountLinesGoal ; ex:folder ?d2 . ?h ex:inFolder ?d2 ; ex:lineCount ?n } }
+    }
+  """ .
+
+ex:preferFewPendingCalls a lr:Controller ;
+  rdfs:label "prefer few pending calls" ;
+  lr:query """
+    SELECT ((0 - COUNT(?c)) AS ?score) WHERE { ?c lr:status lr:Pending }
+  """ .

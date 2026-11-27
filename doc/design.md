@@ -137,6 +137,21 @@ Implemented in `engine/loopingrules/suggest.py` and `GET /api/suggest?field=s|p|
   - `sh:targetSubjectsOf` / `sh:targetObjectsOf`;
   - `sh:or` / `sh:and` / `sh:node`.
 
+### D16. Goals are a modeling pattern, not an engine feature
+Goal-driven computation needs **no engine support**. A goal is:
+- **a typed resource in the sheet** (`ex:g1 a ex:CountLinesGoal ; ex:folder ex:target`), with its parameters as properties. The user creates it like any other SPO, guided by the goal's SHACL shape (D15);
+- **an authored "reached" operation** per goal type. Its `WHERE` is the concrete achievement pattern, and it inserts `?goal lr:reached true`;
+- **goal-gated operations**: operations require an unreached goal in their `WHERE`. Once the goal is reached, nothing is applicable and autopilot stops under D8;
+- **goal-aware controllers**: authored controllers that score only work related to an active goal, plus a large reward for `lr:reached`, so the goal is marked as soon as possible;
+- **subgoals** are operations that insert goal resources, much like HTN methods.
+
+Convention (no engine meaning, so the UI can show goals in the future): goal classes are `rdfs:subClassOf lr:Goal`, and achievement is `lr:reached true`.
+
+Lessons from `examples/folder-scan-goal`:
+- **The "reached" pattern must not be vacuously true.** "Every .txt file is counted" holds before any file is known, so it also requires that the scan is done and every listed file has been registered and classified.
+- **Greedy plateaus remain the author's problem.** Steps that don't raise any controller's score need subgoals with their own controllers.
+- **Minted IRIs must be unique per context.** File IRIs now include the folder; without that, a second goal on another folder was blocked by SHACL.
+
 ## Open questions
 
 - **Q3. Ties and no-ops.**

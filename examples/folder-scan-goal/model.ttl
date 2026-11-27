@@ -1,0 +1,143 @@
+@prefix lr:   <https://loopingrules.org/ns#> .
+@prefix ex:   <https://example.org/folderscan#> .
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+# Goal-driven variant of folder-scan (design D16).
+# Goals are a modelling pattern: a typed resource, operations gated on an
+# unreached goal, an authored "reached" operation, and goal-aware controllers.
+# The engine knows nothing about goals.
+
+ex:CountLinesGoal rdfs:subClassOf lr:Goal ;
+  rdfs:comment "Count the lines of every .txt file in a folder." .
+
+# ---------------------------------------------------------------- shapes
+
+ex:CountLinesGoalShape a sh:NodeShape ;
+  sh:targetClass ex:CountLinesGoal ;
+  sh:property [ sh:path ex:folder ; sh:minCount 1 ; sh:maxCount 1 ; sh:class ex:Folder ;
+                sh:description "the folder whose .txt files to count" ] ;
+  sh:property [ sh:path lr:reached ; sh:maxCount 1 ; sh:datatype xsd:boolean ;
+                sh:description "set by the 'goal reached' operation" ] .
+
+ex:FolderShape a sh:NodeShape ;
+  sh:targetClass ex:Folder ;
+  sh:property [ sh:path ex:path ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                sh:description "folder to scan, relative to where the engine runs" ] .
+
+ex:FileShape a sh:NodeShape ;
+  sh:targetClass ex:File ;
+  sh:property [ sh:path ex:name ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                sh:description "file name, without the folder" ] ;
+  sh:property [ sh:path ex:inFolder ; sh:minCount 1 ; sh:maxCount 1 ; sh:class ex:Folder ;
+                sh:description "the folder that contains the file" ] ;
+  sh:property [ sh:path ex:extension ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                sh:pattern "^[a-z0-9]+$" ; sh:description "lower-case extension, no dot" ] ;
+  sh:property [ sh:path ex:lineCount ; sh:maxCount 1 ; sh:datatype xsd:integer ;
+                sh:description "number of lines (text files only)" ] .
+
+# ------------------------------------------------------------ operations
+# Every operation requires an unreached goal for the folder it works on.
+
+ex:scanFolder a lr:Operation ;
+  rdfs:label "scan folder" ;
+  lr:where """
+    ?goal a ex:CountLinesGoal ; ex:folder ?folder .
+    FILTER NOT EXISTS { ?goal lr:reached true }
+    ?folder ex:path ?path .
+    FILTER NOT EXISTS { ?folder ex:scanned true }
+    BIND(CONCAT("ls -1p '", ?path, "'") AS ?cmd)
+  """ ;
+  lr:insert """
+    ?folder ex:scanned true .
+    _:call a lr:ShellCall ; lr:command ?cmd ; lr:status lr:Pending ; ex:scanOf ?folder .
+  """ .
+
+ex:registerFile a lr:Operation ;
+  rdfs:label "register file" ;
+  lr:where """
+    ?goal a ex:CountLinesGoal ; ex:folder ?folder .
+    FILTER NOT EXISTS { ?goal lr:reached true }
+    ?call ex:scanOf ?folder ; lr:status lr:Done ; lr:stdoutLine ?line .
+    ?line lr:text ?name .
+    FILTER(!STRENDS(?name, "/"))
+    FILTER NOT EXISTS { ?other ex:inFolder ?folder ; ex:name ?name }
+    BIND(IRI(CONCAT(STR(?folder), "_", ENCODE_FOR_URI(?name))) AS ?file)
+  """ ;
+  lr:insert """
+    ?file a ex:File ; ex:name ?name ; ex:inFolder ?folder .
+  """ .
+
+ex:classifyFile a lr:Operation ;
+  rdfs:label "classify file" ;
+  lr:where """
+    ?goal a ex:CountLinesGoal ; ex:folder ?folder .
+    FILTER NOT EXISTS { ?goal lr:reached true }
+    ?file a ex:File ; ex:name ?name ; ex:inFolder ?folder .
+    FILTER(CONTAINS(?name, "."))
+    FILTER NOT EXISTS { ?file ex:extension ?any }
+    BIND(LCASE(REPLACE(?name, "^.*[.]", "")) AS ?ext)
+  """ ;
+  lr:insert """
+    ?file ex:extension ?ext .
+  """ .
+
+ex:countLines a lr:Operation ;
+  rdfs:label "count lines" ;
+  lr:where """
+    ?goal a ex:CountLinesGoal ; ex:folder ?folder .
+    FILTER NOT EXISTS { ?goal lr:reached true }
+    ?file ex:extension "txt" ; ex:name ?name ; ex:inFolder ?folder .
+    ?folder ex:path ?path .
+    FILTER NOT EXISTS { ?file ex:lineCount ?n }
+    FILTER NOT EXISTS { ?c ex:countOf ?file }
+    BIND(CONCAT("wc -l < '", ?path, "/", ?name, "'") AS ?cmd)
+  """ ;
+  lr:insert """
+    _:call a lr:ShellCall ; lr:command ?cmd ; lr:status lr:Pending ; ex:countOf ?file .
+  """ .
+
+ex:recordCount a lr:Operation ;
+  rdfs:label "record line count" ;
+  lr:where """
+    ?goal a ex:CountLinesGoal ; ex:folder ?folder .
+    FILTER NOT EXISTS { ?goal lr:reached true }
+    ?file ex:inFolder ?folder .
+    ?call ex:countOf ?file ; lr:status lr:Done ; lr:stdoutLine ?line .
+    ?line lr:index 0 ; lr:text ?text .
+    FILTER NOT EXISTS { ?file ex:lineCount ?n }
+    BIND(xsd:integer(REPLACE(?text, "[^0-9]", "")) AS ?count)
+  """ ;
+  lr:insert """
+    ?file ex:lineCount ?count .
+  """ .
+
+# The goal is reached when the folder has been scanned, every listed file is
+# registered and classified, and every .txt file has a line count. Note the
+# scan requirement: without it the goal would be "reached" vacuously, before
+# any file is known.
+ex:countLinesReached a lr:Operation ;
+  rdfs:label "goal reached" ;
+  lr:where """
+    ?goal a ex:CountLinesGoal ; ex:folder ?folder .
+    FILTER NOT EXISTS { ?goal lr:reached true }
+    ?call ex:scanOf ?folder ; lr:status lr:Done .
+    FILTER NOT EXISTS {
+      ?call lr:stdoutLine ?l . ?l lr:text ?n1 .
+      FILTER(!STRENDS(?n1, "/"))
+      FILTER NOT EXISTS { ?x ex:inFolder ?folder ; ex:name ?n1 }
+    }
+    FILTER NOT EXISTS {
+      ?f ex:inFolder ?folder ; ex:name ?n2 .
+      FILTER(CONTAINS(?n2, "."))
+      FILTER NOT EXISTS { ?f ex:extension ?e }
+    }
+    FILTER NOT EXISTS {
+      ?t ex:inFolder ?folder ; ex:extension "txt" .
+      FILTER NOT EXISTS { ?t ex:lineCount ?c }
+    }
+  """ ;
+  lr:insert """
+    ?goal lr:reached true .
+  """ .

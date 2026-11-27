@@ -75,6 +75,30 @@ _:call lr:status lr:Done ; lr:exitCode 0 ;
        lr:stdoutLine [ lr:index 0 ; lr:text "42" ] .
 ```
 
+## Goal-driven, without a goal engine
+
+Goals are just data plus a few authoring habits:
+- **A goal is a resource in the sheet**, e.g. `ex:g1 a ex:CountLinesGoal ; ex:folder ex:target`.
+- **Operations require an unreached goal**, so nothing happens until you state what you want.
+- **An authored "goal reached" operation** sets `lr:reached true` when the goal's condition holds.
+- **Controllers reward reaching the goal**, so autopilot marks it as soon as it can, and then stops, because nothing is applicable any more.
+- **Subgoals** are operations that insert more goals.
+
+```turtle
+ex:countLinesReached a lr:Operation ;
+  lr:where """
+    ?goal a ex:CountLinesGoal ; ex:folder ?folder .
+    FILTER NOT EXISTS { ?goal lr:reached true }
+    ?call ex:scanOf ?folder ; lr:status lr:Done .          # scanned (else: vacuously true!)
+    FILTER NOT EXISTS { ?t ex:inFolder ?folder ; ex:extension "txt" .
+                        FILTER NOT EXISTS { ?t ex:lineCount ?c } }
+    ...
+  """ ;
+  lr:insert "?goal lr:reached true ." .
+```
+
+See [`examples/folder-scan-goal`](examples/folder-scan-goal). Add a goal in the UI (autocomplete knows the goal's shape) and press ▶ Autopilot.
+
 ## Share models, not code
 
 Models and controllers are **pure data**: RDF, SPARQL and SHACL. Sharing one carries none of the risks of sharing a script. The only way a model can touch the outside world is through tool calls, and **every tool call needs approval**. Autopilot pauses until you decide.
@@ -170,6 +194,7 @@ my-project/
 - [x] HTTP + WebSocket API
 - [x] Spreadsheet-style web UI: edit triples, filter applications (including by a SPARQL pattern on the end state), preview deltas, approve calls
 - [x] Autocomplete for editing, derived from the SHACL shapes
+- [x] Goal-driven computation as a modeling pattern (no engine changes)
 - [ ] Named graphs (full SPOG quads)
 - [x] An allowlist for approving tool calls automatically
 - [ ] Controllers learned from your manual choices (anti-unification, RIPPER)

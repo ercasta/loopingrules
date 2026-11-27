@@ -1,0 +1,5 @@
+@prefix ex: <https://example.org/folderscan#> .
+
+# Nothing happens until you add a goal, e.g.:
+#   ex:g1 a ex:CountLinesGoal ; ex:folder ex:target .
+ex:target a ex:Folder ; ex:path "." .
