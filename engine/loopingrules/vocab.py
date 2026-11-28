@@ -4,7 +4,9 @@ from rdflib import Namespace
 
 LR = Namespace("https://loopingrules.org/ns#")
 
-# Operation:   lr:where / lr:delete / lr:insert  (SPARQL fragments as strings)
+# Operation:   lr:where / lr:delete / lr:insert  (SPARQL fragments as strings),
+#              lr:params, lr:requires / lr:ensures ([ rdfs:label ; lr:ask ] or a string),
+#              lr:steps ( [ lr:where ; lr:delete ; lr:insert ] ... )  -- see operations.py, D22
 # Controller:  lr:query (SPARQL SELECT returning ?score; named graphs lr:before,
 #              lr:inserted, lr:deleted, lr:action describe the application, D20),
 #              lr:active (boolean),

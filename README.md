@@ -68,6 +68,22 @@ ex:classifyFile a lr:Operation ;
   lr:insert "?file ex:extension ?ext ." .
 ```
 
+Operations can also declare which variables identify an action, named guards, postconditions, and several ordered steps:
+
+```turtle
+ex:forgetFolder a lr:Operation ;
+  lr:params "folder" ;                     # one application per folder, not per file
+  lr:where  "?folder a ex:Folder ; ex:scanned true ." ;
+  lr:requires [ rdfs:label "no scan in progress" ;
+                lr:ask "FILTER NOT EXISTS { ?c ex:scanOf ?folder ; lr:status lr:Pending }" ] ;
+  lr:steps (
+    [ lr:where "?f ex:inFolder ?folder ; ?p ?o ." ; lr:delete "?f ?p ?o ." ]   # every file of the folder
+    [ lr:delete "?folder ex:scanned true ." ]
+  ) .
+```
+
+A blocked application is still listed, with the reason ("blocked by: no scan in progress"). Operation patterns use a subset of SPARQL (no subqueries, aggregates, `MINUS`, property paths or `GRAPH`), so that matching can become incremental later.
+
 ### A controller
 
 ```turtle

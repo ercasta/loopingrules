@@ -234,15 +234,26 @@ All three additions are optional and backward compatible.
   - One application per distinct parameter tuple; the other variables are local.
   - `WHERE` rows that share a tuple are merged, and their instantiated effects are unioned. That's SPARQL Update semantics with the parameters pre-bound, so "for every file in this folder" needs no new construct.
   - The application id hashes the parameters only.
-  - Without `lr:params`, every variable is a parameter (today's behaviour).
+  - Without `lr:params`, every variable is a parameter (today's behaviour). Identical solutions are still merged.
+  - Spelling: `lr:params "folder file"`, `"?folder, ?file"`, or repeated values. Each name must be a variable `lr:where` binds; otherwise the operation is refused at load.
+  - Only the parameters are an application's bindings: they're what the UI shows, what `GRAPH lr:action` lists (D20), and what guards, postconditions and steps see.
 - **`lr:requires`**: named guards (`rdfs:label` + `lr:ask`), evaluated per parameter tuple with the parameters pre-bound.
   - `WHERE` is still a precondition. Guards add explanation: the UI can list matched-but-blocked applications as "blocked by: …".
   - They're also clean features for learning, and cheaper than finding out through SHACL after building the resulting state.
+  - A guard can also be written as a plain string, `lr:requires "?folder ex:scanned true"`, labelled by its own text.
+  - A blocked application is still listed, invalid, with "blocked by: <label>". Its delta isn't computed, so it shows none.
 - **`lr:ensures`**: optional postconditions specific to one operation, checked on the resulting state. SHACL stays the global invariant (D4).
+  - Same shape as guards. They're checked before SHACL, since they're cheaper; a failure makes the application invalid, and it still shows its delta.
 - **`lr:steps`**: an ordered `rdf:List` of `[ lr:where ; lr:delete ; lr:insert ]` steps for transformations that one pattern can't express.
-  - Each step runs against the state left by the previous steps. The parameters and earlier bindings carry over, and within a step rows are unioned as above.
+  - The operation's own `lr:delete`/`lr:insert`, over the solutions of `lr:where`, act as the first step.
+  - Each step runs against the state left by the previous steps. Within a step, every delete happens before every insert (SPARQL Update order), and rows are unioned as above.
+  - **Only the parameters carry over between steps** (revised from "the parameters and earlier bindings"). A step's other variables are local to it. With several rows per step, "earlier bindings" would be ambiguous; to refer to something an earlier step created, match it again, e.g. `?n ex:about ?folder`.
+  - A step without `lr:where` runs once, with the parameters only. A step without effects is refused at load.
+  - The net delta is tracked as steps apply: a later step can undo an earlier one, and an application whose net delta is empty is dropped.
   - Only the final state is validated, so intermediate states may be inconsistent.
-  - Operations with one step keep the fast template path; operations with several steps run on an overlay.
+  - Operations without steps keep the fast template path. With steps, the engine works on a copy of the sheet, to be replaced by an overlay (handoff, performance step 2).
+- **Fixed on the way:** an operation that deletes and re-inserts the same triple used to remove it. It now keeps it, following SPARQL Update order.
+- **Moved to load time:** the "no blank nodes in DELETE templates" check.
 
 ```turtle
 ex:forgetFolder a lr:Operation ;

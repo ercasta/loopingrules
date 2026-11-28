@@ -8,7 +8,8 @@ from typing import Callable, Literal as Lit
 from rdflib import Graph
 
 from .controllers import Controller, load_controllers, scoring_view
-from .operations import Application, Operation, enumerate_applications, load_operations
+from .operations import (Application, Operation, condition_violation, enumerate_applications, holds,
+                         load_operations)
 from .project import Project
 from .store import apply_delta, copy_graph, prologue
 from .tools.shell import PendingCall, ShellTool
@@ -72,19 +73,28 @@ class Engine:
     def applications(self) -> list[Application]:
         """All applications, each validated and scored against its resulting state.
 
-        An application is invalid if its resulting state has violations that the
-        current state does not have (so an already-invalid sheet, see D13, does not
-        block everything).
+        An application is invalid if a guard (lr:requires) blocks it, if one of its
+        operation's postconditions (lr:ensures) fails on its resulting state, or if
+        its resulting state has SHACL violations that the current state does not
+        have (so an already-invalid sheet, see D13, does not block everything).
         """
         apps = enumerate_applications(self.sheet, self.operations, self.project.model)
-        if not apps:
+        if not any(a.valid for a in apps):
             return apps
         baseline = {violation_key(v) for v in self.sheet_violations()}
         prefixes = prologue(self.project.controllers, *(g for _, g in self.project.layers),
                             self.project.model, self.sheet)
+        op_prefixes = prologue(self.project.model, self.sheet)
         active = [c for c in self.controllers if c.active]
         for app in apps:
+            if not app.valid:  # blocked by a guard: no delta to check or score
+                continue
             state = self.resulting_state(app)
+            failed = [c for c in app.operation.ensures if not holds(state, c, app.bindings, op_prefixes)]
+            if failed:
+                app.valid = False
+                app.violations = [condition_violation("lr:ensures", c) for c in failed]
+                continue
             new = [v for v in validate(state, self.shapes) if violation_key(v) not in baseline]
             app.valid = not new
             app.violations = new

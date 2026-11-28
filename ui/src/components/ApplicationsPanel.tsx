@@ -52,7 +52,7 @@ export function ApplicationsPanel(p: Props) {
         <div className="stats">
           <span className="stat">{p.apps.filter((a) => a.valid).length} valid</span>
           {p.apps.some((a) => !a.valid) && (
-            <span className="stat muted">{p.apps.filter((a) => !a.valid).length} blocked by SHACL</span>
+            <span className="stat muted">{p.apps.filter((a) => !a.valid).length} blocked</span>
           )}
           {p.loading && <span className="spinner" />}
         </div>
@@ -150,7 +150,15 @@ export function ApplicationsPanel(p: Props) {
                 <div className="violations">
                   {a.violations.map((v, i) => (
                     <div key={i}>
-                      🛡 {v.focus} {v.path}: {v.message || v.component}
+                      {v.component === "lr:requires" ? (
+                        <>⛔ blocked by: {v.message}</>
+                      ) : v.component === "lr:ensures" ? (
+                        <>⛔ would break: {v.message}</>
+                      ) : (
+                        <>
+                          🛡 {v.focus} {v.path}: {v.message || v.component}
+                        </>
+                      )}
                     </div>
                   ))}
                 </div>
