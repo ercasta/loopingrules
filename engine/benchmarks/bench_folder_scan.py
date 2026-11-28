@@ -18,11 +18,14 @@ import rdflib.plugins.sparql.parser as parser
 import rdflib.plugins.sparql.processor as processor
 
 import loopingrules.engine as engine_mod
+from loopingrules.controllers import Controller
 from loopingrules.engine import Engine
 from loopingrules.project import Project
 from loopingrules.tools.shell import ShellTool
 
 EXAMPLE = Path(__file__).resolve().parents[2] / "examples" / "folder-scan"
+# --delta: the same controllers, rewritten to read only the delta (design D20)
+DELTA_CONTROLLERS = Path(__file__).resolve().parent / "folder_scan_delta_controllers.ttl"
 spent: dict[str, float] = {}
 
 
@@ -41,6 +44,7 @@ def instrument():
     processor.translateQuery = timed("sparql translate", algebra.translateQuery)
     engine_mod.validate = timed("shacl validate", engine_mod.validate)
     engine_mod.copy_graph = timed("graph copy", engine_mod.copy_graph)
+    Controller.score = timed("scoring", Controller.score)
 
 
 def stub_shell(n: int) -> ShellTool:
@@ -53,10 +57,12 @@ def stub_shell(n: int) -> ShellTool:
     return ShellTool(executor=run)
 
 
-def bench(n: int) -> None:
+def bench(n: int, delta: bool) -> None:
     spent.clear()
     with tempfile.TemporaryDirectory() as d:
         shutil.copytree(EXAMPLE, Path(d) / "p", ignore=shutil.ignore_patterns(".lr"))
+        if delta:
+            shutil.copy(DELTA_CONTROLLERS, Path(d) / "p" / "controllers.ttl")
         proj = Project.load(Path(d) / "p", persist=False)
         eng = Engine(proj, shell=stub_shell(n), approver=lambda c: True)
         ticks = []
@@ -70,5 +76,6 @@ def bench(n: int) -> None:
 
 if __name__ == "__main__":
     instrument()
-    for size in [int(x) for x in sys.argv[1:]] or [5, 10, 20]:
-        bench(size)
+    delta = "--delta" in sys.argv
+    for size in [int(x) for x in sys.argv[1:] if x != "--delta"] or [5, 10, 20]:
+        bench(size, delta)

@@ -201,7 +201,12 @@ SELECT (COUNT(?f) AS ?score) WHERE { GRAPH lr:inserted { ?f ex:lineCount ?n } }
 ```
 
 - Pure SPARQL, so D9 holds.
-- **Performance:** a controller whose patterns all sit inside `GRAPH` clauses doesn't need the resulting state, so the engine skips building it. A delta-only controller costs O(|Δ|) per candidate. A whole-state aggregate costs O(N) per candidate, so O(N·A) per tick. Prefer delta controllers. The engine detects this from the query algebra.
+- **Performance:** a delta-only controller costs O(|Δ|) per candidate. A whole-state aggregate costs O(N) per candidate, so O(N·A) per tick.
+  - **Measured** on a single `COUNT`: the delta form costs a constant ~0.35 ms. The state form costs 0.24 ms at 250 triples, 0.56 ms at 2,500 and 3.0 ms at 25,000. Below ~1,000 triples the state form is cheaper, because rdflib's fixed cost per query dominates.
+  - In the folder-scan benchmark (≤ 240 triples), scoring is only 7–9% of the time. Delta versions of its controllers (`engine/benchmarks/folder_scan_delta_controllers.ttl`, run with `--delta`) give the same run and no speedup.
+  - **Implementation:** the controller query is evaluated directly, with the resulting state as the default graph. The named graphs come from a `Dataset` subclass that builds each one on first use; `lr:before` is a read-only view of the live sheet, not a copy.
+  - **Not yet:** skipping the resulting state altogether when no active controller reads the default graph. It only pays off once validation is lazy (handoff step 1); until then, validation builds the state anyway.
+- Controllers must be `SELECT` queries; anything else is refused at load.
 - **Learning:** the features are the action, the delta, and the neighbourhood of the bound nodes in `lr:before`. Ranking within a tick only depends on differences, so the user's choices give pairwise preferences: chosen vs. not chosen, stop included (D21).
 
 ### D21. Stopping is an authored no-op operation

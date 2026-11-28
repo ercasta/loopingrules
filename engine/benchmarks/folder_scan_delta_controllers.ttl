@@ -1,0 +1,37 @@
+@prefix lr:   <https://loopingrules.org/ns#> .
+@prefix ex:   <https://example.org/folderscan#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+# folder-scan's controllers rewritten to read only the delta (design D20).
+# Each scores V(after) - V(before) of the original, so the ranking within a tick,
+# and therefore the run, is the same; only the cost differs. Used by
+# bench_folder_scan.py --delta.
+
+ex:progress a lr:Controller ;
+  rdfs:label "progress" ;
+  lr:query """
+    SELECT ((?added - ?removed) AS ?score) WHERE {
+      { SELECT (COUNT(*) AS ?added) WHERE {
+          GRAPH lr:inserted { { ?f ex:extension ?e } UNION { ?g ex:lineCount ?n } } } }
+      { SELECT (COUNT(*) AS ?removed) WHERE {
+          GRAPH lr:deleted { { ?f ex:extension ?e } UNION { ?g ex:lineCount ?n } } } }
+    }
+  """ .
+
+ex:preferFewPendingCalls a lr:Controller ;
+  rdfs:label "prefer few pending calls" ;
+  lr:query """
+    SELECT ((?removed - ?added) AS ?score) WHERE {
+      { SELECT (COUNT(*) AS ?added)   WHERE { GRAPH lr:inserted { ?c lr:status lr:Pending } } }
+      { SELECT (COUNT(*) AS ?removed) WHERE { GRAPH lr:deleted  { ?c lr:status lr:Pending } } }
+    }
+  """ .
+
+ex:preferPerFileCounts a lr:Controller ;
+  rdfs:label "prefer per-file counts" ;
+  lr:query """
+    SELECT ((2 * (?removed - ?added)) AS ?score) WHERE {
+      { SELECT (COUNT(*) AS ?added)   WHERE { GRAPH lr:inserted { ?b ex:batchOf ?folder } } }
+      { SELECT (COUNT(*) AS ?removed) WHERE { GRAPH lr:deleted  { ?b ex:batchOf ?folder } } }
+    }
+  """ .

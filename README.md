@@ -31,7 +31,7 @@ LoopingRules turns this around. The state is a knowledge graph with explicit sem
 | **Model** | What a valid state is, plus the available operations. | SHACL + SPARQL |
 | **Operation** | A precondition plus a delta, i.e. which triples it deletes and which it inserts. | SPARQL `WHERE` / `DELETE` / `INSERT` |
 | **Application** | One concrete match of an operation against the sheet. | — |
-| **Controller** | A query that **scores the state an application would produce**. | SPARQL `SELECT ?score` |
+| **Controller** | A query that **scores an application**: the state it would produce, or the change itself. | SPARQL `SELECT ?score` |
 | **Tool** | A way to act on the outside world: the sheet requests a call, the engine runs it, the result becomes triples. | RDF |
 
 **One tick:**
@@ -39,7 +39,7 @@ LoopingRules turns this around. The state is a knowledge graph with explicit sem
 1. 🔍 **Enumerate.** Every binding of every operation's `WHERE` is a candidate application.
 2. 🧪 **Simulate.** For each candidate, compute the state it would produce.
 3. 🛡️ **Guard.** Drop candidates whose result breaks the SHACL shapes.
-4. 📊 **Score.** Every active controller scores every resulting state, and the scores are summed.
+4. 📊 **Score.** Every active controller scores every candidate, and the scores are summed (each times its `lr:weight`, default 1).
 5. ▶️ **Apply.** In manual mode you choose; on autopilot the highest score wins.
 6. 🔧 **Tools.** Between ticks, the shell commands requested in the sheet are approved, run, and their output is written back as triples.
 
@@ -64,6 +64,22 @@ ex:classifyFile a lr:Operation ;
 ```turtle
 ex:preferFewPendingCalls a lr:Controller ;
   lr:query "SELECT ((0 - COUNT(?c)) AS ?score) WHERE { ?c lr:status lr:Pending }" .
+```
+
+A controller's default graph is the state the application would produce. It can also look at the application itself through named graphs:
+
+| Graph | Contents |
+|---|---|
+| `GRAPH lr:before` | the sheet as it is now |
+| `GRAPH lr:inserted`, `GRAPH lr:deleted` | the change |
+| `GRAPH lr:action` | `lr:this lr:operation <op> ; lr:binds [ lr:var "file" ; lr:value <node> ]` |
+
+A controller that only reads the change stays cheap however big the sheet grows:
+
+```turtle
+ex:rewardCounts a lr:Controller ;
+  lr:weight 2 ;
+  lr:query "SELECT (COUNT(?f) AS ?score) WHERE { GRAPH lr:inserted { ?f ex:lineCount ?n } }" .
 ```
 
 ### Calling the shell, from the data itself

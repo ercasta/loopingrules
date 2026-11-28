@@ -5,7 +5,9 @@ from rdflib import Namespace
 LR = Namespace("https://loopingrules.org/ns#")
 
 # Operation:   lr:where / lr:delete / lr:insert  (SPARQL fragments as strings)
-# Controller:  lr:query (SPARQL SELECT returning ?score), lr:active (boolean),
+# Controller:  lr:query (SPARQL SELECT returning ?score; named graphs lr:before,
+#              lr:inserted, lr:deleted, lr:action describe the application, D20),
+#              lr:active (boolean),
 #              lr:weight (number, default 1; total = sum of weight * score)
 # Tool calls:  lr:ShellCall with lr:command, lr:status,
 #              lr:exitCode, lr:stdoutLine / lr:stderrLine -> [ lr:index ; lr:text ]

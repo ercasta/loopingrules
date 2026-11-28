@@ -7,7 +7,7 @@ from typing import Callable, Literal as Lit
 
 from rdflib import Graph
 
-from .controllers import Controller, load_controllers
+from .controllers import Controller, load_controllers, scoring_view
 from .operations import Application, Operation, enumerate_applications, load_operations
 from .project import Project
 from .store import apply_delta, copy_graph, prologue
@@ -71,7 +71,8 @@ class Engine:
             app.violations = new
             if app.valid:
                 # Each entry is the controller's weighted contribution (D23).
-                app.scores = {c.name: c.weight * c.score(state, prefixes) for c in active}
+                view = scoring_view(self.sheet, app)
+                app.scores = {c.name: c.weight * c.score(state, view, prefixes) for c in active}
         return apps
 
     def resulting_state(self, app: Application) -> Graph:
