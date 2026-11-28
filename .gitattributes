@@ -1,0 +1,7 @@
+# Every text file is stored and checked out with LF line endings, whatever the
+# platform or editor settings. Before this file the repo mixed CRLF and LF, and
+# edits on Windows kept flipping whole files (see doc/handoff.md).
+* text=auto eol=lf
+
+*.png binary
+*.zip binary
