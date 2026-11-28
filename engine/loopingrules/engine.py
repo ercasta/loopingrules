@@ -45,6 +45,46 @@ def choose(apps: list[Application]) -> Application | None:
     return act
 
 
+class _Tick:
+    """What validating and scoring share within one tick.
+
+    The sheet's own violations (the baseline for "new" violations) are computed
+    only if some resulting state has violations at all.
+    """
+
+    def __init__(self, engine: "Engine"):
+        self.engine = engine
+        p = engine.project
+        self.prefixes = prologue(p.controllers, *(g for _, g in p.layers), p.model, p.sheet)
+        self.op_prefixes = prologue(p.model, p.sheet)
+        self.active = [c for c in engine.controllers if c.active]
+        self._baseline: set | None = None
+
+    def baseline(self) -> set:
+        if self._baseline is None:
+            self._baseline = {violation_key(v) for v in self.engine.sheet_violations()}
+        return self._baseline
+
+    def check(self, app: Application, state: Graph) -> bool:
+        """Set app.valid and app.violations: postconditions, then new SHACL violations."""
+        failed = [c for c in app.operation.ensures if not holds(state, c, app.bindings, self.op_prefixes)]
+        if failed:
+            app.valid, app.violations = False, [condition_violation("lr:ensures", c) for c in failed]
+            return False
+        if app.noop:  # its state is the sheet: it cannot add violations
+            app.valid, app.violations = True, []
+            return True
+        found = validate(state, self.engine.shapes)
+        new = [v for v in found if violation_key(v) not in self.baseline()] if found else []
+        app.valid, app.violations = not new, new
+        return app.valid
+
+    def score(self, app: Application, state: Graph) -> None:
+        # Each entry is the controller's weighted contribution (D23).
+        view = scoring_view(self.engine.sheet, app)
+        app.scores = {c.name: c.weight * c.score(state, view, self.prefixes) for c in self.active}
+
+
 class Engine:
     def __init__(self, project: Project, shell: ShellTool | None = None, approver: Approver | None = None):
         self.project = project
@@ -77,34 +117,49 @@ class Engine:
         operation's postconditions (lr:ensures) fails on its resulting state, or if
         its resulting state has SHACL violations that the current state does not
         have (so an already-invalid sheet, see D13, does not block everything).
+        Only valid applications are scored.
+
+        This validates every application, for display. Autopilot uses `pick`,
+        which validates only as many as it needs.
         """
         apps = enumerate_applications(self.sheet, self.operations, self.project.model)
-        if not any(a.valid for a in apps):
-            return apps
-        baseline = {violation_key(v) for v in self.sheet_violations()}
-        prefixes = prologue(self.project.controllers, *(g for _, g in self.project.layers),
-                            self.project.model, self.sheet)
-        op_prefixes = prologue(self.project.model, self.sheet)
-        active = [c for c in self.controllers if c.active]
+        tick = _Tick(self)
         for app in apps:
             if not app.valid:  # blocked by a guard: no delta to check or score
                 continue
             state = self.resulting_state(app)
-            failed = [c for c in app.operation.ensures if not holds(state, c, app.bindings, op_prefixes)]
-            if failed:
-                app.valid = False
-                app.violations = [condition_violation("lr:ensures", c) for c in failed]
-                continue
-            new = [v for v in validate(state, self.shapes) if violation_key(v) not in baseline]
-            app.valid = not new
-            app.violations = new
+            tick.check(app, state)
             if app.valid:
-                # Each entry is the controller's weighted contribution (D23).
-                view = scoring_view(self.sheet, app)
-                app.scores = {c.name: c.weight * c.score(state, view, prefixes) for c in active}
+                tick.score(app, state)
         return apps
 
+    def pick(self) -> Application | None:
+        """The application autopilot would choose: the same as `choose(self.applications())`.
+
+        Validation dominates the cost of a tick, so this scores every candidate
+        first and validates in score order, stopping at the first valid one: about
+        one validation per tick instead of one per candidate.
+        """
+        apps = [a for a in enumerate_applications(self.sheet, self.operations, self.project.model) if a.valid]
+        tick = _Tick(self)
+        for app in apps:
+            tick.score(app, self.resulting_state(app))
+
+        def by_score(xs):  # stable: among equals, the first enumerated comes first
+            return sorted(xs, key=lambda a: -a.total)
+
+        stop = next((a for a in by_score(a for a in apps if a.noop) if tick.check(a, self.sheet)), None)
+        for app in by_score(a for a in apps if not a.noop):
+            if stop is not None and stop.total > app.total:
+                break  # a no-op must strictly win (D21); everything left scores lower still
+            if tick.check(app, self.resulting_state(app)):
+                return app
+        return stop
+
     def resulting_state(self, app: Application) -> Graph:
+        """The state after `app`; for a no-op, the sheet itself (do not modify it)."""
+        if app.noop:
+            return self.sheet
         state = copy_graph(self.sheet)
         apply_delta(state, app.deletes, app.inserts)
         return state
@@ -169,7 +224,7 @@ class Engine:
         self.tool_phase()
         if self.pending_calls():
             return StepResult("awaiting-approval")
-        best = choose(self.applications())
+        best = self.pick()
         if best is None:
             return StepResult("done")
         if best.noop:
