@@ -739,6 +739,32 @@ A possible engine improvement: rewrite patterns to follow these rules, or evalua
 
 **Bug found by the tests:** a run and a case both use `pl:stage`. A pattern that said `?case pl:stage ?stage` without `?case a pl:Case` matched the run itself, so "stuck" never fired. Patterns over cases now say `a pl:Case`.
 
+### D32. Incremental SHACL: validate only where a change can matter
+*Status: built (2026-11-28). Code: `validation.py` (`split_shapes`, `affected_nodes`, `validate_change`); tests: `test_incremental_shacl.py`. This is step 3 of the performance plan in `doc/handoff.md` §5.*
+
+**Rule kept:** an application is invalid only if it *adds* violations (D13). New violations can only appear where the change can alter a result, so only those places need validating. The baseline (the sheet's own violations) is still computed in full, once per tick and only when needed.
+
+**Where a change can matter.** At model load the shapes are split in two:
+- **Local shapes:** paths are a predicate or `[ sh:inversePath p ]`, and constraints look only at the focus node and its direct values (counts, datatype, class, `in`, pattern, ranges, `hasValue`, closed, the property-pair constraints, …). These are validated with pySHACL's `focus_nodes`, at the **affected nodes**:
+  - the subjects and IRI objects of the deleted and inserted triples (targets, values, inverse values);
+  - for `sh:class`, one step back: the nodes whose value along a class-constrained path is a changed node, since that node's `rdf:type` may have changed.
+- **Every other shape** (complex paths, `sh:node`, logical, qualified or SPARQL constraints, rules) is validated in full, on its own. Only that shape's own triples (and the shapes it names) are in its graph, so it's small. In the examples, that's the Rubik scramble shape, whose path runs down a list.
+- **Fall back to full validation** when the change touches `rdfs:subClassOf` (class targets and `sh:class` follow subclasses in the data), or when an affected node is a blank node (pySHACL focuses only on IRIs).
+- Applications (`_Tick.check`) and posts (`Engine.post`) use it. `Engine.incremental_shacl = False` switches it off, which is how the tests compare both ways.
+
+**Correctness test:** at every tick of folder-scan (with and without its pack), folder-scan-goal, the planning pack's counter domain and the start of a Rubik solve, every candidate application must get the same *new* violations both ways. Synthetic cases cover the subtle spots, each one adding a real violation:
+- a value's type removed (`sh:class`, one step back);
+- an inverse path;
+- `maxCount`;
+- a type removed deep in a list (complex path);
+- a subclass added in the data;
+- a blank node;
+- a sheet that already has violations.
+
+**Measured** (Rubik solve through the planning pack, seeds 3 and 4): 28.8 → 23.4 s and ~35 → 25.2 s. Under the profiler, SHACL went from 31 s (53%) to 18 s (38%). Folder-scan, 20 files: 27 → 21 ms per tick.
+- **A first version was slower on big changes:** asking the overlay for `(?, ?, n)`, one step back, scans its added triples on every call. Lookups now go to the base by predicate and object, plus one scan of the added triples.
+- **What's left is pySHACL's own per-call cost:** building the shapes graph, enumerating each shape's targets, and Python-level evaluation. A possible next step is checking the local subset ourselves, compiled to queries on the mirror, with pySHACL only for the rest.
+
 ## Open questions
 
 - **Q3. Ties and no-ops.** Partly settled by D21: empty deltas are excluded except for no-op operations, and a tie between a no-op and an application with effects goes to continuing. Other ties: the first application, in a fixed order (operation IRI, then parameter values: D30).

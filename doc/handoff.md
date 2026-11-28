@@ -45,7 +45,8 @@
   - *The procedure needed five things the method couldn't express before: negative conditions, any-of conditions, case priority (a controller), a stage that keeps its frame, and explicit operation priority (a controller). See `doc/rubik.md`, "What the procedure needed".*
 - ***D31 is built: the planning pack** (`examples/planning`, a library pack, `lr:library true`). Methods, stages, cases and named procedures (`Repeat`, `Until`) run on a call stack. The pack and the domain talk only through requests and answers in the sheet (`pl:Check` → `pl:result`, `pl:doing` → done): the user's design, with no engine change. The cube is solved through it (29–39 s per solve), and a counter domain tests it in `test_d31.py`.*
   - *Pattern-writing rules learned on the way (oxigraph): start expensive patterns from a positive triple, keep `UNION` branches self-contained, use star patterns inside `NOT EXISTS`. See D31.*
-- ***Next:** a second, real non-cube example on the pack (e.g. a recipe or an assembly procedure), and the per-move cost (2 ticks of ~55 ms). On performance, SHACL is now ~60% of a tick: incremental validation (§5, step 3) is the next lever. Also re-check the per-stage case counts as stages land.*
+- ***D32 is built: incremental SHACL.** Local shapes are validated only at the nodes a change can affect, and the others in full. A Rubik solve takes 23–25 s (was 29–35). SHACL is ~38% of a tick now, mostly pySHACL's per-call overhead. The default test suite runs in ~2 min; `pytest --slow` adds the full Rubik solves.*
+- ***Next:** a second, real non-cube example on the pack (e.g. a recipe or an assembly procedure), and the per-move cost (2 ticks of ~40 ms). On performance, SHACL is now ~60% of a tick: incremental validation (§5, step 3) is the next lever. Also re-check the per-stage case counts as stages land.*
 
 ## 1. State in one paragraph
 LoopingRules is a working "semantic spreadsheet":
@@ -137,7 +138,7 @@ engine/.venv/Scripts/lr run examples/folder-scan --yes  # headless
    - The UI/API still shows validity for all candidates. Compute it lazily or in the background, e.g. return scores first and mark validity "checking", or validate only the visible top K.
    - Careful: today `applications()` scores **only valid** applications, and scoring is cheap, so the order of the two steps flips.
 2. **Use an overlay instead of `copy_graph`.** A read-only view of base − deletes + inserts, used for scoring and validation. rdflib needs a small custom Store or a `ReadOnlyGraphAggregate`-style wrapper. Check that pySHACL accepts it, or that it's cheap to materialise only for validation.
-3. **Validate incrementally.**
+3. ~~**Validate incrementally.**~~ Done: D32 (2026-11-28).
    - Pass `focus_nodes` to pySHACL (supported in 0.40) with the nodes the delta touches plus one hop. This is needed because `sh:class` reaches the object's type and `sh:in`/`sh:datatype` reach values.
    - Fall back to full validation when shapes use complex paths or SPARQL constraints.
    - Keep the "only *new* violations" rule (the baseline is the current state's violations, cached per tick).

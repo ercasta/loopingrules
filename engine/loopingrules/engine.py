@@ -16,7 +16,7 @@ from .mirror import make_mirror
 from .project import Project
 from .store import Overlay, Union, apply_delta, prologue
 from .tools.shell import PendingCall, ShellTool
-from .validation import validate, violation_key
+from .validation import split_shapes, validate, validate_change, violation_key
 from .vocab import BUILTIN_SHAPES
 
 # approver(call) -> True (run), False (reject), None (leave pending for later)
@@ -77,7 +77,7 @@ class _Tick:
         if app.noop:  # its state is the sheet: it cannot add violations
             app.valid, app.violations = True, []
             return True
-        found = validate(state, self.engine.shapes)
+        found = self.engine.validate_change(state, app.deletes | app.inserts)
         new = [v for v in found if violation_key(v) not in self.baseline()] if found else []
         app.valid, app.violations = not new, new
         return app.valid
@@ -126,6 +126,7 @@ class Engine:
         self.shapes = Graph()
         self.shapes += self.model
         self.shapes.parse(data=BUILTIN_SHAPES, format="turtle")
+        self.shape_split = split_shapes(self.shapes)
         self.mirror = make_mirror(self.knowledge)  # None: patterns are matched by rdflib
 
     @property
@@ -153,6 +154,17 @@ class Engine:
                                        "severity": None,
                                        "message": f"would delete knowledge from {self.knowledge_source[hit]}"}]
         return apps
+
+    # Validate only where a change can matter (validation.validate_change); tests turn it
+    # off to compare with validating everything.
+    incremental_shacl = True
+
+    def validate_change(self, state: Graph, changed: set) -> list[dict]:
+        """The violations of `state` (the view after `changed`) that the change could have
+        caused. Compared with the sheet's own violations, they give the new ones."""
+        if self.incremental_shacl:
+            return validate_change(state, changed, self.shapes, self.shape_split)
+        return validate(state, self.shapes)
 
     def sheet_violations(self) -> list[dict]:
         return validate(self.view, self.shapes)
@@ -254,7 +266,7 @@ class Engine:
         triples, root = parse_post(text, self.model, self.sheet)
         added, iri = mint_post(triples, root)
         state = Overlay(self.view, (), added)
-        found = validate(state, self.shapes)
+        found = self.validate_change(state, set(added))
         if found:
             baseline = {violation_key(v) for v in self.sheet_violations()}
             new = [v for v in found if violation_key(v) not in baseline]
