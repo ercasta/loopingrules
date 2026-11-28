@@ -1,0 +1,73 @@
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix lr:   <https://loopingrules.org/ns#> .
+@prefix rk:   <https://example.org/rubik#> .
+
+# The solver (design: doc/rubik.md, part 1).
+# - The method is knowledge (method.ttl): stages, and cases with their algorithms,
+#   written as the beginner method writes them, with white on D.
+# - These operations are the generic machinery: recognise a case in some frame,
+#   plan its algorithm, and move on to the next stage when its goal holds.
+# - Planning only happens when the plan is empty, so an algorithm never runs on
+#   a stale recognition.
+
+rk:SolvingShape a sh:NodeShape ;
+  sh:targetClass rk:Cube ;
+  sh:property [ sh:path rk:stage ; sh:maxCount 1 ; sh:class rk:Stage ] ;
+  sh:property [ sh:path rk:frame ; sh:maxCount 1 ; sh:class rk:Frame ] .
+
+# [] a rk:Solve  ->  start the method's first stage.
+rk:solve a lr:Operation ; rdfs:label "start solving" ;
+  lr:params "m" ;
+  lr:where  """ ?m lr:channel lr:in ; a rk:Solve .
+                rk:cube rk:plan rdf:nil .
+                FILTER NOT EXISTS { rk:cube rk:stage ?solving }
+                ?method a rk:Method ; rk:firstStage ?first . """ ;
+  lr:insert """ rk:cube rk:stage ?first .
+                [] lr:channel lr:out ; a lr:Say ; lr:replyTo ?m ; lr:text "Solving." . """ ;
+  lr:steps ( [ lr:where """ ?m ?p ?o . """ ; lr:delete """ ?m ?p ?o . """ ] ) .
+
+# A case of the current stage whose needs all hold in a frame: plan its algorithm,
+# in that frame. "All needs hold" is written as "no need fails".
+rk:planCase a lr:Operation ; rdfs:label "plan a case" ;
+  lr:params "case fr" ;
+  lr:where  """ rk:cube rk:stage ?stage ; rk:plan rdf:nil .
+                ?case a rk:Case ; rk:stage ?stage ; rk:algorithm ?alg .
+                ?fr a rk:Frame .
+                FILTER NOT EXISTS {
+                  ?case rk:need ?need .
+                  ?need rk:at ?at ; rk:like ?like .
+                  ?fr ?at ?p . ?fr ?like ?centre . ?centre rk:colour ?c .
+                  FILTER NOT EXISTS { ?p rk:colour ?c }
+                } """ ;
+  lr:delete """ rk:cube rk:plan rdf:nil . """ ;
+  lr:insert """ rk:cube rk:plan ?alg ; rk:frame ?fr . """ ;
+  lr:steps ( [ lr:where  """ rk:cube rk:frame ?old . FILTER(?old != ?fr) """ ;
+               lr:delete """ rk:cube rk:frame ?old . """ ] ) .
+
+# The stage's goal holds in every frame: say so, and go on to the next stage.
+rk:nextStage a lr:Operation ; rdfs:label "next stage" ;
+  lr:params "stage" ;
+  lr:where  """ rk:cube rk:stage ?stage ; rk:plan rdf:nil .
+                ?stage rk:next ?next ; rdfs:label ?name .
+                FILTER NOT EXISTS {
+                  ?fr a rk:Frame .
+                  ?stage rk:goal ?need .
+                  ?need rk:at ?at ; rk:like ?like .
+                  ?fr ?at ?p . ?fr ?like ?centre . ?centre rk:colour ?c .
+                  FILTER NOT EXISTS { ?p rk:colour ?c }
+                }
+                BIND(CONCAT("Done: ", ?name, ".") AS ?text) """ ;
+  lr:delete """ rk:cube rk:stage ?stage . """ ;
+  lr:insert """ rk:cube rk:stage ?next .
+                [] lr:channel lr:out ; a lr:Say ; lr:text ?text . """ .
+
+# The last stage has no next one: the solve is over.
+rk:finish a lr:Operation ; rdfs:label "finish solving" ;
+  lr:where  """ rk:cube rk:stage ?stage ; rk:plan rdf:nil .
+                FILTER NOT EXISTS { ?stage rk:next ?any }
+                FILTER NOT EXISTS { ?case a rk:Case ; rk:stage ?stage } """ ;
+  lr:delete """ rk:cube rk:stage ?stage . """ ;
+  lr:insert """ [] lr:channel lr:out ; a lr:Say ; lr:text "Finished." . """ ;
+  lr:steps ( [ lr:where  """ rk:cube rk:frame ?fr . """ ; lr:delete """ rk:cube rk:frame ?fr . """ ] ) .

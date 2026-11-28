@@ -1,6 +1,6 @@
 # Rubik: a rich example
 
-*Status: design (2026-11-28). Steps 1–3 are built: `examples/rubik`, `examples/rubik-viewer`, `examples/rubik-show`, `engine/tests/test_rubik.py`.*
+*Status: design (2026-11-28). Steps 1–3 and the first solver stage are built: `examples/rubik`, `examples/rubik-viewer`, `examples/rubik-show`, `engine/tests/test_rubik.py`.*
 
 ## Goal
 A complete example built from separate, shareable parts:
@@ -149,6 +149,33 @@ rubik            project   cube, moves, solver
   - over the API with a listening autopilot: never more than one `viz:Turn` waiting;
   - over stdin.
 - **Live, with the viewer:** the model's turn count now advances one turn at a time, in step with the viewer, instead of jumping to 20. The log shows the cycle `turn` → `announce turn` → `wait for the viewer won`.
+
+## Step 4, stage 1 (white cross): as built
+- **The method is knowledge; the solver is generic.**
+  - `gen_method.py` writes `method.ttl` with the stages and the cases. Each case is a set of needs, e.g. `need:x rk:at rpos:U8 ; rk:like rpos:D5`, "the sticker at U8 has the colour of the D centre". Each case has an algorithm: a named list of relative moves (`rmv:`).
+  - Everything is written as the beginner method writes it, with white on D.
+- **Frames** (added to `geometry.ttl`): the 4 rotations that put white down. Each maps relative positions and moves to absolute ones (`frame:fB rpos:F2 pos:…`, `rmv:R mv:…`). A case is written once and recognised from all 4 sides.
+- **Algorithms are found by search.** The generator runs a bidirectional search for the shortest sequence that solves the target and keeps the other cross slots sticker for sticker. Every algorithm is replayed to check it.
+  - The cross has 23 cases, with algorithms of 1–4 moves.
+- **The solver** (`solver.ttl`) has four generic operations:
+  - `start solving` (`rk:Solve`);
+  - `plan a case`: a case whose needs all hold in a frame, written as "no need fails", becomes the plan, with that frame;
+  - `next stage`: the goal holds in every frame;
+  - `finish solving`.
+- **`turn`** resolves relative moves through `rk:cube rk:frame`. It walks the plan with a pointer and deletes only list nodes that are not `rk:AlgorithmStep`s, since an algorithm's nodes are knowledge.
+- Scramble and reset now also wait while a solve runs.
+- **Tests:**
+  - 6 random scrambles get the white cross in at most 16 turns;
+  - solving a solved cube makes no turns.
+- **Cost** (`bench_solve`, a 25-move scramble, then solve):
+
+  | tick | ms/tick |
+  |---|---|
+  | turn | 103 (68 before the solver: every tick also tries the solver's patterns) |
+  | plan a case | ~500 (23 cases × 4 frames, nested `NOT EXISTS`) |
+  | next stage | ~510 |
+
+  The profile shows **matching 74%, SHACL 26%**. Planning grows with the number of cases. The full method will have about 100 cases, so expect planning ticks of about 2 s.
 
 ## Engine changes needed (small)
 - *(done in step 2)* **`POST /api/out/ack` must wake a listening autopilot** (`session.input_event.set()`, as the other mutations do). Today an ack doesn't, so `show:wait` would never be re-evaluated.

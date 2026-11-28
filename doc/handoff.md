@@ -17,7 +17,20 @@
 - *Also fixed: the CLI no longer crashes on cp1252 consoles or pipes (`main()` reconfigures the output streams to replace characters they can't encode).*
 - ***D28 is built: everything is SPO.** Definitions are recognised by type (`definitions.py`). Everything else is read-only knowledge (`store.Union`, `Engine.view`). Packs carry complete features and can extend packs. Conflicts are refused.*
 - ***D29 is built:** `lr check` (`check.py`), with exit codes 0/1/2, findings (`lr:Finding`), and `examples/arch-check`, which checks this repo's layering. Pre-commit and Claude Code hook snippets are in the README.*
-- ***Next session:** the MCP server (the user's choice). Its tools only post to `lr:in`, read `lr:out` and run (D25); granting direct edits per project is still to be built.*
+- *Next session was going to be the MCP server. It's still open: its tools only post to `lr:in`, read `lr:out` and run (D25). Granting direct edits per project is still to be built.*
+
+*Updated 2026-11-28, fourth session (the Rubik example, `doc/rubik.md`):*
+- ***Built:** the four-part example, as a project plus packs:*
+  - *`examples/rubik`: the project. The cube is 54 facelet colours; the geometry, frames and method are generated knowledge (`gen_geometry.py`, `gen_method.py`); `turn`, `scramble` and `reset` are operations.*
+  - *`examples/rubik-viewer`: a pack plus a Three.js app (`app/`, Vite, port 5180). It only uses the channels, and an ack means "displayed".*
+  - *`examples/rubik-show`: a policy pack. It holds the plan with a penalty, so a sync is never blocked.*
+  - *The solver's first stage, the white cross (`solver.ttl`): the method is knowledge (cases = needs + algorithms, written with white on D and recognised through 4 frames), and the solver is 4 generic operations.*
+- ***Engine fixes along the way:***
+  - *an ack wakes a listening autopilot;*
+  - *step templates see the operation's parameters even when the step's pattern doesn't mention them (regression test in `test_d22.py`);*
+  - *`lr run --listen` runs again after acknowledging `lr:out`.*
+- ***Paused at step 4, after stage 1 of 7.** Planning ticks cost ~500–600 ms with 23 cases. Profile: **matching 74%, SHACL 26%**. A full method has ~100 cases, so planning ticks would take ~2 s and solver tests minutes. The suite already went from 83 s to 160 s.*
+- ***Next session: performance**, with the new matching-heavy benchmark `engine/benchmarks/bench_rubik_solve.py`. See §5, "Next: pyoxigraph for matching". Then resume `doc/rubik.md` step 4 with the corners stage.*
 
 ## 1. State in one paragraph
 LoopingRules is a working "semantic spreadsheet":
@@ -68,7 +81,8 @@ engine/.venv/Scripts/lr run examples/folder-scan --yes  # headless
 | `api.py` | FastAPI + WebSocket; `Session._mutate` diffs and broadcasts |
 | `cli.py` | `apps`, `run`, `serve`, `export`, `import`, `add-layer` |
 | `ui/src/` | `App.tsx`, `components/` (Sheet, Applications, Sidebar, ApprovalBanner, Combobox, TermView) |
-| `examples/` | `folder-scan` (0.2.0), `folder-scan-goal`, `big-folders` (controller pack) |
+| `examples/` | `folder-scan` (0.2.0), `folder-scan-goal`, `big-folders` (controller pack), `hello-channels`, `tutorial`, `arch-check`, `rubik` + `rubik-viewer` (pack + Three.js `app/`) + `rubik-show` (policy pack) |
+| `engine/benchmarks/` | `bench_folder_scan.py` (growing sheet), `bench_rubik_solve.py` (matching-heavy) |
 | `exports/` | downloadable `.lr.zip` examples, generated with `lr export` |
 | `scripts/dev/` | `drive.py` (drives a running server via the API), `shot.py` (headless Edge over CDP → PNG) |
 
@@ -120,6 +134,30 @@ engine/.venv/Scripts/lr run examples/folder-scan --yes  # headless
 - **Journaling diffs:** `Engine._journaled` diffs `set(sheet)` before and after tool calls and edits, which costs O(N) per call. It's fine at current sizes; record the deltas directly if it shows up in profiles.
 - **`api.Session._mutate`** also diffs the whole sheet on every mutation, for UI highlighting. Same remedy: have the engine return the delta.
 - **Benchmarks:** add a bigger generated case, e.g. 100 and 500 files, once the steps above land, and consider a pytest-benchmark smoke test with a generous threshold so regressions are noticed.
+
+### Next: pyoxigraph for matching (added 2026-11-28, fourth session)
+**There are now two benchmarks, with different profiles:**
+
+| Benchmark | Workload | Profile |
+|---|---|---|
+| `bench_folder_scan.py` | a growing sheet; each tick touches a few triples about one file | matching 57%, scoring 24%, SHACL 18% (at 40 files) |
+| `bench_rubik_solve.py` | a small sheet (~360 triples) plus ~1,000 knowledge triples; every turn rewrites 20 colours, and the planning ticks match 23 cases × 4 frames with nested `FILTER NOT EXISTS` | matching 74%, SHACL 26%; turn ~110 ms, planning ~550 ms per tick |
+
+**What each option buys:**
+- **(c) Reusing matches across ticks** helps folder-scan, but almost nothing on Rubik: every turn changes colours that every case reads.
+- **(b) A pyoxigraph mirror for matching** helps both. Rubik's expensive queries are exactly what rdflib evaluates slowly.
+- **(a) Rete** is the bigger build. Keep it for later, if (b) isn't enough.
+
+**Recommended first step: a time-boxed trial of (b).**
+- Keep a pyoxigraph store in sync with sheet + knowledge, by applying each delta and loading knowledge once.
+- Evaluate operation `WHERE`s, steps and guards there. Controllers and SHACL stay on rdflib.
+- Points to check:
+  - **overlays:** steps query the state earlier steps left; insert/delete on the mirror and roll back, or materialise per application;
+  - **term round-tripping** (literals, datatypes, minted IRIs);
+  - **the security check** (`SERVICE`/`FROM` must stay refused);
+  - **identical results:** `test_lazy_pick.py` style, comparing against rdflib at every tick.
+- **Measure both benchmarks before and after.**
+- **SHACL (the remaining 26%):** incremental validation with `focus_nodes` (step 3 above) is the separate fix.
 
 ## 6. Other open items (not performance)
 - Query time limits for shared models (D18 to-do).

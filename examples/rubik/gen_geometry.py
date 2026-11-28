@@ -29,6 +29,9 @@ PREFIXES = """\
 @prefix slot: <https://example.org/rubik/slot#> .
 @prefix mv:   <https://example.org/rubik/move#> .
 @prefix map:  <https://example.org/rubik/map#> .
+@prefix frame: <https://example.org/rubik/frame#> .
+@prefix rpos: <https://example.org/rubik/rpos#> .
+@prefix rmv:  <https://example.org/rubik/rmv#> .
 """
 
 # face: (normal, right, down) as seen from outside, and its home colour
@@ -78,6 +81,69 @@ def face_of_normal(n):
     return next(f for f, (fn, *_) in FACES.items() if fn == n)
 
 
+def turn_map(f: str) -> dict[str, str]:
+    """A clockwise quarter turn of face f: facelet name -> where its colour goes (centre excluded)."""
+    fl = facelets()
+    where = {v: k for k, v in fl.items()}
+    n = FACES[f][0]
+    return {name: where[(cw(n, c), cw(n, normal))] for name, (c, normal) in fl.items()
+            if dot(c, n) == 1 and name != f"{f}5"}
+
+
+def move_names() -> list[str]:
+    return [f + s for f in FACES for s in ("", "i", "2")]
+
+
+def move_map(move: str) -> dict[str, str]:
+    """Any move ("R", "Ri", "R2") as a permutation of the 54 positions."""
+    quarters = {"": 1, "i": 3, "2": 2}[move[1:]]
+    perm = {name: name for name in facelets()}
+    step = turn_map(move[0])
+    for _ in range(quarters):
+        perm = {k: step.get(v, v) for k, v in perm.items()}
+    return perm
+
+
+def rotations():
+    """The 24 proper rotations of the cube, as 3x3 integer matrices."""
+    import itertools
+    out = []
+    for perm in itertools.permutations(range(3)):
+        for signs in itertools.product((1, -1), repeat=3):
+            m = [[0] * 3 for _ in range(3)]
+            for i, (j, sgn) in enumerate(zip(perm, signs)):
+                m[i][j] = sgn
+            det = (m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+                   + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]))
+            if det == 1:
+                out.append(m)
+    return out
+
+
+def rotate(m, v):
+    return tuple(sum(m[i][j] * v[j] for j in range(3)) for i in range(3))
+
+
+def frames():
+    """The 4 ways to hold the cube with white (absolute U) down, named by the absolute face in front.
+
+    Each frame maps relative names (as the beginner method writes them: white on D) to absolute ones:
+    {"pos": {relative facelet: absolute facelet}, "move": {relative move: absolute move}}.
+    """
+    fl = facelets()
+    where = {v: k for k, v in fl.items()}
+    out = {}
+    for m in rotations():
+        if rotate(m, FACES["D"][0]) != FACES["U"][0]:
+            continue
+        front = face_of_normal(rotate(m, FACES["F"][0]))
+        pos = {name: where[(rotate(m, c), rotate(m, n))] for name, (c, n) in fl.items()}
+        move = {mv: face_of_normal(rotate(m, FACES[mv[0]][0])) + mv[1:] for mv in move_names()}
+        out[front] = {"pos": pos, "move": move}
+    assert len(out) == 4
+    return out
+
+
 def main() -> None:
     fl = facelets()
     where = {v: k for k, v in fl.items()}
@@ -124,6 +190,19 @@ def main() -> None:
         out.append(f"mv:{f} a rk:Move ; rdfs:label \"{f}\" ; rk:face face:{f} ; rk:dir rk:cw ; rk:inverse mv:{f}i .")
         out.append(f"mv:{f}i a rk:Move ; rdfs:label \"{f}'\" ; rk:face face:{f} ; rk:dir rk:ccw ; rk:inverse mv:{f} .")
         out.append(f"mv:{f}2 a rk:Move ; rdfs:label \"{f}2\" ; rk:face face:{f} ; rk:dir rk:cw ; rk:twice true ; rk:inverse mv:{f}2 .")
+
+    out.append("\n# --- frames: the 4 ways to hold the cube with white down ----------------")
+    out.append("# The beginner method is written with white on D. A frame maps its relative")
+    out.append("# positions (rpos:) and moves (rmv:) to the absolute ones of this cube.")
+    for name in fl:
+        out.append(f"rpos:{name} a rk:RelPosition .")
+    for mv in move_names():
+        label = mv.replace("i", "'")
+        out.append(f"rmv:{mv} a rk:RelMove ; rdfs:label \"{label}\" .")
+    for front, fr in frames().items():
+        out.append(f"frame:f{front} a rk:Frame ; rdfs:label \"white down, {FACES[front][3].lower()} in front\" ;")
+        pairs = [f"rpos:{a} pos:{b}" for a, b in fr["pos"].items()] + [f"rmv:{a} mv:{b}" for a, b in fr["move"].items()]
+        out.append("  " + " ;\n  ".join(pairs) + " .")
 
     (HERE / "geometry.ttl").write_text("\n".join(out) + "\n", encoding="utf-8", newline="\n")
 

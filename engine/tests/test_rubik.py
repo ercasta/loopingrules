@@ -250,3 +250,38 @@ def test_show_over_stdin(tmp_path):
     assert listen(eng, stdin, stdout, Console(file=io.StringIO())) == 0
     assert stdout.getvalue().count("viz:Turn") == 3
     assert int(eng.sheet.value(RK.cube, RK.turns)) == 3
+
+
+# --- the solver (doc/rubik.md, step 4) --------------------------------------------
+
+def cross_done(eng) -> bool:
+    """White is on U in this cube: the cross is the four U edges, matching the side centres."""
+    cs = colours(eng)
+    return all(cs[u] == "White" and cs[s] == cs[s[0] + "5"]
+               for u, s in (("U8", "F2"), ("U6", "R2"), ("U2", "B2"), ("U4", "L2")))
+
+
+def solve(eng, max_ticks=400):
+    eng.post("[] a rk:Solve .")
+    result = eng.run(max_ticks=max_ticks)
+    assert result.status == "done", result
+    assert eng.sheet.value(RK.cube, RK.stage) is None  # the solve finished
+    return [m.text for m in eng.messages("out")]
+
+
+@pytest.mark.parametrize("seed", range(6))
+def test_solver_makes_the_white_cross(eng, seed):
+    rng = random.Random(seed)
+    play(eng, [rng.choice(ALL_MOVES) for _ in range(25)])
+    before = int(eng.sheet.value(RK.cube, RK.turns))
+    said = solve(eng)
+    assert cross_done(eng)
+    assert "Done: white cross." in said and "Finished." in said
+    assert eng.sheet_violations() == []
+    assert int(eng.sheet.value(RK.cube, RK.turns)) - before <= 4 * 4  # at most 4 moves per edge
+
+
+def test_solving_a_solved_cube_makes_no_turns(eng):
+    said = solve(eng)
+    assert int(eng.sheet.value(RK.cube, RK.turns)) == 0
+    assert "Done: white cross." in said
