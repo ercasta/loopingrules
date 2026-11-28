@@ -82,7 +82,7 @@ def test_threshold_is_data_in_the_sheet(tmp_path):
 def test_pack_rules(tmp_path):
     pack = export_project(ROOT / "big-folders", tmp_path / "pack.lr.zip")
     # a pack is not a project
-    with pytest.raises(PackageError, match="controller pack"):
+    with pytest.raises(PackageError, match="is a pack for"):
         import_export(pack.read_bytes(), tmp_path / "x")
     # it only goes on top of the package it extends
     goal = tmp_path / "goal"
@@ -95,13 +95,29 @@ def test_pack_rules(tmp_path):
         add_layer(pack.read_bytes(), p)
 
 
-def test_a_pack_cannot_smuggle_a_model(tmp_path):
+def _zip(files: dict[str, str]) -> bytes:
     import io
     import zipfile
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
-        z.writestr("package.ttl", (ROOT / "big-folders" / "package.ttl").read_text())
-        z.writestr("controllers.ttl", (ROOT / "big-folders" / "controllers.ttl").read_text())
-        z.writestr("model.ttl", (ROOT / "folder-scan" / "model.ttl").read_text())
-    with pytest.raises(PackageError, match="only contain controllers"):
-        add_layer(buf.getvalue(), project(tmp_path, with_layer=False))
+        for name, text in files.items():
+            z.writestr(name, text)
+    return buf.getvalue()
+
+
+def test_a_pack_cannot_redefine_the_base(tmp_path):
+    """Packs may carry operations (D28), but not ones the base already defines."""
+    data = _zip({"package.ttl": (ROOT / "big-folders" / "package.ttl").read_text(),
+                 "model.ttl": (ROOT / "folder-scan" / "model.ttl").read_text()})
+    p = project(tmp_path, with_layer=False)
+    with pytest.raises(PackageError, match="defined both"):
+        add_layer(data, p)
+    assert not (p / "layers" / "big-folders").exists()  # removed again
+
+
+def test_a_pack_carries_no_state(tmp_path):
+    data = _zip({"package.ttl": (ROOT / "big-folders" / "package.ttl").read_text(),
+                 "controllers.ttl": (ROOT / "big-folders" / "controllers.ttl").read_text(),
+                 "sheet.ttl": (ROOT / "folder-scan" / "sheet.ttl").read_text()})
+    with pytest.raises(PackageError, match="no state"):
+        add_layer(data, project(tmp_path, with_layer=False))

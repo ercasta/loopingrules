@@ -6,7 +6,15 @@ export type Term = {
   datatype?: string;
 };
 
-export type Triple = { key: string; s: Term; p: Term; o: Term; changed: boolean };
+export type Triple = {
+  key: string;
+  s: Term;
+  p: Term;
+  o: Term;
+  changed: boolean;
+  /** read-only knowledge (D28): "knowledge" for the project's own, otherwise the pack's title */
+  source?: string;
+};
 
 export type Violation = {
   focus: string | null;
@@ -37,6 +45,8 @@ export type Application = {
   total: number;
   /** an operation with no effects: when it wins, autopilot stops (design D21) */
   noop: boolean;
+  /** the pack the operation comes from (D28) */
+  layer: string | null;
 };
 
 export type PendingCall = {

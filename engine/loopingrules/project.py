@@ -2,12 +2,12 @@
 
 Authored (never rewritten by the engine):
     sheet.ttl         the seed state
-    model.ttl         SHACL shapes + lr:Operations
-    controllers.ttl   lr:Controllers
-    package.ttl       optional manifest, used when sharing (see package.py)
+    *.ttl             everything else: operations, shapes, controllers, the manifest
+                      (package.ttl) and knowledge, sorted by type (design D28). The
+                      usual files are model.ttl, controllers.ttl and knowledge.ttl.
 
-Controller packs (layers), each in layers/<name>/ with controllers.ttl (+ package.ttl):
-    their controllers are summed with the project's own (see package.add_layer)
+Packs (layers), each in layers/<name>/ with any *.ttl files (design D28):
+    their definitions and knowledge are added to the project's (see package.add_layer)
 
 Runtime state, in .lr/ (delete it to reset the project):
     history.rdfp      append-only journal, one transaction per change (RDF Patch style)
@@ -27,7 +27,6 @@ from rdflib import BNode, Graph, Namespace
 
 from .vocab import LR
 
-FILES = ("sheet", "model", "controllers")
 STATE_DIR = ".lr"
 SNAPSHOT_EVERY = 100
 
@@ -113,14 +112,32 @@ def read_journal(path: Path) -> list[Transaction]:
     return txs
 
 
+def _load_all(folder: Path, skip: tuple[str, ...] = ()) -> Graph:
+    """Every *.ttl in a folder (except `skip`), as one graph."""
+    g = Graph()
+    g.bind("lr", LR)
+    for f in sorted(folder.glob("*.ttl")):
+        if f.name not in skip:
+            g.parse(f, format="turtle")
+    return g
+
+
+@dataclass
+class Layer:
+    """An installed pack: layers/<name>/*.ttl (design D28)."""
+    name: str
+    path: Path
+    graph: Graph
+
+
 @dataclass
 class Project:
     path: Path
     sheet: Graph
-    model: Graph
-    controllers: Graph
+    model: Graph  # every authored *.ttl but sheet.ttl: definitions and knowledge (D28)
+    controllers: Graph  # the same graph as `model`, kept for older callers
     journal: list[Transaction] = field(default_factory=list)
-    layers: list[tuple[str, Graph]] = field(default_factory=list)
+    layers: list[Layer] = field(default_factory=list)
     snapshot_tx: int = 0
     persist: bool = True
 
@@ -128,12 +145,12 @@ class Project:
     @classmethod
     def load(cls, path: str | Path, persist: bool = True) -> "Project":
         p = Path(path)
-        sheet, model, controllers = (_load(p / f"{name}.ttl") for name in FILES)
-        proj = cls(p, sheet, model, controllers, persist=persist)
+        model = _load_all(p, skip=("sheet.ttl",))
+        proj = cls(p, _load(p / "sheet.ttl"), model, model, persist=persist)
         layers_dir = p / "layers"
         if layers_dir.is_dir():
-            for d in sorted(x for x in layers_dir.iterdir() if (x / "controllers.ttl").exists()):
-                proj.layers.append((d.name, _load(d / "controllers.ttl")))
+            for d in sorted(x for x in layers_dir.iterdir() if x.is_dir() and any(x.glob("*.ttl"))):
+                proj.layers.append(Layer(d.name, d, _load_all(d)))
         proj._restore()
         return proj
 

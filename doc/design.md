@@ -178,6 +178,8 @@ Lessons from `examples/folder-scan-goal`:
 - **Security (D9 addendum):** rdflib executes `SERVICE` and may dereference `FROM` graphs. Both are refused in operations, controllers and UI filters, and `SPARQL_LOAD_GRAPHS` is disabled. Still to do: query time limits.
 
 ### D19. Controller packs (layered controllers)
+*Superseded by D28: packs now carry everything (operations, shapes, controllers, knowledge), as plain triples.*
+
 - **A controller pack is an export with `lr:extends "<base package title>"`** that contains only `package.ttl`, `controllers.ttl` and an optional `README.md`. A model or sheet inside it is refused.
 - **Install:** `lr add-layer pack.lr.zip project` puts it in `project/layers/<title>/`. It is checked against the project's own `package.ttl` title and refused if already installed. Remove it by deleting the folder. `lr import` refuses a pack and points the user to `add-layer`.
 - **Engine:** a layer's controllers are loaded with `layer=<title>`. Their scores are summed with the project's own controllers like any other controller, and the UI marks them with the pack's name.
@@ -548,6 +550,53 @@ A **Graph** tab next to the Sheet shows the same triples as a graph, built with 
   - The view follows the sheet. Triples the last change added are highlighted, as in the sheet, and nodes with SHACL violations have a red border.
   - Existing nodes keep their positions when the sheet changes. New nodes are placed next to a neighbour, and "re-layout" runs the full layout again.
 - **Loading:** the graph code is loaded only when the tab is opened, so the sheet view doesn't pay for Cytoscape.
+
+### D28. Everything is SPO: packs carry complete features, and knowledge
+*Status: built (2026-11-28). Supersedes the controller-only packs of D19.*
+
+**Goal:** share complete, usable features. A pack can add operations, shapes, controllers and facts, not just steer.
+
+**Convention: definitions are recognised by their type.** Operations, shapes and controllers are already RDF. So a project or a pack is just a set of Turtle files, and file names no longer matter (only `sheet.ttl` keeps its special meaning, as the state). The engine reads every triple and sorts it:
+
+| The triples describe… | Role |
+|---|---|
+| a subject `a lr:Package` | the manifest |
+| a subject `a lr:Operation` | an operation |
+| a subject `a sh:NodeShape` or `sh:PropertyShape`, or with `sh:targetClass`, `sh:targetNode`, `sh:targetSubjectsOf`, `sh:targetObjectsOf`, `sh:property` or `sh:path` | a shape |
+| a subject `a lr:Controller` | a controller |
+| everything else | **knowledge** |
+
+- **A definition includes the blank nodes reachable from it,** such as `sh:property [ … ]`, `lr:requires [ … ]` and `lr:steps ( … )`. So "everything else" is well defined.
+- **The existing files keep working.** `model.ttl` and `controllers.ttl` are only triples. A project may also put everything in one file.
+- **Side effect:** non-definition triples in a model file, such as `ex:Person rdfs:label "Person"` or `rdfs:subClassOf`, become knowledge that operations and controllers can query. Before, only SHACL saw them.
+
+**Knowledge is read-only data that sits beside the sheet:**
+- **Who sees it:** operations, guards, controllers and SHACL see the sheet plus the knowledge, through a read-only combined view (`store.Union`). Writes only ever go to the sheet.
+- **It isn't journaled.** It's reloaded from its files at every start, so removing a pack removes its knowledge.
+- **An application that would delete a knowledge triple is invalid** ("would delete knowledge from <source>"). Deleting nothing silently would mislead. A direct edit that removes knowledge is refused too.
+- **Inserting a triple that's already known changes nothing,** as with any triple already present.
+- **Knowledge may not contain blank nodes.** It's never journaled, so its nodes need names that are the same on every load (D17). Definitions may use blank nodes freely, because nothing in the journal refers to them.
+- **UI:** knowledge rows are shown in the Sheet and Graph, marked with their source (`knowledge` for the project, otherwise the pack's title). They can't be edited, and a checkbox hides them.
+
+**Packs (layers):**
+- A pack is an export with `lr:extends "<title>"`. It may contain any `.ttl` files except `sheet.ttl`, plus a `README.md`.
+- `<title>` is the base project's title, or the title of a pack that is already installed. So packs can extend packs.
+- `lr add-layer` installs a pack into `layers/<title>/`, as before. It now also loads the project with the new layer, and refuses the pack (removing it again) if it conflicts.
+- Operations from a pack are marked with the pack's name in the UI, like its controllers.
+
+**Conflicts are refused at load and at install:**
+- the same operation, controller or shape IRI defined in two sources;
+- the same prefix bound to two different namespaces in two sources.
+
+**Safety is unchanged (D9, D10, D18):**
+- A pack's operations and controllers pass the same checks: the security check and the D23 subset.
+- A pack's `lr:mayRun` templates are shown at install and trusted only with `--trust-declared`.
+- A tool call counts as "declared" if the project or any installed pack declares it.
+
+**Not yet:**
+- disabling a pack without deleting its folder;
+- version constraints on `lr:extends`;
+- definitions inside the sheet itself, which would let operations rewrite operations. That's a separate, bigger decision.
 
 ## Open questions
 

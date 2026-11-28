@@ -281,8 +281,19 @@ def cmd_add_layer(args, console: Console) -> int:
     except PackageError as e:
         console.print(f"[red]refused:[/] {e}")
         return 1
-    console.print(f"[green]added layer[/] [bold]{m.title}[/] {m.version} on top of {m.extends}"
+    console.print(f"[green]added pack[/] [bold]{m.title}[/] {m.version} on top of {m.extends}"
                   + (f"\n{m.description}" if m.description else ""))
+    if m.may_run:
+        console.print("This pack may ask to run:")
+        for t in m.may_run:
+            console.print(f"   [yellow]{t}[/]")
+        if args.trust_declared:
+            trust = TrustStore(args.project)
+            for t in m.may_run:
+                trust.add(t)
+            console.print(f"[green]trusted[/] these templates for {args.project}")
+        else:
+            console.print("[dim]Each call will ask for approval. Use --trust-declared to trust them now.[/]")
     console.print(f"[dim]remove it by deleting {Path(args.project) / 'layers' / m.title}[/]")
     return 0
 
@@ -323,9 +334,11 @@ def main(argv: list[str] | None = None) -> int:
     p_imp.add_argument("dest", help="new project folder")
     p_imp.add_argument("--trust-declared", action="store_true",
                        help="trust the command templates the package declares")
-    p_layer = sub.add_parser("add-layer", help="add a controller pack (.lr.zip with lr:extends) to a project")
+    p_layer = sub.add_parser("add-layer", help="add a pack (.lr.zip with lr:extends) to a project")
     p_layer.add_argument("file")
     p_layer.add_argument("project")
+    p_layer.add_argument("--trust-declared", action="store_true",
+                         help="trust the command templates the pack declares")
     for p in (p_apps, p_run):
         p.add_argument("--svg", help="also export the console output as an SVG")
     args = ap.parse_args(argv)

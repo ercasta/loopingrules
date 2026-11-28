@@ -87,6 +87,44 @@ class Overlay(Graph):
         return self
 
 
+class Union(Graph):
+    """A read-only view of `first` plus `second`, without copying either (D28: sheet + knowledge).
+
+    Matching, scoring and validation read through it; writes go to `first` directly.
+    """
+
+    def __init__(self, first: Graph, second: Graph):
+        super().__init__()
+        self.namespace_manager = first.namespace_manager
+        self.first, self.second = first, second
+
+    def triples(self, pattern):  # type: ignore[override]
+        s, p, o = pattern
+        if isinstance(p, Path):
+            for _s, _o in p.eval(self, s, o):
+                yield _s, p, _o
+            return
+        yield from self.first.triples(pattern)
+        first = self.first
+        for t in self.second.triples(pattern):
+            if t not in first:
+                yield t
+
+    def __contains__(self, triple) -> bool:
+        if None in triple:
+            return any(True for _ in self.triples(triple))
+        return triple in self.first or triple in self.second
+
+    def __len__(self) -> int:
+        return len(self.first) + sum(1 for t in self.second if t not in self.first)
+
+    def add(self, triple):  # type: ignore[override]
+        raise TypeError("the combined view is read-only: write to the sheet")
+
+    def remove(self, triple):  # type: ignore[override]
+        raise TypeError("the combined view is read-only: write to the sheet")
+
+
 def prologue(*graphs: Graph) -> str:
     """SPARQL PREFIX declarations for every prefix bound in the given graphs."""
     seen: dict[str, str] = {}

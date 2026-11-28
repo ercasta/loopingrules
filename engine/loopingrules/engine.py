@@ -9,10 +9,11 @@ from rdflib import Graph
 
 from .channels import Message, PostError, messages, mint_post, parse_post
 from .controllers import Controller, load_controllers, scoring_view
+from .definitions import Source, conflicts, source
 from .operations import (Application, Operation, condition_violation, enumerate_applications, holds,
                          load_operations)
 from .project import Project
-from .store import Overlay, apply_delta, prologue
+from .store import Overlay, Union, apply_delta, prologue
 from .tools.shell import PendingCall, ShellTool
 from .validation import validate, violation_key
 from .vocab import BUILTIN_SHAPES
@@ -56,8 +57,8 @@ class _Tick:
     def __init__(self, engine: "Engine"):
         self.engine = engine
         p = engine.project
-        self.prefixes = prologue(p.controllers, *(g for _, g in p.layers), p.model, p.sheet)
-        self.op_prefixes = prologue(p.model, p.sheet)
+        self.prefixes = prologue(engine.model, p.sheet)
+        self.op_prefixes = self.prefixes
         self.active = [c for c in engine.controllers if c.active]
         self._baseline: set | None = None
 
@@ -82,7 +83,7 @@ class _Tick:
 
     def score(self, app: Application, state: Graph) -> None:
         # Each entry is the controller's weighted contribution (D23).
-        view = scoring_view(self.engine.sheet, app)
+        view = scoring_view(self.engine.view, app)
         app.scores = {c.name: c.weight * c.score(state, view, self.prefixes) for c in self.active}
 
 
@@ -95,20 +96,59 @@ class Engine:
 
     # --- model -----------------------------------------------------------
     def reload_model(self) -> None:
-        self.operations: list[Operation] = load_operations(self.project.model)
-        self.controllers: list[Controller] = load_controllers(self.project.controllers)
-        for name, g in self.project.layers:
-            self.controllers += load_controllers(g, layer=name)
+        """Sort the project's and the packs' triples into definitions and knowledge (D28)."""
+        self.sources: list[Source] = [source("project", None, self.project.model)]
+        self.sources += [source(layer.name, layer.name, layer.graph) for layer in self.project.layers]
+        problems = conflicts(self.sources)
+        if problems:
+            raise ValueError("conflicting definitions: " + "; ".join(problems))
+        self.model = Graph()  # every definition, with every source's prefixes
+        self.knowledge = Graph()
+        self.knowledge_source: dict = {}
+        self.operations: list[Operation] = []
+        self.controllers: list[Controller] = []
+        for src in self.sources:
+            for prefix, ns in list(src.definitions.namespaces()) + list(src.knowledge.namespaces()):
+                self.model.bind(prefix, ns, override=False)
+            self.model += src.definitions
+            self.operations += load_operations(src.definitions, layer=src.layer)
+            self.controllers += load_controllers(src.definitions, layer=src.layer)
+            for t in src.knowledge:
+                self.knowledge.add(t)
+                self.knowledge_source.setdefault(t, "knowledge" if src.layer is None else src.name)
+        self.operations.sort(key=lambda o: str(o.iri))
+        # so the sheet shows and parses the packs' names too (never rebinding what it has)
+        have = {p for p, _ in self.sheet.namespaces()} | {str(ns) for _, ns in self.sheet.namespaces()}
+        for prefix, ns in self.model.namespaces():
+            if prefix and prefix not in have and str(ns) not in have:
+                self.sheet.bind(prefix, ns)
         self.shapes = Graph()
-        self.shapes += self.project.model
+        self.shapes += self.model
         self.shapes.parse(data=BUILTIN_SHAPES, format="turtle")
 
     @property
     def sheet(self) -> Graph:
         return self.project.sheet
 
+    @property
+    def view(self) -> Graph:
+        """What everything reads: the sheet plus the knowledge (D28). Write to `sheet`."""
+        return Union(self.sheet, self.knowledge) if len(self.knowledge) else self.sheet
+
+    def _protect_knowledge(self, apps: list[Application]) -> list[Application]:
+        """An application that would delete knowledge is invalid (D28)."""
+        if len(self.knowledge):
+            for app in apps:
+                hit = next((t for t in app.deletes if t in self.knowledge and t not in self.sheet), None)
+                if app.valid and hit is not None:
+                    app.valid = False
+                    app.violations = [{"focus": None, "path": None, "value": None, "component": "knowledge",
+                                       "severity": None,
+                                       "message": f"would delete knowledge from {self.knowledge_source[hit]}"}]
+        return apps
+
     def sheet_violations(self) -> list[dict]:
-        return validate(self.sheet, self.shapes)
+        return validate(self.view, self.shapes)
 
     # --- applications ----------------------------------------------------
     def applications(self) -> list[Application]:
@@ -123,7 +163,7 @@ class Engine:
         This validates every application, for display. Autopilot uses `pick`,
         which validates only as many as it needs.
         """
-        apps = enumerate_applications(self.sheet, self.operations, self.project.model)
+        apps = self._protect_knowledge(enumerate_applications(self.view, self.operations, self.model))
         tick = _Tick(self)
         for app in apps:
             if not app.valid:  # blocked by a guard: no delta to check or score
@@ -141,7 +181,8 @@ class Engine:
         first and validates in score order, stopping at the first valid one: about
         one validation per tick instead of one per candidate.
         """
-        apps = [a for a in enumerate_applications(self.sheet, self.operations, self.project.model) if a.valid]
+        apps = [a for a in self._protect_knowledge(enumerate_applications(self.view, self.operations, self.model))
+                if a.valid]
         tick = _Tick(self)
         for app in apps:
             tick.score(app, self.resulting_state(app))
@@ -163,8 +204,8 @@ class Engine:
         For a no-op, the sheet itself. Do not modify either.
         """
         if app.noop:
-            return self.sheet
-        return Overlay(self.sheet, app.deletes, app.inserts)
+            return self.view
+        return Overlay(self.view, app.deletes, app.inserts)
 
     def apply(self, app: Application, run_tools: bool = True, kind: str = "tick") -> None:
         if app.noop:  # choosing to stop changes nothing, so there's nothing to journal
@@ -185,6 +226,11 @@ class Engine:
 
     def edit(self, add=(), remove=()) -> None:
         """A manual change to the sheet, journaled as one transaction."""
+        locked = [t for t in remove if t in self.knowledge and t not in self.sheet]
+        if locked:
+            raise ValueError(f"read-only knowledge from {self.knowledge_source[locked[0]]}: "
+                             f"{' '.join(x.n3() for x in locked[0])}")
+
         def do():
             for t in remove:
                 self.sheet.remove(t)
@@ -199,9 +245,9 @@ class Engine:
         Raises PostError if the snippet breaks the posting rules, or if it would add
         SHACL violations (a malformed command is refused, unlike a direct edit).
         """
-        triples, root = parse_post(text, self.project.model, self.sheet)
+        triples, root = parse_post(text, self.model, self.sheet)
         added, iri = mint_post(triples, root)
-        state = Overlay(self.sheet, (), added)
+        state = Overlay(self.view, (), added)
         found = validate(state, self.shapes)
         if found:
             baseline = {violation_key(v) for v in self.sheet_violations()}

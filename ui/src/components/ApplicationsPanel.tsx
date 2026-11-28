@@ -99,6 +99,11 @@ export function ApplicationsPanel(p: Props) {
             <article key={a.id} className={`app ${a.valid ? "" : "blocked"} ${best?.id === a.id ? "best" : ""}`}>
               <div className="app-head">
                 <span className="op">{a.operation}</span>
+                {a.layer && (
+                  <span className="pack" title={`from the ${a.layer} pack (layers/${a.layer}/)`}>
+                    ⧉ {a.layer}
+                  </span>
+                )}
                 {a.noop && (
                   <span className="noop" title="changes nothing: if it wins, autopilot stops">
                     ■ stop

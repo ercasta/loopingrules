@@ -48,7 +48,10 @@ def test_export_never_contains_runtime_state(proj, tmp_path):
 @pytest.mark.parametrize("files,why", [
     ({"model.ttl": "", "../evil.ttl": ""}, "unexpected file"),
     ({"model.ttl": "", "sub/model.ttl": ""}, "unexpected file"),
-    ({"controllers.ttl": ""}, "no model.ttl"),
+    ({"README.md": "hi"}, "no definitions or knowledge"),
+    ({"knowledge.ttl": "<urn:a> <urn:b> [ <urn:c> 1 ] ."}, "blank nodes"),
+    ({"model.ttl": "", "sheet.ttl": "", "package.ttl": '@prefix lr: <https://loopingrules.org/ns#> . '
+                   '<urn:p> a lr:Package ; lr:extends "base" .'}, "no state"),
     ({"model.ttl": "this is not turtle"}, "does not parse"),
     ({"model.ttl": '@prefix lr: <https://loopingrules.org/ns#> . <urn:x> a lr:Operation ; '
                    'lr:where "?s ?p ?o SERVICE <http://evil.example/> { ?a ?b ?c }" .'}, "SERVICE"),

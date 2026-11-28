@@ -25,6 +25,7 @@ export function SheetPanel({ sheet, onError, appMode = false, unlocked = false, 
   }, [filter?.n]);
   // Messages (D25) are shown in the Messages panel, so the sheet hides them unless asked.
   const [showMessages, setShowMessages] = useState(false);
+  const [showKnowledge, setShowKnowledge] = useState(true);
   const [draft, setDraft] = useState({ s: "", p: "", o: "" });
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -47,12 +48,15 @@ export function SheetPanel({ sheet, onError, appMode = false, unlocked = false, 
     [sheet],
   );
 
+  const knowledgeCount = useMemo(() => (sheet?.triples ?? []).filter((t) => t.source).length, [sheet]);
+
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
     let all = sheet?.triples ?? [];
     if (!showMessages) all = all.filter((t) => !messageSubjects.has(t.s.n3));
+    if (!showKnowledge) all = all.filter((t) => !t.source);
     return q ? all.filter((t) => `${t.s.short} ${t.p.short} ${t.o.short}`.toLowerCase().includes(q)) : all;
-  }, [sheet, query, showMessages, messageSubjects]);
+  }, [sheet, query, showMessages, showKnowledge, messageSubjects]);
 
   // --- SHACL-driven editing (D15) -------------------------------------
   const pRef = useRef<HTMLInputElement>(null);
@@ -112,6 +116,12 @@ export function SheetPanel({ sheet, onError, appMode = false, unlocked = false, 
             <span className="stat good">✓ valid</span>
           )}
         </div>
+        {knowledgeCount > 0 && (
+          <label className="show-messages" title="Read-only facts from knowledge files and packs (D28)">
+            <input type="checkbox" checked={showKnowledge} onChange={(e) => setShowKnowledge(e.target.checked)} />
+            {knowledgeCount} known
+          </label>
+        )}
         {messageSubjects.size > 0 && (
           <label className="show-messages" title="Messages on lr:in / lr:out are shown in the Messages panel">
             <input type="checkbox" checked={showMessages} onChange={(e) => setShowMessages(e.target.checked)} />
@@ -151,6 +161,7 @@ export function SheetPanel({ sheet, onError, appMode = false, unlocked = false, 
                     first ? "first" : "",
                     t.changed ? "changed" : "",
                     problems ? "invalid" : "",
+                    t.source ? "knowledge" : "",
                   ].join(" ")}
                 >
                   <td className="rownum">{i + 1}</td>
@@ -168,9 +179,14 @@ export function SheetPanel({ sheet, onError, appMode = false, unlocked = false, 
                   <td>
                     <TermView term={t.o} />
                     {t.changed && <span className="new-tag">new</span>}
+                    {t.source && (
+                      <span className="known-tag" title="read-only knowledge: edit its file, or the pack, to change it">
+                        ⧉ {t.source}
+                      </span>
+                    )}
                   </td>
                   <td className="act">
-                    {!locked && (
+                    {!locked && !t.source && (
                       <button className="icon" title="Delete triple" onClick={() => api.deleteTriple(t, appMode).catch(onError)}>
                         ×
                       </button>

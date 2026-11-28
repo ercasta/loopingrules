@@ -1,24 +1,25 @@
-"""Sharing models and controllers as export files (*.lr.zip).
+"""Sharing projects and packs as export files (*.lr.zip).
 
-An export is a zip with a fixed set of files:
+An export is a flat zip:
 
     package.ttl       manifest: title, version, description, creator, license,
-                      and lr:mayRun: the command templates the model may ask to run
-    model.ttl         SHACL shapes + operations
-    controllers.ttl   controllers
-    sheet.ttl         optional: an example seed sheet
+                      lr:mayRun (the command templates it may ask to run), lr:extends
+    *.ttl             definitions and knowledge, sorted by type (design D28):
+                      usually model.ttl, controllers.ttl, knowledge.ttl
+    sheet.ttl         optional: a seed sheet (never in a pack)
     README.md         optional
 
 Never included: the runtime state (.lr/) and trust rules (they belong to the user).
 
-A *controller pack* declares lr:extends "<base package title>" and contains only
-package.ttl, controllers.ttl and README.md. It cannot add operations or data: it
-can only steer the choices the base model already offers. It is installed into an
-existing project with add_layer, into layers/<title>/.
+A *pack* declares lr:extends "<title>" (the base project's, or an installed pack's).
+It may carry anything but a sheet: operations, shapes, controllers, knowledge. It
+is installed into an existing project with add_layer, into layers/<title>/, and
+refused if it conflicts with what is already there.
 
-Importing is defensive: only those file names, size limits, every file must parse,
-every query must pass the security check (no SERVICE / FROM), and every declared
-command template must be a valid trust template. Nothing is trusted automatically.
+Importing is defensive: flat simple file names only, size limits, every file must
+parse, knowledge may not use blank nodes, every query must pass the security check
+(no SERVICE / FROM) and the operation subset (D23), and every declared command
+template must be a valid trust template. Nothing is trusted automatically.
 """
 
 from __future__ import annotations
@@ -30,14 +31,16 @@ from pathlib import Path
 
 from rdflib import RDF, Graph, Literal, Namespace, URIRef
 
+import re
+
 from .controllers import load_controllers
+from .definitions import source
 from .operations import load_operations
 from .trust import compile_template
 from .vocab import LR
 
 DCT = Namespace("http://purl.org/dc/terms/")
-ALLOWED = ("package.ttl", "model.ttl", "controllers.ttl", "sheet.ttl", "README.md")
-REQUIRED = ("model.ttl",)
+NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}[.]ttl|README[.]md")  # flat, simple names only
 MAX_FILE = 5 * 1024 * 1024
 MAX_TOTAL = 20 * 1024 * 1024
 SUFFIX = ".lr.zip"
@@ -91,17 +94,32 @@ class Manifest:
 
 
 def read_manifest(project: Path) -> Manifest | None:
-    f = Path(project) / "package.ttl"
-    if not f.exists():
+    """The lr:Package in any of the folder's *.ttl files but sheet.ttl (D28), or None."""
+    g = Graph()
+    for f in sorted(Path(project).glob("*.ttl")):
+        if f.name != "sheet.ttl":
+            g.parse(f, format="turtle")
+    if next(iter(g.subjects(RDF.type, LR.Package)), None) is None:
         return None
-    return Manifest.from_graph(Graph().parse(f, format="turtle"), Path(project).name)
+    return Manifest.from_graph(g, Path(project).name)
 
 
-def declared(manifest: Manifest | None, command: str) -> bool | None:
-    """Does the package declare this command? None when there is no manifest."""
-    if manifest is None:
+def declared(manifest: "Manifest | list[Manifest | None] | None", command: str) -> bool | None:
+    """Does the package (or any of the packages) declare this command? None without a manifest."""
+    manifests = [m for m in (manifest if isinstance(manifest, list) else [manifest]) if m is not None]
+    if not manifests:
         return None
-    return any(compile_template(t).match(command.strip()) for t in manifest.may_run)
+    return any(compile_template(t).match(command.strip()) for m in manifests for t in m.may_run)
+
+
+def manifests(project: str | Path) -> list[Manifest]:
+    """The project's manifest and those of its installed packs."""
+    p = Path(project)
+    found = [read_manifest(p)]
+    layers = p / "layers"
+    if layers.is_dir():
+        found += [read_manifest(d) for d in sorted(layers.iterdir()) if d.is_dir()]
+    return [m for m in found if m is not None]
 
 
 # ---------------------------------------------------------------- export
@@ -112,14 +130,16 @@ def export_project(project: str | Path, out: str | Path | None = None, sheet: st
     p = Path(project)
     manifest = read_manifest(p) or Manifest(title=p.name)
     if manifest.extends:
-        sheet = "none"  # a controller pack carries no data
-    elif not (p / "model.ttl").exists():
-        raise PackageError(f"{p} has no model.ttl")
+        sheet = "none"  # a pack carries no state
     files: dict[str, bytes] = {}
     files["package.ttl"] = manifest.to_graph().serialize(format="turtle").encode()
-    for name in ("model.ttl", "controllers.ttl", "README.md"):
-        if (p / name).exists():
-            files[name] = (p / name).read_bytes()
+    for f in sorted(p.glob("*.ttl")):
+        if f.name not in ("package.ttl", "sheet.ttl"):
+            files[f.name] = f.read_bytes()
+    if (p / "README.md").exists():
+        files["README.md"] = (p / "README.md").read_bytes()
+    if not any(n not in ("package.ttl", "README.md", "sheet.ttl") for n in files):
+        raise PackageError(f"{p} has nothing to share: no definitions or knowledge (*.ttl)")
     if sheet == "seed" and (p / "sheet.ttl").exists():
         files["sheet.ttl"] = (p / "sheet.ttl").read_bytes()
     elif sheet == "state":
@@ -155,8 +175,9 @@ def inspect_export(data: bytes) -> tuple[Manifest, dict[str, bytes]]:
     for info in z.infolist():
         if info.is_dir():
             raise PackageError(f"unexpected folder in export: {info.filename}")
-        if info.filename not in ALLOWED:
-            raise PackageError(f"unexpected file in export: {info.filename!r} (allowed: {', '.join(ALLOWED)})")
+        if not NAME.fullmatch(info.filename):
+            raise PackageError(f"unexpected file in export: {info.filename!r} "
+                               "(allowed: flat *.ttl files with simple names, and README.md)")
         if info.file_size > MAX_FILE:
             raise PackageError(f"{info.filename} is too large")
         total += info.file_size
@@ -179,21 +200,20 @@ def _check(files: dict[str, bytes]) -> Manifest:
             except Exception as e:
                 raise PackageError(f"{name} does not parse: {e}") from e
     manifest = Manifest.from_graph(graphs.get("package.ttl", Graph()), "unnamed")
-    if manifest.extends:
-        extra = {"model.ttl", "sheet.ttl"} & set(files)
-        if extra:
-            raise PackageError(f"a controller pack may only contain controllers, not {', '.join(sorted(extra))}")
-        if "controllers.ttl" not in files:
-            raise PackageError("a controller pack needs controllers.ttl")
-    else:
-        for name in REQUIRED:
-            if name not in files:
-                raise PackageError(f"export has no {name}")
+    content = [n for n in graphs if n not in ("package.ttl", "sheet.ttl")]
+    if manifest.extends and "sheet.ttl" in files:
+        raise PackageError("a pack carries no state: sheet.ttl is not allowed in a pack")
+    if not content:
+        raise PackageError("the export has no definitions or knowledge (*.ttl besides package.ttl)")
+    merged = Graph()
+    for n in content + (["package.ttl"] if "package.ttl" in graphs else []):
+        for prefix, ns in graphs[n].namespaces():
+            merged.bind(prefix, ns, override=False)
+        merged += graphs[n]
     try:
-        if "model.ttl" in graphs:
-            load_operations(graphs["model.ttl"])  # includes the SERVICE / FROM check
-        if "controllers.ttl" in graphs:
-            load_controllers(graphs["controllers.ttl"])
+        src = source(manifest.title, manifest.extends and manifest.title, merged)  # refuses blank-node knowledge
+        load_operations(src.definitions)  # includes the SERVICE / FROM check and the D23 subset
+        load_controllers(src.definitions)
     except ValueError as e:
         raise PackageError(str(e)) from e
     for t in manifest.may_run:
@@ -207,7 +227,7 @@ def _check(files: dict[str, bytes]) -> Manifest:
 def import_export(data: bytes, dest: str | Path) -> Manifest:
     manifest, files = inspect_export(data)
     if manifest.extends:
-        raise PackageError(f"{manifest.title} is a controller pack for '{manifest.extends}': "
+        raise PackageError(f"{manifest.title} is a pack for '{manifest.extends}': "
                            f"add it to a project with: lr add-layer <file> <project>")
     d = Path(dest)
     if d.exists() and any(d.iterdir()):
@@ -219,19 +239,37 @@ def import_export(data: bytes, dest: str | Path) -> Manifest:
 
 
 def add_layer(data: bytes, project: str | Path) -> Manifest:
-    """Install a controller pack into an existing project, in layers/<title>/."""
+    """Install a pack into an existing project, in layers/<title>/ (design D28).
+
+    The pack must extend the project or a pack already installed in it, and must not
+    conflict with what is there: it is removed again if the project no longer loads.
+    """
+    import shutil
+
+    from .engine import Engine
+    from .project import Project
+
     manifest, files = inspect_export(data)
     if not manifest.extends:
-        raise PackageError(f"{manifest.title} is not a controller pack (it has no lr:extends)")
+        raise PackageError(f"{manifest.title} is not a pack (it has no lr:extends)")
     p = Path(project)
     base = read_manifest(p)
-    if base is None or base.title != manifest.extends:
+    installed = {m.title for m in manifests(p)} - ({base.title} if base else set())
+    if (base is None or base.title != manifest.extends) and manifest.extends not in installed:
         found = f"'{base.title}'" if base else "a project without package.ttl"
-        raise PackageError(f"{manifest.title} extends '{manifest.extends}', but {p} is {found}")
+        raise PackageError(f"{manifest.title} extends '{manifest.extends}', but {p} is {found}"
+                           + (f" with packs {', '.join(sorted(installed))}" if installed else ""))
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_. -]{0,63}", manifest.title) or ".." in manifest.title:
+        raise PackageError(f"pack title {manifest.title!r} can't be used as a folder name")
     target = p / "layers" / manifest.title
     if target.exists():
         raise PackageError(f"layer {manifest.title} is already installed (delete {target} to replace it)")
     target.mkdir(parents=True)
     for name, content in files.items():
         (target / name).write_bytes(content)
+    try:
+        Engine(Project.load(p, persist=False))
+    except ValueError as e:
+        shutil.rmtree(target)
+        raise PackageError(f"{manifest.title} doesn't fit this project: {e}") from e
     return manifest

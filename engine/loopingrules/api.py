@@ -25,7 +25,7 @@ from .engine import Engine
 from .operations import Application
 from .project import GEN, Project
 from .store import prepared, prologue
-from .package import PackageError, declared, export_bytes, read_manifest
+from .package import PackageError, declared, export_bytes, manifests, read_manifest
 from .security import check_query
 from .suggest import Suggester
 from .trust import TemplateError, TrustStore, generalize
@@ -68,10 +68,13 @@ class Terms:
                 return json.dumps(str(t), ensure_ascii=False)
         return self.short(t)
 
-    def triple(self, t, changed: set | None = None) -> dict:
+    def triple(self, t, changed: set | None = None, source: str | None = None) -> dict:
         k = key(t)
-        return {"key": k, "s": self.term(t[0]), "p": self.term(t[1]), "o": self.term(t[2]),
-                "changed": bool(changed and k in changed)}
+        out = {"key": k, "s": self.term(t[0]), "p": self.term(t[1]), "o": self.term(t[2]),
+               "changed": bool(changed and k in changed)}
+        if source:
+            out["source"] = source  # read-only knowledge, from the project or a pack (D28)
+        return out
 
     def parse(self, text: str):
         """Parse a user-typed term: <iri>, prefix:name, a, "literal"(@lang|^^dt), number, true/false, _:bN."""
@@ -175,7 +178,7 @@ class Session:
             "deletes": [t.triple(x) for x in sorted(a.deletes, key=key)],
             "inserts": [t.triple(x) for x in sorted(a.inserts, key=key)],
             "valid": a.valid, "violations": a.violations,
-            "scores": a.scores, "total": a.total, "noop": a.noop,
+            "scores": a.scores, "total": a.total, "noop": a.noop, "layer": a.operation.layer,
         }
 
     # --- autopilot -----------------------------------------------------
@@ -338,7 +341,7 @@ def create_app(project_path: str | Path, trust_path: str | Path | None = None) -
             "autopilot": session.autopilot_status, "delay_ms": int(session.delay * 1000),
             "pending": [{"id": session.terms.short(c.iri), "tool": "shell", "command": c.command,
                          "suggested": generalize(c.command),
-                         "declared": declared(manifest, c.command)}
+                         "declared": declared(manifests(project_path), c.command)}
                         for c in engine.pending_calls()],
             "trust": trust_json(),
             "operations": [o.name for o in engine.operations],
@@ -363,12 +366,14 @@ def create_app(project_path: str | Path, trust_path: str | Path | None = None) -
             sub = (1, int(session.terms.short(s)[3:])) if isinstance(s, BNode) else (0, session.terms.short(s))
             return (sub, session.terms.short(t[1]), key(t))
 
-        triples = sorted(g, key=order)
+        triples = sorted(engine.view, key=order)  # the sheet plus read-only knowledge (D28)
         nsm = g.namespace_manager
+        known = engine.knowledge_source
         return {
             "version": session.version,
             "prefixes": {p: str(ns) for p, ns in nsm.namespaces() if p != "xml"},
-            "triples": [session.terms.triple(t, session.changed) for t in triples],
+            "triples": [session.terms.triple(t, session.changed, None if t in g else known.get(t))
+                        for t in triples],
             "removed": session.removed,
             "violations": [{**v, "focus": _short_n3(session, v["focus"])} for v in violations],
         }
@@ -376,7 +381,7 @@ def create_app(project_path: str | Path, trust_path: str | Path | None = None) -
     @app.get("/api/suggest")
     async def suggest(field: str, s: str = "", p: str = "", q: str = ""):
         """Autocomplete for the add-row, derived from the SHACL shapes (D15)."""
-        g, t = engine.sheet, session.terms
+        g, t = engine.view, session.terms
         sug = Suggester(engine.shapes, g)
 
         def term_or_none(text: str):
@@ -433,6 +438,8 @@ def create_app(project_path: str | Path, trust_path: str | Path | None = None) -
         except Exception as e:
             raise HTTPException(400, str(e))
         if t not in engine.sheet:
+            if t in engine.knowledge:
+                raise HTTPException(409, f"read-only knowledge from {engine.knowledge_source[t]}")
             raise HTTPException(404, "no such triple")
         entry = session._log("edit", f"− {' '.join(session.terms.short(x) for x in t)}")
         await session._mutate(lambda: engine.edit(remove=[t]), log=entry)
@@ -472,7 +479,7 @@ def create_app(project_path: str | Path, trust_path: str | Path | None = None) -
     async def applications(contains: str | None = None):
         apps = await session.applications()
         if contains and contains.strip():
-            q = prologue(engine.project.model, engine.sheet) + f"ASK {{ {contains} }}"
+            q = prologue(engine.model, engine.sheet) + f"ASK {{ {contains} }}"
             try:
                 check_query(q, "filter")
                 apps = [a for a in apps if a.valid and bool(engine.resulting_state(a).query(prepared(q)).askAnswer)]

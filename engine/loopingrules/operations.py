@@ -56,6 +56,7 @@ class Operation:
     requires: tuple[Condition, ...] = ()
     ensures: tuple[Condition, ...] = ()
     steps: tuple[Step, ...] = ()
+    layer: str | None = None  # the pack it comes from (D28), None for the project's own
 
     @property
     def noop(self) -> bool:
@@ -86,7 +87,7 @@ class Application:
 
 # --- loading ------------------------------------------------------------------
 
-def load_operations(model: Graph) -> list[Operation]:
+def load_operations(model: Graph, layer: str | None = None) -> list[Operation]:
     prefixes = prologue(model)
     ops = []
     for iri in model.subjects(RDF.type, LR.Operation):
@@ -106,6 +107,7 @@ def load_operations(model: Graph) -> list[Operation]:
             requires=_conditions(model, iri, LR.requires),
             ensures=_conditions(model, iri, LR.ensures),
             steps=_steps(model, iri, what),
+            layer=layer,
         )
         _check_pattern(op.where, prefixes, what)
         if op.params is not None:
