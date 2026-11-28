@@ -28,6 +28,7 @@ Prior art this resembles, useful for borrowing ideas:
 ### D2. Data: triples first, quads later
 - v0 works with plain SPO triples.
 - G (named graphs) arrives later, with standard RDF quad meaning.
+- **Considered in D24 and deferred:** the planned features don't need named graphs.
 
 ### D3. Operations: SPARQL-Update shaped, stored as RDF
 An operation is an RDF resource whose parts are SPARQL fragments:
@@ -107,6 +108,7 @@ An operation is an RDF resource whose parts are SPARQL fragments:
 ### D13. Direct edits can make the sheet invalid
 - Direct edits are allowed even when the sheet stops satisfying SHACL; the violations are shown.
 - This lets the user build up a valid state step by step.
+- **Amended by D25:** a model can turn direct edits off (app mode).
 - The SHACL guard (D4) still applies to applications.
 
 ### D14. Shell output is structured
@@ -279,6 +281,170 @@ ex:forgetFolder a lr:Operation ;
   - It's an extra lever when authoring: rebalance controllers without editing queries. A layer can also re-weight.
   - Learning can tune weights over existing controllers before growing new ones.
   - `lr:active false` still means "not evaluated". A weight of 0 still evaluates the controller (useful to show its score).
+
+### D24. Named graphs: deferred
+*Status: **deferred** (2026-11-28). The sheet stays triples-only (D2). The analysis below is kept for when a real need appears.*
+
+**Why deferred:**
+- Named graphs don't scope names. IRIs are global, and namespaces already prevent clashes. A graph only groups *statements*, so that a set of statements can be referred to as a whole. That serves provenance, handling a batch as one unit, keeping views that disagree, and access control.
+- None of the planned features needs that:
+  - `in:`/`out:` channels are a convention (D25). `GRAPH in: { ?m a cmd:X }` and `?m lr:channel lr:in ; a cmd:X` are nearly the same pattern.
+  - Pack knowledge can be a read-only layer that the engine tracks internally, so models never see `G`.
+  - Provenance is already recorded per transaction in the journal.
+  - Intended vs. observed facts are better modelled with different predicates (`:mayImport` vs `:imports`).
+- **Graphs don't even isolate data here.** Once SHACL looks across graphs (which we wanted), a message must use its own node anyway.
+- **They would cost a lot:** decisions about the default graph, reserved names, merged vs. per-graph views for controllers, consistency of the merged delta, minting for loaded knowledge, and a G column in the UI. That's complexity for its own sake, as goals were in D16.
+- **Revisit if** we need statement-level provenance, or views that disagree about the same resource. Even then, shapes would need to apply per graph (see below).
+
+*The proposal as it was drafted:*
+
+**Why now, and not later:**
+- Four of the planned features (`doc/hmi_improv.md`) depend on how data is shaped: the `in:`/`out:` channels, knowledge in packs, the graph view, and the MCP server. If we build them on triples, each one has to be reworked once quads arrive.
+- The triple-only code is still small and contained: the overlay, operation templates, the journal, the snapshot, export/import, autocomplete, and the sheet rows in the API and UI.
+- The journal format already supports quads: an RDF Patch `A`/`D` line takes an optional 4th term. Existing journals stay readable.
+- If we build incremental matching on the D23 subset, it should handle `GRAPH` from the start. Adding it to an existing Rete matcher would be much harder.
+- Only our own examples and exports use the current format.
+
+**Model:**
+- The sheet is an RDF dataset: one **default graph** plus any number of **named graphs**. Graph names are IRIs; minted `gen:` IRIs are fine, blank nodes are not (D17).
+- **A pattern without `GRAPH` sees the default graph only, not the union.** Other graphs are reached with `GRAPH <iri> { … }` or `GRAPH ?g { … }`.
+  - Every existing model, operation and controller keeps working unchanged, because today's sheet becomes the default graph.
+  - Content in a named graph never mixes into the state by accident. For example, an `in:` command saying `:task1 :status :done` is a request, not a fact.
+  - Rejected: making the default graph the union of all graphs. It's handy for reading knowledge, but it brings back exactly that mixing. A model that wants knowledge reads it with `GRAPH`.
+- **`GRAPH ?g` ranges over the sheet's named graphs only.** The reserved graphs below are reachable only by name.
+- As in RDF, a named graph exists while it has triples. Deleting its last triple removes it.
+
+**Reserved graph names:** the `lr:` namespace is reserved for graph names.
+- Sheet data can't be written into an `lr:` graph. Edits, templates and tool results that try are refused.
+- The names in use are the controller graphs from D20: `lr:before`, `lr:inserted`, `lr:deleted` and `lr:action`.
+
+**Operations (amends D23):**
+- `GRAPH <iri>` and `GRAPH ?g` are now **allowed** in operation patterns (`lr:where`, `lr:ask`, step `lr:where`). Naming an `lr:` graph there is refused at load: operations see the sheet, not the controller graphs.
+- `lr:delete` and `lr:insert` templates accept `GRAPH <iri> { … }` and `GRAPH ?g { … }` blocks, as in SPARQL Update. In a template, `?g` must be bound by the pattern or be a parameter. Triples outside a block go to the default graph.
+- An application's delta becomes a set of quads. The rules for the effective delta and the empty delta (D21, D22) are unchanged, just applied per quad.
+
+**SHACL (D4): shapes look across graphs.**
+- The guard validates the **union** of the default graph and every named graph, a read-only merged view, against the model's shapes. The reserved `lr:` graphs aren't part of it.
+- So shapes look across graphs. For example, a `sh:class` check on a value in the default graph is satisfied by a type declared in a knowledge graph.
+- **This is deliberately different from matching.** Operation patterns are scoped (no `GRAPH` = default graph only), because an operation must know what it reads. Validity is global, because it's a statement about everything the sheet knows.
+- **Consequences:**
+  - Graph boundaries don't hide anything from the guard. A shape targeting `ex:Task` applies to an `ex:Task` wherever it is declared, including one inside an `in:` message.
+  - That's often useful, e.g. a shape on a command class validates commands. But a message mustn't use state classes for anything that isn't meant to be validated as state.
+  - The same triple in two graphs counts once.
+- The rule that an application is invalid only if it *adds* violations stays the same, compared on the union.
+- **Reporting:** a violation names its focus node, as today. The UI also shows which graphs the focus node appears in.
+- **Rejected:** validating each graph separately, which is pySHACL's own behaviour for a dataset. Knowledge in one graph couldn't satisfy a shape in another.
+- **Later, if needed:** shapes that apply only to one graph's nodes (e.g. `lr:graph <g>` on a shape), while values are still read from the union. Not in the first cut.
+
+**Controllers (amends D20):**
+- The default graph is still the resulting default graph, and `GRAPH <g>` gives the resulting named graph `<g>`.
+- `lr:before` is still the current *default* graph. The current state of a named graph is reached as `GRAPH <g>` in the resulting state, or through the delta.
+- `lr:inserted` and `lr:deleted` hold the triples inserted or deleted in **any** graph, without saying which. Existing delta controllers keep working.
+- `lr:action` also lists `lr:this lr:touches <g>` for each named graph the application changes. The default graph isn't listed.
+- **Not yet:** a delta that keeps track of which graph each change belongs to (e.g. one `lr:inserted` graph per graph). We'll add it when a controller needs it.
+
+**Files and persistence (D17, D18):**
+- The seed is either `sheet.ttl` (default graph only, as today) or `sheet.trig` (default plus named graphs). A project with both is refused.
+- Journal: `A s p o g .` for a quad in named graph `g`; a 3-term line is the default graph, so old journals replay unchanged.
+- The snapshot becomes `snapshot.trig`. The `# lr:snapshot-tx N` header stays, and an existing `snapshot.ttl` is still read.
+- Exports follow the same naming rule: `sheet.ttl` or `sheet.trig`, never both. Import checks the same way.
+- `model.ttl` and `controllers.ttl` stay triples.
+
+**Tools (D7, D14):** shell call results still go to the default graph. A tool that writes to its own graph can come later.
+
+**API and UI:**
+- Each sheet row gets `g`, which is `null` for the default graph.
+- The Sheet panel gets a G column, hidden while the sheet has no named graphs.
+- An edit has an optional graph, with autocomplete from the existing graph names.
+- The applications list shows deltas as quads.
+
+**Implementation notes:**
+- **Dataset class:** keep the default graph a plain rdflib `Graph`, and keep named graphs in a dict of `Graph`s (a small `Sheet` class) rather than in rdflib's `Dataset`/`ConjunctiveGraph`, which is slower. Present a `Dataset` view only where SPARQL needs one, as `store.NamedGraphs` already does for controllers.
+- **Overlay:** `store.Overlay` becomes one overlay per graph the delta touches; untouched graphs are passed through as they are.
+- **Union view for SHACL:** a read-only `Graph` subclass that chains the default graph's and named graphs' (or their overlays') `triples()` and drops duplicates. pySHACL already accepts the overlay, which is built the same way. With no named graphs, validation gets the default graph directly, so the cost doesn't change.
+- **Performance:** a model that uses only the default graph should run the folder-scan benchmark at the same speed. Measure before and after with `bench_folder_scan.py` (and `--delta`).
+
+**What this enables (separate decisions, later):**
+- `in:` and `out:` as named graphs: input/output channels.
+- Pack knowledge as a read-only named graph loaded from the layer.
+- A graph view where nodes are resources and the graph is shown on statements. A node can't sit in a single graph's box, since its statements can be spread over several graphs.
+
+**Open issues found before deferral:**
+- **`lr:before` covers only the default graph** in the draft above, while `lr:inserted`/`lr:deleted` merge all graphs, which is inconsistent. The preferred fix:
+  - `lr:before` and a new `lr:after` merge all graphs;
+  - the merged delta is *defined* as `lr:after − lr:before` (and the reverse), because the same triple can sit in two graphs;
+  - moving a triple between graphs then shows only through `lr:touches`.
+- **Loaded knowledge needs deterministic IRIs for its blank nodes.**
+- **A knowledge graph's prefixes must not enter the query prologue.**
+
+### D25. Input and output channels are a convention
+*Status: agreed, not built. The `in:` and `out:` of `doc/hmi_improv.md` are the resources `lr:in` and `lr:out`.*
+
+**Goal:** humans and tools send commands to a running model, and the model answers, all as SPOs. This is the base for the tutorial, the MCP server and tool integration.
+
+**A message is a resource on a channel:**
+```turtle
+gen:m1 lr:channel lr:in ;  a cmd:AddTask ; cmd:title "write D25" .              # a request
+gen:m2 lr:channel lr:out ; a lr:Say ; lr:text "Added." ; lr:replyTo gen:m1 .     # an answer
+```
+- **Vocabulary:**
+  - `lr:channel` takes `lr:in` or `lr:out`.
+  - `lr:text` is optional human-readable text, which the UI shows. It's the same property shell output lines use (D14).
+  - `lr:replyTo` links an answer to the request it answers.
+  - `lr:Say` is a plain text message.
+  - Every other message class and property belongs to the model (`cmd:`, `tut:`, …).
+- **A message is a request, not a fact.** It describes itself with its own node and never restates facts about state subjects. `gen:m1 cmd:task :t1 ; cmd:status :done` asks for a change; `:t1 :status :done` inside a message would *be* the change. SHACL sees messages like everything else, so shapes on message classes validate commands.
+- **It's just triples in the sheet.** Matching, SHACL, controllers, the journal and undo need no changes.
+
+**Posting to `in:`** (UI I/O panel, `POST /api/in`, `lr send`, and later MCP):
+- The poster sends a Turtle snippet whose **subjects are all blank nodes of the snippet**, e.g. `[] a cmd:AddTask ; cmd:title "write D25"`.
+  - There must be exactly one **root**: a blank node that isn't the object of another triple in the snippet. The engine adds `lr:channel lr:in` to it.
+  - Blank nodes are minted as `gen:` IRIs (D17), and the poster gets the root's IRI back, to match answers via `lr:replyTo`.
+- **A post only adds triples, and only about its own new nodes.** So a post can't edit state: it can only ask. This is what makes `in:` safe to open to tools.
+- **A post that would add SHACL violations is refused**, with the violations. Unlike a direct edit (D13), there's no reason to accept a malformed command, and the tool needs the feedback.
+- Each post is one journaled transaction of kind `input`.
+
+**Consuming `in:`:** it's done by the model's own operations.
+- An operation matches `?m lr:channel lr:in ; a cmd:X` and acts on it.
+- It deletes the message in the same application, using `lr:params "m"` and `?m ?p ?o` (D22). The journal keeps the history.
+- Unrecognised messages: a model may author a catch-all operation that answers with an `lr:Say` and drops the message. Otherwise the message just stays there.
+- Controllers decide when input is handled; usually it's preferred, e.g. by rewarding deleted `lr:in` messages through `GRAPH lr:deleted` (D20).
+
+**Producing `out:`:** operations insert messages, e.g. `[ lr:channel lr:out ; a lr:Say ; lr:text "…" ]`. Blank nodes in INSERT templates are minted fresh (D17).
+
+**Reading `out:`** (UI, `GET /api/out`, the WebSocket, `lr receive`, MCP):
+- Messages are returned with what they say about themselves, plus the triples of `gen:` nodes they point to.
+- **Order:** messages are listed in the order they appeared, i.e. by the transaction that added them. The API knows this from the journal, so order isn't stored in the data. Rules can't compute "max + 1" anyway: aggregates are outside D23.
+- **Acknowledging** deletes the message: a journaled edit of kind `ack`.
+  - Programmatic readers (`lr receive`, MCP) ack by default.
+  - The UI panel shows `out:` as a log and acks only when the user clears it.
+  - Unacknowledged messages stay in the sheet, visible like any SPO.
+
+**Listening autopilot (the one engine change):**
+- Today autopilot stops when nothing is applicable, or when a no-op wins (D8, D21).
+- In **listening** mode, it waits instead, and resumes on the next post or edit.
+- UI: a "listen" toggle next to autopilot.
+- CLI: `lr run --listen` reads messages from stdin (Turtle snippets, one per blank-line-separated block) and prints `out:` messages as they appear. That gives a pipe interface with no server.
+- **Approval (D10) is unchanged.** A tool call that needs approval still pauses the loop. Over stdin with no human attached, unapproved calls are refused unless they match the allowlist.
+
+**Direct edits: the model chooses, and tools are limited to `in:`:**
+- **Edits stay allowed by default.** A project without a declaration keeps direct edits (D11, D13, D15), because the spreadsheet is the product and authoring needs to change the state directly.
+- **App mode:** a model can declare `lr:directEdits false` in `package.ttl`.
+  - The Sheet becomes read-only, and input goes through the I/O panel.
+  - All state changes then come from operations, tool results and posts, so the SHACL guard holds for the whole run (if the seed is valid).
+  - The model's command classes are its interface. Import (D18) shows the declaration.
+- **The human can unlock it.** An "unlock editing" toggle with a warning turns editing on for the current session. It resets on reload, and edits made while unlocked are journaled as usual.
+  - It's a guardrail, not a security boundary: the project files and the journal belong to the user.
+  - Undo stays available in app mode, since it only reverses journaled changes.
+- **Tools get `in:` only, whatever the model says.**
+  - The tool fronts (the MCP server, `lr run --listen` on stdin) can post, read `out:` and run, but can't edit the sheet directly.
+  - The user can grant direct edits to tools for one project. That grant is stored per user in `~/.loopingrules/trust.ttl`, like command templates (D10), so a shared project can't grant it to itself.
+  - Here the restriction *is* a boundary: a tool may ask, but not rewrite.
+  - The HTTP API serves the UI, so its edit endpoints follow the app-mode lock, not the tool rule. It listens on localhost by default (`--host`).
+- **The tutorial ships in app mode.**
+- **Amends D13:** direct edits can still make the sheet invalid, but only where direct edits are allowed.
+
+**Not in this decision:** the tutorial (it builds on this), the MCP server, and any routing beyond the two channels. More channels would just be more resources than `lr:in`/`lr:out`; nothing in the engine assumes there are only two.
 
 ## Open questions
 
