@@ -1,0 +1,10 @@
+@prefix lr:      <https://loopingrules.org/ns#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+<urn:lr:package> a lr:Package ;
+  dcterms:title "rubik-viewer" ;
+  lr:version "0.1.0" ;
+  lr:extends "rubik" ;
+  dcterms:description "Drives a 3D viewer over lr:out: every executed turn is announced, and the cube's state is sent on request." ;
+  dcterms:creator "Antonio Castaldo D'Ursi" ;
+  dcterms:license "MIT" .

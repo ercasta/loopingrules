@@ -112,3 +112,70 @@ def test_scramble_must_list_moves(eng):
     from loopingrules.channels import PostError
     with pytest.raises(PostError, match="shapes|move"):
         eng.post("[] a rk:Scramble ; rk:moves ( mv:R rk:cube ) .")
+
+
+# --- rubik-viewer: the integration pack (doc/rubik.md, step 2) -------------------
+
+VIEWER = EXAMPLE.parent / "rubik-viewer"
+VIZ = Namespace("https://example.org/rubik/viz#")
+MV = Namespace("https://example.org/rubik/move#")
+
+
+def install(proj: Path, pack: Path) -> None:
+    target = proj / "layers" / pack.name
+    target.mkdir(parents=True)
+    for f in pack.glob("*.ttl"):
+        shutil.copy(f, target / f.name)
+
+
+@pytest.fixture
+def viewer(tmp_path):
+    proj = tmp_path / "rubik"
+    shutil.copytree(EXAMPLE, proj, ignore=shutil.ignore_patterns(".lr", "*.py"))
+    install(proj, VIEWER)
+    return Engine(Project.load(proj))
+
+
+def out_of(eng, kind):
+    return [m for m in eng.messages("out") if VIZ[kind] in m.types]
+
+
+def test_every_turn_is_announced_once(viewer):
+    play(viewer, ["R", "U2", "Fi"])
+    turns = out_of(viewer, "Turn")
+    got = sorted((int(viewer.sheet.value(m.iri, VIZ.seq)), viewer.sheet.value(m.iri, VIZ.move)) for m in turns)
+    assert got == [(1, MV.R), (2, MV.U2), (3, MV.Fi)]
+    viewer.ack([m.iri for m in turns])
+    assert viewer.run(max_ticks=5).status == "done"
+    assert out_of(viewer, "Turn") == []
+
+
+def test_sync_sends_the_state(viewer):
+    play(viewer, ["R", "U"])
+    viewer.ack([m.iri for m in viewer.messages("out")])
+    viewer.post("[] a viz:Sync .")
+    assert viewer.run(max_ticks=5).status == "done"
+    [state] = out_of(viewer, "State")
+    g = viewer.sheet
+    assert int(g.value(state.iri, VIZ.turns)) == 2
+    sent = {g.value(f, VIZ.pos): g.value(f, VIZ.colour) for f in g.objects(state.iri, VIZ.facelet)}
+    assert sent == dict(g.subject_objects(RK.colour))
+    viewer.ack([state.iri])
+    assert not list(g.subjects(VIZ.pos, None))  # the facelets were parts of the message
+
+
+def test_ack_wakes_a_listening_autopilot(tmp_path):
+    from fastapi.testclient import TestClient
+    from loopingrules.api import create_app
+    proj = tmp_path / "rubik"
+    shutil.copytree(EXAMPLE, proj, ignore=shutil.ignore_patterns(".lr", "*.py"))
+    install(proj, VIEWER)
+    app = create_app(proj, trust_path=tmp_path / "trust.ttl")
+    with TestClient(app) as c:
+        c.post("/api/in", json={"turtle": "[] a rk:Scramble ; rk:moves ( mv:R ) ."})
+        for _ in range(3):
+            c.post("/api/autopilot/step")
+        session = app.state.session
+        session.input_event.clear()
+        assert c.post("/api/out/ack", json={}).json()["acked"] >= 1
+        assert session.input_event.is_set()

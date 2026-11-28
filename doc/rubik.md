@@ -1,6 +1,6 @@
 # Rubik: a rich example
 
-*Status: design (2026-11-28). Step 1 is built: `examples/rubik`, `engine/tests/test_rubik.py`.*
+*Status: design (2026-11-28). Steps 1 and 2 are built: `examples/rubik`, `examples/rubik-viewer`, `engine/tests/test_rubik.py`.*
 
 ## Goal
 A complete example built from separate, shareable parts:
@@ -119,8 +119,26 @@ rubik            project   cube, moves, solver
 - Tests: each quarter turn four times is the identity; known effects of R and U pin the conventions; a double turn is two quarters; a 25-move scramble followed by its inverse solves; reset; commands wait for the plan.
 - **Performance:** a 100-move scramble runs at **68 ms/tick**, flat, with 361 triples in the sheet after it.
 
+## Step 2: as built
+- **The pack** (`examples/rubik-viewer/viz.ttl`) has two operations: `announce turn` and `send the cube's state`.
+  - The state message's IRI is derived from the request with `BIND(IRI(CONCAT(STR(?m), "-state")))`, so one step can add all 54 facelets to the same message.
+- **The app** (`examples/rubik-viewer/app/`, Vite + TypeScript + Three.js, port 5180, proxy to 8765):
+  - it shows turns in `viz:seq` order and acknowledges each one once it has been animated;
+  - a `viz:State` overwrites its colours;
+  - it asks for the state at start, after a reset, and on a gap, and polls slowly as a fallback;
+  - it renders on demand.
+- **Two engine fixes:**
+  - `POST /api/out/ack` wakes a listening autopilot;
+  - **step parameters:** a step's templates now see the parameters even when its pattern doesn't mention them. rdflib's `SELECT *` drops initial bindings the pattern doesn't use, so before this fix `?s` never reached the facelet template. There's a regression test in `test_d22.py`.
+- **Checked end to end** against `lr serve`, with the pack installed through `lr export` + `lr add-layer`:
+  - after a scramble the viewer animated turns 21–40, and its 54 colours matched the model's;
+  - reset re-synced to solved;
+  - both channels ended empty.
+- **Dev tooling:** `scripts/dev/shot.py` takes `LR_SHOT_URL` and `LR_SHOT_SCALE`, and prints the values steps return.
+  - Headless Edge renders WebGL in software. Use scale 1, and read async probes back synchronously, because promises awaited over CDP stall while WebGL frames render.
+
 ## Engine changes needed (small)
-- **`POST /api/out/ack` must wake a listening autopilot** (`session.input_event.set()`, as the other mutations do). Today an ack doesn't, so `show:wait` would never be re-evaluated.
+- *(done in step 2)* **`POST /api/out/ack` must wake a listening autopilot** (`session.input_event.set()`, as the other mutations do). Today an ack doesn't, so `show:wait` would never be re-evaluated.
 - Nothing else is expected. Revisit this if the solver's performance demands it.
 
 ## Risk: performance

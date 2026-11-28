@@ -1,6 +1,8 @@
 """Headless Edge over CDP: load the app, run JS steps, screenshot.
 
 usage: shot.py <out.png> [js-step ...]     (each step is followed by a short pause)
+       LR_SHOT_URL overrides the page (default http://127.0.0.1:8765/)
+       LR_SHOT_SCALE sets the device scale factor (default 2; use 1 for WebGL pages, rendered in software)
 Helpers available to steps:  type(i, text)  -> sets add-row input i and fires input
                              click(text)    -> clicks the first button containing text
 """
@@ -52,15 +54,18 @@ try:
                     raise RuntimeError(m["error"])
                 return m.get("result", {})
 
-    cmd("Emulation.setDeviceMetricsOverride", width=1600, height=940, deviceScaleFactor=2, mobile=False)
+    cmd("Emulation.setDeviceMetricsOverride", width=1600, height=940,
+        deviceScaleFactor=float(os.environ.get("LR_SHOT_SCALE", "2")), mobile=False)
     cmd("Emulation.setFocusEmulationEnabled", enabled=True)
-    cmd("Page.navigate", url="http://127.0.0.1:8765/")
+    cmd("Page.navigate", url=os.environ.get("LR_SHOT_URL", "http://127.0.0.1:8765/"))
     time.sleep(2.5)
     cmd("Runtime.evaluate", expression=HELPERS)
     for step in STEPS:
         r = cmd("Runtime.evaluate", expression=step, awaitPromise=True, returnByValue=True)
         if r.get("exceptionDetails"):
             print("step failed:", step, r["exceptionDetails"].get("exception", {}).get("description"))
+        elif r.get("result", {}).get("value") is not None:
+            print("step returned:", r["result"]["value"])
         time.sleep(0.8)
     time.sleep(0.5)
     shot = cmd("Page.captureScreenshot", format="png")

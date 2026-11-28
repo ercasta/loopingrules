@@ -205,3 +205,15 @@ def test_autopilot_applies_a_multi_step_operation(tmp_path):
     assert not list(eng.sheet.triples((None, EX.inFolder, None)))
     assert not list(eng.sheet.triples((None, EX.scanned, None)))
     assert set(eng.sheet.subjects(RDF.type, EX.Folder)) == {EX.d1, EX.d2}
+
+
+def test_parameters_reach_steps_that_do_not_mention_them(tmp_path):
+    """A step's templates see the parameters even when its pattern doesn't use them."""
+    eng = make(tmp_path, '''
+ex:summarize a lr:Operation ; rdfs:label "summarize folder" ;
+  lr:params "folder" ;
+  lr:where  "?folder a ex:Folder ; ex:scanned true ." ;
+  lr:steps ( [ lr:where "?f ex:tag ?t ." ; lr:insert "?folder ex:seenTag ?t ." ] ) .
+''')
+    a = apps_of(eng, "summarize folder")["d1"]
+    assert {(EX.d1, EX.seenTag, Literal(t)) for t in "abcd"} <= set(a.inserts)

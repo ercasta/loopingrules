@@ -1,0 +1,32 @@
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix lr:   <https://loopingrules.org/ns#> .
+@prefix rk:   <https://example.org/rubik#> .
+@prefix viz:  <https://example.org/rubik/viz#> .
+
+# The viewer's side of the cube (design: doc/rubik.md, part 2).
+# The viewer only uses channels: it reads lr:out, posts to lr:in, and acknowledges
+# what it has shown. It never edits the sheet.
+
+# Every executed turn, once, as a message the viewer animates and then acknowledges.
+viz:announce a lr:Operation ; rdfs:label "announce turn" ;
+  lr:params "e" ;
+  lr:where  """ ?e a rk:Executed ; rk:move ?mv ; rk:seq ?n .
+                FILTER NOT EXISTS { ?e viz:announced true } """ ;
+  lr:insert """ ?e viz:announced true .
+                [] lr:channel lr:out ; a viz:Turn ; viz:move ?mv ; viz:seq ?n . """ .
+
+# [] a viz:Sync  ->  the 54 colours, and how many turns they include.
+# The answer's IRI is derived from the request, so the step can add the facelets
+# to the same message (fresh [] would mint a new message per row).
+viz:sync a lr:Operation ; rdfs:label "send the cube's state" ;
+  lr:params "m s" ;
+  lr:where  """ ?m lr:channel lr:in ; a viz:Sync .
+                rk:cube rk:turns ?n .
+                BIND(IRI(CONCAT(STR(?m), "-state")) AS ?s) """ ;
+  lr:insert """ ?s lr:channel lr:out ; a viz:State ; lr:replyTo ?m ; viz:turns ?n . """ ;
+  lr:steps (
+    [ lr:where  """ ?p a rk:Position ; rk:colour ?c . """ ;
+      lr:insert """ ?s viz:facelet [ viz:pos ?p ; viz:colour ?c ] . """ ]
+    [ lr:where """ ?m ?p ?o . """ ; lr:delete """ ?m ?p ?o . """ ]
+  ) .

@@ -269,7 +269,10 @@ def _effects(sheet: Graph, op: Operation, rows: list[dict], params: dict, prefix
     (SPARQL Update order), and later steps query the state earlier ones left."""
     state = Overlay(sheet, *_step_delta(op.delete, op.insert, rows, prefixes))
     for step in op.steps:
-        step_rows = _solutions(state, step.where, prefixes, params) if step.where.strip() else [dict(params)]
+        # The parameters carry over even when the step's pattern doesn't mention them
+        # (SELECT * only returns the pattern's own variables).
+        step_rows = ([{**params, **row} for row in _solutions(state, step.where, prefixes, params)]
+                     if step.where.strip() else [dict(params)])
         deletes, inserts = _step_delta(step.delete, step.insert, step_rows, prefixes)
         for t in deletes:
             state.remove(t)

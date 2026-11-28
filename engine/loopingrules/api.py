@@ -473,6 +473,8 @@ def create_app(project_path: str | Path, trust_path: str | Path | None = None) -
         if ids is None:
             ids = [m.iri for m in engine.messages("out")]
         n = await session._mutate(lambda: engine.ack(ids))
+        if n:
+            session.input_event.set()  # an ack can unblock a policy that waits for readers (doc/rubik.md)
         return {"acked": n, "version": session.version}
 
     @app.get("/api/applications")
