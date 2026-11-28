@@ -201,6 +201,16 @@ rubik            project   cube, moves, solver
   - **What's left per tick:** SHACL is ~60% of `pick` (one validation per tick), and matching plus steps ~35%.
 - **Estimate for the full method:** ~150 turns at ~27 ms plus ~40 planning ticks at ~65 ms, so ~7 s per solve, down from ~45 s at the start of the session.
 
+## Step 4, stage 3 (middle layer): as built
+- **Again only knowledge changed:** `stage:Middle` and 15 cases. The solver is unchanged.
+  - **Target:** the front-right edge into FR (`F6`, `R4` like `F5`, `R5`).
+  - **Kept:** the first layer, and the other three middle slots except the one the target is in.
+  - **Cases:** with the first layer solved, the edge is either in the top layer (8 cases: *insert it*) or in a wrong middle slot or flipped (7 cases: *take it out*). Cases with the edge in the bottom layer are left out, since the cross is there.
+- **Extraction cases use the loop on purpose.** Inserting a misplaced middle edge directly takes ~16 moves, beyond the search. As in the beginner method, its algorithm only takes the edge out to the top layer (any position, either way round), and the next planning tick recognises an insertion. The search now accepts several goal states for this.
+- **Algorithms:** 5–7 moves. The search finds shorter insertions than the textbook 8.
+- **Test:** 6 random scrambles reach the first two layers, in at most 4×4 + 4×6 + 4×2×7 turns.
+- **Cost:** flat. With 61 cases over 3 stages, planning is ~62 ms and turns ~27 ms, as with 46 cases. A first-two-layers solve takes 71–99 ticks, 2.5–3.3 s.
+
 ## Engine changes needed (small)
 - *(done in step 2)* **`POST /api/out/ack` must wake a listening autopilot** (`session.input_event.set()`, as the other mutations do). Today an ack doesn't, so `show:wait` would never be re-evaluated.
 - Nothing else is expected. Revisit this if the solver's performance demands it.

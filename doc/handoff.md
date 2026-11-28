@@ -40,7 +40,8 @@
 - ***Rubik stage 2 (white corners) is built**, as a stress test: only `gen_method.py` changed; the solver picked up the new stage unchanged. See `doc/rubik.md`, "Step 4, stage 2".*
   - *It drove two more fixes: steps also run on the mirror (D30 phase 2, with substitutions instead of `VALUES` for in-scope bindings: Oxigraph doesn't push `VALUES` into `UNION`s), and a cheap `__bool__` on `Overlay`/`Union` (pySHACL's `if graph:` counted every knowledge triple).*
   - *A Rubik tick now averages ~36 ms (was ~210 at the start of the session).*
-- ***Next:** Rubik stage 3 (middle-layer edges). On performance, SHACL is now ~60% of a tick: incremental validation (§5, step 3) is the next lever. Also re-check the per-stage case counts as stages land.*
+- ***Rubik stage 3 (middle layer) is built** too, again knowledge only: 15 cases, 7 of which only take a misplaced edge out to the top layer, and the solver then plans the insertion. Per-tick costs stayed flat with 61 cases.*
+- ***Next:** Rubik stage 4 (yellow cross: dot, L and line cases). Stages 4–7 change character: their cases are about the top layer's pattern, not one piece, so expect needs over several stickers and algorithms of 6–14 moves, which may need deeper search or textbook algorithms checked by replay. On performance, SHACL is now ~60% of a tick: incremental validation (§5, step 3) is the next lever. Also re-check the per-stage case counts as stages land.*
 
 ## 1. State in one paragraph
 LoopingRules is a working "semantic spreadsheet":

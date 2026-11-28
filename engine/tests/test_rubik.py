@@ -268,6 +268,12 @@ def corners_done(eng) -> bool:
                for u, a, b in (("U9", "F3", "R1"), ("U7", "F1", "L3"), ("U1", "B3", "L1"), ("U3", "B1", "R3")))
 
 
+def middle_done(eng) -> bool:
+    """The middle layer: every side's 4 and 6 stickers match its centre."""
+    cs = colours(eng)
+    return all(cs[f + i] == cs[f + "5"] for f in "FRBL" for i in "46")
+
+
 def solve(eng, max_ticks=400):
     eng.post("[] a rk:Solve .")
     result = eng.run(max_ticks=max_ticks)
@@ -277,16 +283,18 @@ def solve(eng, max_ticks=400):
 
 
 @pytest.mark.parametrize("seed", range(6))
-def test_solver_makes_the_first_layer(eng, seed):
+def test_solver_makes_the_first_two_layers(eng, seed):
     rng = random.Random(seed)
     play(eng, [rng.choice(ALL_MOVES) for _ in range(25)])
     before = int(eng.sheet.value(RK.cube, RK.turns))
     said = solve(eng)
-    assert cross_done(eng) and corners_done(eng)
-    assert "Done: white cross." in said and "Done: white corners." in said and "Finished." in said
+    assert cross_done(eng) and corners_done(eng) and middle_done(eng)
+    assert ("Done: white cross." in said and "Done: white corners." in said
+            and "Done: middle layer." in said and "Finished." in said)
     assert eng.sheet_violations() == []
-    # at most 4 moves per edge and 6 per corner: each piece takes one algorithm
-    assert int(eng.sheet.value(RK.cube, RK.turns)) - before <= 4 * 4 + 4 * 6
+    # each piece takes one algorithm: at most 4 moves per cross edge and 6 per corner;
+    # a middle edge may need two (out, then in), of at most 7 moves each
+    assert int(eng.sheet.value(RK.cube, RK.turns)) - before <= 4 * 4 + 4 * 6 + 4 * 2 * 7
 
 
 def test_solving_a_solved_cube_makes_no_turns(eng):

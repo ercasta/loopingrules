@@ -17,11 +17,15 @@ stage:Cross a rk:Stage ; rdfs:label "white cross" ; rk:next stage:Corners ;
   rk:goal need:crossGoal_0, need:crossGoal_1 .
 need:crossGoal_0 rk:at rpos:D2 ; rk:like rpos:D5 .
 need:crossGoal_1 rk:at rpos:F8 ; rk:like rpos:F5 .
-stage:Corners a rk:Stage ; rdfs:label "white corners" ; rk:next stage:Done ;
+stage:Corners a rk:Stage ; rdfs:label "white corners" ; rk:next stage:Middle ;
   rk:goal need:cornerGoal_0, need:cornerGoal_1, need:cornerGoal_2 .
 need:cornerGoal_0 rk:at rpos:D3 ; rk:like rpos:D5 .
 need:cornerGoal_1 rk:at rpos:F9 ; rk:like rpos:F5 .
 need:cornerGoal_2 rk:at rpos:R7 ; rk:like rpos:R5 .
+stage:Middle a rk:Stage ; rdfs:label "middle layer" ; rk:next stage:Done ;
+  rk:goal need:middleGoal_0, need:middleGoal_1 .
+need:middleGoal_0 rk:at rpos:F6 ; rk:like rpos:F5 .
+need:middleGoal_1 rk:at rpos:R4 ; rk:like rpos:R5 .
 stage:Done a rk:Stage ; rdfs:label "done" .
 
 # --- stage 1: the white cross, one edge at a time ----------------------------
@@ -401,3 +405,162 @@ alg:corner_U9_1 a rk:AlgorithmStep ; rdf:first rmv:Ri ; rdf:rest alg:corner_U9_2
 alg:corner_U9_2 a rk:AlgorithmStep ; rdf:first rmv:F2 ; rdf:rest alg:corner_U9_3 .
 alg:corner_U9_3 a rk:AlgorithmStep ; rdf:first rmv:R ; rdf:rest alg:corner_U9_4 .
 alg:corner_U9_4 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest rdf:nil .
+
+# --- stage 3: the middle-layer edges, one at a time --------------------------
+case:middle_B2 a rk:Case ; rk:stage stage:Middle ; rdfs:label "the front-right edge is at UB, front colour facing back: insert it" ;
+  rk:need need:middle_B2_0, need:middle_B2_1 ; rk:algorithm alg:middle_B2_0 .
+need:middle_B2_0 rk:at rpos:B2 ; rk:like rpos:F5 .
+need:middle_B2_1 rk:at rpos:U2 ; rk:like rpos:R5 .
+alg:middle_B2_0 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest alg:middle_B2_1 .
+alg:middle_B2_1 a rk:AlgorithmStep ; rdf:first rmv:U2 ; rdf:rest alg:middle_B2_2 .
+alg:middle_B2_2 a rk:AlgorithmStep ; rdf:first rmv:L ; rdf:rest alg:middle_B2_3 .
+alg:middle_B2_3 a rk:AlgorithmStep ; rdf:first rmv:F2 ; rdf:rest alg:middle_B2_4 .
+alg:middle_B2_4 a rk:AlgorithmStep ; rdf:first rmv:Li ; rdf:rest alg:middle_B2_5 .
+alg:middle_B2_5 a rk:AlgorithmStep ; rdf:first rmv:U2 ; rdf:rest alg:middle_B2_6 .
+alg:middle_B2_6 a rk:AlgorithmStep ; rdf:first rmv:Fi ; rdf:rest rdf:nil .
+case:middle_B4 a rk:Case ; rk:stage stage:Middle ; rdfs:label "the front-right edge is at BR, front colour facing back: take it out" ;
+  rk:need need:middle_B4_0, need:middle_B4_1 ; rk:algorithm alg:middle_B4_0 .
+need:middle_B4_0 rk:at rpos:B4 ; rk:like rpos:F5 .
+need:middle_B4_1 rk:at rpos:R6 ; rk:like rpos:R5 .
+alg:middle_B4_0 a rk:AlgorithmStep ; rdf:first rmv:R2 ; rdf:rest alg:middle_B4_1 .
+alg:middle_B4_1 a rk:AlgorithmStep ; rdf:first rmv:U2 ; rdf:rest alg:middle_B4_2 .
+alg:middle_B4_2 a rk:AlgorithmStep ; rdf:first rmv:R ; rdf:rest alg:middle_B4_3 .
+alg:middle_B4_3 a rk:AlgorithmStep ; rdf:first rmv:U2 ; rdf:rest alg:middle_B4_4 .
+alg:middle_B4_4 a rk:AlgorithmStep ; rdf:first rmv:R2 ; rdf:rest rdf:nil .
+case:middle_B6 a rk:Case ; rk:stage stage:Middle ; rdfs:label "the front-right edge is at BL, front colour facing back: take it out" ;
+  rk:need need:middle_B6_0, need:middle_B6_1 ; rk:algorithm alg:middle_B6_0 .
+need:middle_B6_0 rk:at rpos:B6 ; rk:like rpos:F5 .
+need:middle_B6_1 rk:at rpos:L4 ; rk:like rpos:R5 .
+alg:middle_B6_0 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest alg:middle_B6_1 .
+alg:middle_B6_1 a rk:AlgorithmStep ; rdf:first rmv:U ; rdf:rest alg:middle_B6_2 .
+alg:middle_B6_2 a rk:AlgorithmStep ; rdf:first rmv:F2 ; rdf:rest alg:middle_B6_3 .
+alg:middle_B6_3 a rk:AlgorithmStep ; rdf:first rmv:Di ; rdf:rest alg:middle_B6_4 .
+alg:middle_B6_4 a rk:AlgorithmStep ; rdf:first rmv:L2 ; rdf:rest alg:middle_B6_5 .
+alg:middle_B6_5 a rk:AlgorithmStep ; rdf:first rmv:D ; rdf:rest alg:middle_B6_6 .
+alg:middle_B6_6 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest rdf:nil .
+case:middle_F2 a rk:Case ; rk:stage stage:Middle ; rdfs:label "the front-right edge is at UF, front colour facing front: insert it" ;
+  rk:need need:middle_F2_0, need:middle_F2_1 ; rk:algorithm alg:middle_F2_0 .
+need:middle_F2_0 rk:at rpos:F2 ; rk:like rpos:F5 .
+need:middle_F2_1 rk:at rpos:U8 ; rk:like rpos:R5 .
+alg:middle_F2_0 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest alg:middle_F2_1 .
+alg:middle_F2_1 a rk:AlgorithmStep ; rdf:first rmv:U2 ; rdf:rest alg:middle_F2_2 .
+alg:middle_F2_2 a rk:AlgorithmStep ; rdf:first rmv:L ; rdf:rest alg:middle_F2_3 .
+alg:middle_F2_3 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest alg:middle_F2_4 .
+alg:middle_F2_4 a rk:AlgorithmStep ; rdf:first rmv:Li ; rdf:rest alg:middle_F2_5 .
+alg:middle_F2_5 a rk:AlgorithmStep ; rdf:first rmv:U2 ; rdf:rest alg:middle_F2_6 .
+alg:middle_F2_6 a rk:AlgorithmStep ; rdf:first rmv:Fi ; rdf:rest rdf:nil .
+case:middle_F4 a rk:Case ; rk:stage stage:Middle ; rdfs:label "the front-right edge is at FL, front colour facing front: take it out" ;
+  rk:need need:middle_F4_0, need:middle_F4_1 ; rk:algorithm alg:middle_F4_0 .
+need:middle_F4_0 rk:at rpos:F4 ; rk:like rpos:F5 .
+need:middle_F4_1 rk:at rpos:L6 ; rk:like rpos:R5 .
+alg:middle_F4_0 a rk:AlgorithmStep ; rdf:first rmv:F2 ; rdf:rest alg:middle_F4_1 .
+alg:middle_F4_1 a rk:AlgorithmStep ; rdf:first rmv:U2 ; rdf:rest alg:middle_F4_2 .
+alg:middle_F4_2 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest alg:middle_F4_3 .
+alg:middle_F4_3 a rk:AlgorithmStep ; rdf:first rmv:U2 ; rdf:rest alg:middle_F4_4 .
+alg:middle_F4_4 a rk:AlgorithmStep ; rdf:first rmv:F2 ; rdf:rest rdf:nil .
+case:middle_L2 a rk:Case ; rk:stage stage:Middle ; rdfs:label "the front-right edge is at UL, front colour facing left: insert it" ;
+  rk:need need:middle_L2_0, need:middle_L2_1 ; rk:algorithm alg:middle_L2_0 .
+need:middle_L2_0 rk:at rpos:L2 ; rk:like rpos:F5 .
+need:middle_L2_1 rk:at rpos:U4 ; rk:like rpos:R5 .
+alg:middle_L2_0 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest alg:middle_L2_1 .
+alg:middle_L2_1 a rk:AlgorithmStep ; rdf:first rmv:Ri ; rdf:rest alg:middle_L2_2 .
+alg:middle_L2_2 a rk:AlgorithmStep ; rdf:first rmv:Fi ; rdf:rest alg:middle_L2_3 .
+alg:middle_L2_3 a rk:AlgorithmStep ; rdf:first rmv:R ; rdf:rest alg:middle_L2_4 .
+alg:middle_L2_4 a rk:AlgorithmStep ; rdf:first rmv:Fi ; rdf:rest alg:middle_L2_5 .
+alg:middle_L2_5 a rk:AlgorithmStep ; rdf:first rmv:Ui ; rdf:rest alg:middle_L2_6 .
+alg:middle_L2_6 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest rdf:nil .
+case:middle_L4 a rk:Case ; rk:stage stage:Middle ; rdfs:label "the front-right edge is at BL, front colour facing left: take it out" ;
+  rk:need need:middle_L4_0, need:middle_L4_1 ; rk:algorithm alg:middle_L4_0 .
+need:middle_L4_0 rk:at rpos:L4 ; rk:like rpos:F5 .
+need:middle_L4_1 rk:at rpos:B6 ; rk:like rpos:R5 .
+alg:middle_L4_0 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest alg:middle_L4_1 .
+alg:middle_L4_1 a rk:AlgorithmStep ; rdf:first rmv:U ; rdf:rest alg:middle_L4_2 .
+alg:middle_L4_2 a rk:AlgorithmStep ; rdf:first rmv:F2 ; rdf:rest alg:middle_L4_3 .
+alg:middle_L4_3 a rk:AlgorithmStep ; rdf:first rmv:Di ; rdf:rest alg:middle_L4_4 .
+alg:middle_L4_4 a rk:AlgorithmStep ; rdf:first rmv:L2 ; rdf:rest alg:middle_L4_5 .
+alg:middle_L4_5 a rk:AlgorithmStep ; rdf:first rmv:D ; rdf:rest alg:middle_L4_6 .
+alg:middle_L4_6 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest rdf:nil .
+case:middle_L6 a rk:Case ; rk:stage stage:Middle ; rdfs:label "the front-right edge is at FL, front colour facing left: take it out" ;
+  rk:need need:middle_L6_0, need:middle_L6_1 ; rk:algorithm alg:middle_L6_0 .
+need:middle_L6_0 rk:at rpos:L6 ; rk:like rpos:F5 .
+need:middle_L6_1 rk:at rpos:F4 ; rk:like rpos:R5 .
+alg:middle_L6_0 a rk:AlgorithmStep ; rdf:first rmv:F2 ; rdf:rest alg:middle_L6_1 .
+alg:middle_L6_1 a rk:AlgorithmStep ; rdf:first rmv:U2 ; rdf:rest alg:middle_L6_2 .
+alg:middle_L6_2 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest alg:middle_L6_3 .
+alg:middle_L6_3 a rk:AlgorithmStep ; rdf:first rmv:U2 ; rdf:rest alg:middle_L6_4 .
+alg:middle_L6_4 a rk:AlgorithmStep ; rdf:first rmv:F2 ; rdf:rest rdf:nil .
+case:middle_R2 a rk:Case ; rk:stage stage:Middle ; rdfs:label "the front-right edge is at UR, front colour facing right: insert it" ;
+  rk:need need:middle_R2_0, need:middle_R2_1 ; rk:algorithm alg:middle_R2_0 .
+need:middle_R2_0 rk:at rpos:R2 ; rk:like rpos:F5 .
+need:middle_R2_1 rk:at rpos:U6 ; rk:like rpos:R5 .
+alg:middle_R2_0 a rk:AlgorithmStep ; rdf:first rmv:R ; rdf:rest alg:middle_R2_1 .
+alg:middle_R2_1 a rk:AlgorithmStep ; rdf:first rmv:U2 ; rdf:rest alg:middle_R2_2 .
+alg:middle_R2_2 a rk:AlgorithmStep ; rdf:first rmv:B ; rdf:rest alg:middle_R2_3 .
+alg:middle_R2_3 a rk:AlgorithmStep ; rdf:first rmv:Ui ; rdf:rest alg:middle_R2_4 .
+alg:middle_R2_4 a rk:AlgorithmStep ; rdf:first rmv:Bi ; rdf:rest alg:middle_R2_5 .
+alg:middle_R2_5 a rk:AlgorithmStep ; rdf:first rmv:U2 ; rdf:rest alg:middle_R2_6 .
+alg:middle_R2_6 a rk:AlgorithmStep ; rdf:first rmv:Ri ; rdf:rest rdf:nil .
+case:middle_R4 a rk:Case ; rk:stage stage:Middle ; rdfs:label "the front-right edge is at FR, front colour facing right: take it out" ;
+  rk:need need:middle_R4_0, need:middle_R4_1 ; rk:algorithm alg:middle_R4_0 .
+need:middle_R4_0 rk:at rpos:R4 ; rk:like rpos:F5 .
+need:middle_R4_1 rk:at rpos:F6 ; rk:like rpos:R5 .
+alg:middle_R4_0 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest alg:middle_R4_1 .
+alg:middle_R4_1 a rk:AlgorithmStep ; rdf:first rmv:U2 ; rdf:rest alg:middle_R4_2 .
+alg:middle_R4_2 a rk:AlgorithmStep ; rdf:first rmv:L ; rdf:rest alg:middle_R4_3 .
+alg:middle_R4_3 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest alg:middle_R4_4 .
+alg:middle_R4_4 a rk:AlgorithmStep ; rdf:first rmv:Li ; rdf:rest alg:middle_R4_5 .
+alg:middle_R4_5 a rk:AlgorithmStep ; rdf:first rmv:U2 ; rdf:rest alg:middle_R4_6 .
+alg:middle_R4_6 a rk:AlgorithmStep ; rdf:first rmv:Fi ; rdf:rest rdf:nil .
+case:middle_R6 a rk:Case ; rk:stage stage:Middle ; rdfs:label "the front-right edge is at BR, front colour facing right: take it out" ;
+  rk:need need:middle_R6_0, need:middle_R6_1 ; rk:algorithm alg:middle_R6_0 .
+need:middle_R6_0 rk:at rpos:R6 ; rk:like rpos:F5 .
+need:middle_R6_1 rk:at rpos:B4 ; rk:like rpos:R5 .
+alg:middle_R6_0 a rk:AlgorithmStep ; rdf:first rmv:R2 ; rdf:rest alg:middle_R6_1 .
+alg:middle_R6_1 a rk:AlgorithmStep ; rdf:first rmv:U2 ; rdf:rest alg:middle_R6_2 .
+alg:middle_R6_2 a rk:AlgorithmStep ; rdf:first rmv:R ; rdf:rest alg:middle_R6_3 .
+alg:middle_R6_3 a rk:AlgorithmStep ; rdf:first rmv:U2 ; rdf:rest alg:middle_R6_4 .
+alg:middle_R6_4 a rk:AlgorithmStep ; rdf:first rmv:R2 ; rdf:rest rdf:nil .
+case:middle_U2 a rk:Case ; rk:stage stage:Middle ; rdfs:label "the front-right edge is at UB, front colour facing up: insert it" ;
+  rk:need need:middle_U2_0, need:middle_U2_1 ; rk:algorithm alg:middle_U2_0 .
+need:middle_U2_0 rk:at rpos:U2 ; rk:like rpos:F5 .
+need:middle_U2_1 rk:at rpos:B2 ; rk:like rpos:R5 .
+alg:middle_U2_0 a rk:AlgorithmStep ; rdf:first rmv:Fi ; rdf:rest alg:middle_U2_1 .
+alg:middle_U2_1 a rk:AlgorithmStep ; rdf:first rmv:U ; rdf:rest alg:middle_U2_2 .
+alg:middle_U2_2 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest alg:middle_U2_3 .
+alg:middle_U2_3 a rk:AlgorithmStep ; rdf:first rmv:U ; rdf:rest alg:middle_U2_4 .
+alg:middle_U2_4 a rk:AlgorithmStep ; rdf:first rmv:R ; rdf:rest alg:middle_U2_5 .
+alg:middle_U2_5 a rk:AlgorithmStep ; rdf:first rmv:Ui ; rdf:rest alg:middle_U2_6 .
+alg:middle_U2_6 a rk:AlgorithmStep ; rdf:first rmv:Ri ; rdf:rest rdf:nil .
+case:middle_U4 a rk:Case ; rk:stage stage:Middle ; rdfs:label "the front-right edge is at UL, front colour facing up: insert it" ;
+  rk:need need:middle_U4_0, need:middle_U4_1 ; rk:algorithm alg:middle_U4_0 .
+need:middle_U4_0 rk:at rpos:U4 ; rk:like rpos:F5 .
+need:middle_U4_1 rk:at rpos:L2 ; rk:like rpos:R5 .
+alg:middle_U4_0 a rk:AlgorithmStep ; rdf:first rmv:R ; rdf:rest alg:middle_U4_1 .
+alg:middle_U4_1 a rk:AlgorithmStep ; rdf:first rmv:U2 ; rdf:rest alg:middle_U4_2 .
+alg:middle_U4_2 a rk:AlgorithmStep ; rdf:first rmv:B ; rdf:rest alg:middle_U4_3 .
+alg:middle_U4_3 a rk:AlgorithmStep ; rdf:first rmv:U2 ; rdf:rest alg:middle_U4_4 .
+alg:middle_U4_4 a rk:AlgorithmStep ; rdf:first rmv:Bi ; rdf:rest alg:middle_U4_5 .
+alg:middle_U4_5 a rk:AlgorithmStep ; rdf:first rmv:U2 ; rdf:rest alg:middle_U4_6 .
+alg:middle_U4_6 a rk:AlgorithmStep ; rdf:first rmv:Ri ; rdf:rest rdf:nil .
+case:middle_U6 a rk:Case ; rk:stage stage:Middle ; rdfs:label "the front-right edge is at UR, front colour facing up: insert it" ;
+  rk:need need:middle_U6_0, need:middle_U6_1 ; rk:algorithm alg:middle_U6_0 .
+need:middle_U6_0 rk:at rpos:U6 ; rk:like rpos:F5 .
+need:middle_U6_1 rk:at rpos:R2 ; rk:like rpos:R5 .
+alg:middle_U6_0 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest alg:middle_U6_1 .
+alg:middle_U6_1 a rk:AlgorithmStep ; rdf:first rmv:U2 ; rdf:rest alg:middle_U6_2 .
+alg:middle_U6_2 a rk:AlgorithmStep ; rdf:first rmv:L ; rdf:rest alg:middle_U6_3 .
+alg:middle_U6_3 a rk:AlgorithmStep ; rdf:first rmv:Fi ; rdf:rest alg:middle_U6_4 .
+alg:middle_U6_4 a rk:AlgorithmStep ; rdf:first rmv:Li ; rdf:rest alg:middle_U6_5 .
+alg:middle_U6_5 a rk:AlgorithmStep ; rdf:first rmv:U2 ; rdf:rest alg:middle_U6_6 .
+alg:middle_U6_6 a rk:AlgorithmStep ; rdf:first rmv:Fi ; rdf:rest rdf:nil .
+case:middle_U8 a rk:Case ; rk:stage stage:Middle ; rdfs:label "the front-right edge is at UF, front colour facing up: insert it" ;
+  rk:need need:middle_U8_0, need:middle_U8_1 ; rk:algorithm alg:middle_U8_0 .
+need:middle_U8_0 rk:at rpos:U8 ; rk:like rpos:F5 .
+need:middle_U8_1 rk:at rpos:F2 ; rk:like rpos:R5 .
+alg:middle_U8_0 a rk:AlgorithmStep ; rdf:first rmv:Fi ; rdf:rest alg:middle_U8_1 .
+alg:middle_U8_1 a rk:AlgorithmStep ; rdf:first rmv:U2 ; rdf:rest alg:middle_U8_2 .
+alg:middle_U8_2 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest alg:middle_U8_3 .
+alg:middle_U8_3 a rk:AlgorithmStep ; rdf:first rmv:U2 ; rdf:rest alg:middle_U8_4 .
+alg:middle_U8_4 a rk:AlgorithmStep ; rdf:first rmv:R ; rdf:rest alg:middle_U8_5 .
+alg:middle_U8_5 a rk:AlgorithmStep ; rdf:first rmv:U ; rdf:rest alg:middle_U8_6 .
+alg:middle_U8_6 a rk:AlgorithmStep ; rdf:first rmv:Ri ; rdf:rest rdf:nil .

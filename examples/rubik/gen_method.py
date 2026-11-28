@@ -65,21 +65,23 @@ for _mv, _m in MOVES.items():
     TABLE[_mv] = bytes(_t)
 
 
-def search(start: tuple[str, ...], goal: tuple[str, ...], depth: int = 5) -> list[str]:
-    """The shortest move sequence taking the tracked stickers from `start` to `goal`.
+def search(start: tuple[str, ...], goal, depth: int = 5) -> list[str]:
+    """The shortest move sequence taking the tracked stickers from `start` to `goal`,
+    or to any of several goals (a list of tuples).
 
     Bidirectional breadth-first search, at most `depth` moves from each side. Two
     consecutive moves never turn the same face.
     """
-    if start == goal:
+    goals = goal if isinstance(goal, list) else [goal]
+    if start in goals:
         return []
     s0 = bytes(INDEX[p] for p in start)
-    g0 = bytes(INDEX[p] for p in goal)
+    g0 = [bytes(INDEX[p] for p in g) for g in goals]
     # state -> (previous state, move), on each side; backwards, the move is the one
     # that leads from this state towards the goal
     fwd: dict[bytes, tuple] = {s0: (None, None)}
-    bwd: dict[bytes, tuple] = {g0: (None, None)}
-    frontiers = {"f": [s0], "b": [g0]}
+    bwd: dict[bytes, tuple] = {g: (None, None) for g in g0}
+    frontiers = {"f": [s0], "b": list(g0)}
 
     def path(seen, s):
         out = []
@@ -119,7 +121,7 @@ def check(alg: list[str], start: tuple[str, ...], goal: tuple[str, ...]) -> None
     state = start
     for mv in alg:
         state = _apply(state, mv)
-    assert state == goal, (alg, start, goal)
+    assert state in (goal if isinstance(goal, list) else [goal]), (alg, start, goal)
 
 
 # --- stage 1: the white cross -----------------------------------------------------
@@ -177,6 +179,47 @@ def corner_cases():
         yield f"corner_{white}", label, [(white, "D5"), (front, "F5"), (right, "R5")], alg
 
 
+# --- stage 3: the middle-layer edges ----------------------------------------------
+# Target: the edge front + right colours, into FR (F6, R4).
+# Kept: the first layer, and the other three middle slots (except the one the target
+# is in), sticker for sticker.
+# - Edge in the top layer: insert it (the classic 8 moves, plus a U setup if needed).
+# - Edge in a wrong middle slot, or flipped in FR: inserting it directly takes ~16
+#   moves, beyond the search. As in the beginner method, its algorithm only takes
+#   the edge out to the top layer; the solver then plans an insertion.
+
+FIRST_LAYER = CROSS + CORNER + tuple(p for slot in BOTTOM_CORNERS for p in slot)
+EDGE = ("F6", "R4")  # FR, as front colour / right colour
+MIDDLE_SLOTS = (("F4", "L6"), ("B4", "R6"), ("B6", "L4"))  # FL, BR, BL: the others
+TOP_EDGES = [s for s in EDGE_SLOTS if any(p[0] == "U" for p in s)]
+
+
+def reachable(stickers: tuple[str, ...]) -> set[tuple[str, ...]]:
+    seen, frontier = {stickers}, [stickers]
+    while frontier:
+        frontier = [s2 for s in frontier for mv in MOVES
+                    if (s2 := _apply(s, mv)) not in seen and not seen.add(s2)]
+    return seen
+
+
+def middle_cases():
+    for front, right in sorted(reachable(EDGE) - {EDGE}):
+        if front[0] in "D" or right[0] in "D":
+            continue  # a bottom slot: the cross is there once the first layer is solved
+        keep = FIRST_LAYER + tuple(p for slot in MIDDLE_SLOTS if front not in slot for p in slot)
+        start = (front, right) + keep
+        slot = "".join(sorted({front[0], right[0]}, key="UDFBRL".index))
+        if "U" in slot:
+            goal, what = EDGE + keep, "insert it"
+        else:  # take it out to the top layer, either way round
+            goal = [(a, b) + keep for top in TOP_EDGES for a, b in (top, top[::-1])]
+            what = "take it out"
+        alg = search(start, goal)
+        check(alg, start, goal)
+        label = f"the front-right edge is at {slot}, front colour facing {FACE_WORD[front[0]]}: {what}"
+        yield f"middle_{front}", label, [(front, "F5"), (right, "R5")], alg
+
+
 def emit_case(out: list[str], stage: str, name: str, label: str, needs, alg: list[str]) -> None:
     need_names = [f"need:{name}_{i}" for i in range(len(needs))]
     first = f"alg:{name}_0" if alg else "rdf:nil"
@@ -199,15 +242,20 @@ def main() -> None:
     out.append("need:crossGoal_0 rk:at rpos:D2 ; rk:like rpos:D5 .")
     out.append("need:crossGoal_1 rk:at rpos:F8 ; rk:like rpos:F5 .")
     # the corners keep the cross, so their goal needs only the corners
-    out.append("stage:Corners a rk:Stage ; rdfs:label \"white corners\" ; rk:next stage:Done ;")
+    out.append("stage:Corners a rk:Stage ; rdfs:label \"white corners\" ; rk:next stage:Middle ;")
     out.append("  rk:goal need:cornerGoal_0, need:cornerGoal_1, need:cornerGoal_2 .")
     out.append("need:cornerGoal_0 rk:at rpos:D3 ; rk:like rpos:D5 .")
     out.append("need:cornerGoal_1 rk:at rpos:F9 ; rk:like rpos:F5 .")
     out.append("need:cornerGoal_2 rk:at rpos:R7 ; rk:like rpos:R5 .")
+    out.append("stage:Middle a rk:Stage ; rdfs:label \"middle layer\" ; rk:next stage:Done ;")
+    out.append("  rk:goal need:middleGoal_0, need:middleGoal_1 .")
+    out.append("need:middleGoal_0 rk:at rpos:F6 ; rk:like rpos:F5 .")
+    out.append("need:middleGoal_1 rk:at rpos:R4 ; rk:like rpos:R5 .")
     out.append("stage:Done a rk:Stage ; rdfs:label \"done\" .")
 
     for stage, title, cases in (("Cross", "stage 1: the white cross, one edge at a time", cross_cases),
-                                ("Corners", "stage 2: the white corners, one at a time", corner_cases)):
+                                ("Corners", "stage 2: the white corners, one at a time", corner_cases),
+                                ("Middle", "stage 3: the middle-layer edges, one at a time", middle_cases)):
         out.append(f"\n# --- {title} " + "-" * (72 - len(title)))
         lengths = []
         for name, label, needs, alg in cases():
