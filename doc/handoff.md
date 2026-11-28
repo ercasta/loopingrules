@@ -68,6 +68,23 @@ engine/.venv/Scripts/lr run examples/folder-scan --yes  # headless
 - **Fixed** (commit "Parse each SPARQL query once"): queries are prepared once (`store.prepared`, an LRU cache), and DELETE/INSERT templates are parsed once and filled in Python.
 - **Now: SHACL validation is ~60% of the time** and graph copying ~15%. Cost per tick still grows faster than linearly with sheet size: there are more candidates *and* each candidate costs more.
 
+### Update 2026-11-28: steps 1 and 2 done
+| files | ticks | before (eager, copies) | lazy validation | + overlay |
+|---|---|---|---|---|
+| 20 | 62 | 12.8 s | 5.4 s | 4.1–5.6 s (noisy) |
+| 40 | 122 | — | 41.2 s | 19.6 s |
+
+- **Lazy validation** (`Engine.pick`): autopilot scores every candidate and validates in score order, stopping at the first valid one. `test_lazy_pick.py` checks that it matches `choose(applications())` at every tick. `applications()`, used for the UI, still validates everything.
+- **Overlay** (`store.Overlay`): resulting states are views, not copies. pySHACL accepts them.
+- **New profile at 40 files:**
+  - matching operation `WHERE`s: ~57% (rdflib evaluating `FILTER NOT EXISTS`);
+  - scoring: ~24%;
+  - SHACL: ~18% (one validation per tick, plus the baseline when needed).
+- **So steps 3–4 below (incremental SHACL, cross-tick validation cache) now target only ~18%.** The big remaining cost is matching. Options, to be discussed:
+  - (a) incremental matching of the D23 subset (Rete-style);
+  - (b) match against a pyoxigraph mirror of the sheet;
+  - (c) cross-tick reuse of matches for operations the last delta can't affect.
+
 ### Next steps, in order (measure after each one with the benchmark)
 1. **Validate lazily.**
    - Autopilot only needs the best *valid* application: score every candidate, sort, and validate in descending order, stopping at the first valid one. That turns roughly A validations per tick into about 1.
