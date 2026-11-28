@@ -493,3 +493,36 @@ tr:hover .icon { opacity: 1; }
   margin-left: 6px; font-size: 10px; font-weight: 700; color: var(--accent);
   border: 1px solid var(--accent-line); background: var(--accent-bg); border-radius: 999px; padding: 0 7px;
 }
+
+/* ---- D25: channels, listening, app mode ---- */
+.status-listening { color: var(--accent); border-color: var(--accent-line); background: var(--accent-bg); }
+.status-listening .dot { background: var(--accent); animation: pulse 2.4s infinite; }
+.listen { display: flex; align-items: center; gap: 4px; color: var(--muted); font-size: 12px; cursor: pointer; }
+.listen input { accent-color: var(--accent); }
+
+.io { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px 10px; border-bottom: 1px solid var(--line); }
+.io-out { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow: auto; display: flex; flex-direction: column; gap: 6px; }
+.io-out li {
+  border: 1px solid var(--accent-line); background: var(--accent-soft); border-radius: 8px 8px 8px 2px;
+  padding: 6px 9px; font-size: 12.5px; line-height: 1.4; position: relative;
+}
+.io-out li.empty { border: none; background: none; color: var(--dim); padding: 0; font-size: 12px; }
+.io-text { white-space: pre-wrap; }
+.io-triples { font-size: 11px; display: flex; flex-direction: column; gap: 2px; }
+.io-meta { color: var(--dim); font-family: var(--mono); font-size: 10px; }
+.io-bar { display: flex; align-items: center; justify-content: space-between; min-height: 4px; }
+.io-waiting { color: var(--warn); font-size: 11px; font-family: var(--mono); }
+.io-in { display: flex; gap: 6px; align-items: stretch; }
+.io-in textarea {
+  flex: 1; resize: vertical; min-height: 54px; font-family: var(--mono); font-size: 12px;
+  border: 1px solid var(--line-2); border-radius: 6px; padding: 6px 8px; background: var(--bg); color: inherit;
+}
+.io-in textarea:focus { outline: none; border-color: var(--accent); }
+.io-problem { white-space: pre-wrap; padding: 0; }
+
+.add-zone[hidden] { display: none; }
+.app-mode {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 8px 14px; border-top: 1px solid var(--accent-line); background: var(--accent-bg); font-size: 12px;
+}
+.app-mode.unlocked { border-top-color: var(--warn-line); background: var(--warn-bg); }

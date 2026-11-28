@@ -1,0 +1,10 @@
+@prefix lr:      <https://loopingrules.org/ns#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+<urn:lr:package> a lr:Package ;
+  dcterms:title "hello-channels" ;
+  lr:version "0.1.0" ;
+  dcterms:description "The smallest model driven by messages: say hello on lr:in, get an answer on lr:out." ;
+  dcterms:creator "Antonio Castaldo D'Ursi" ;
+  dcterms:license "MIT" ;
+  lr:directEdits false .   # app mode: input comes as messages (design D25)

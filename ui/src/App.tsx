@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, connectEvents, type Application, type Sheet, type State } from "./api";
+import { api, connectEvents, type Application, type Message, type Sheet, type State } from "./api";
 import { ApplicationsPanel } from "./components/ApplicationsPanel";
 import { ApprovalBanner } from "./components/ApprovalBanner";
+import { IOPanel } from "./components/IOPanel";
 import { SheetPanel } from "./components/SheetPanel";
 import { Sidebar } from "./components/Sidebar";
 
@@ -9,6 +10,7 @@ const STATUS_LABEL = {
   idle: "manual",
   running: "autopilot",
   "awaiting-approval": "awaiting approval",
+  listening: "listening",
   done: "at rest",
 } as const;
 
@@ -21,6 +23,8 @@ export function App() {
   const [containsError, setContainsError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [speed, setSpeed] = useState(400);
+  const [out, setOut] = useState<Message[]>([]);
+  const [unlocked, setUnlocked] = useState(false); // app mode only; resets on reload (D25)
   const refreshTimer = useRef<number | undefined>(undefined);
   const [theme, setTheme] = useState<"light" | "dark">(
     () => (localStorage.getItem("lr-theme") as "light" | "dark" | null) ?? "light",
@@ -39,9 +43,10 @@ export function App() {
 
   const refresh = useCallback(async () => {
     try {
-      const [st, sh] = await Promise.all([api.state(), api.sheet()]);
+      const [st, sh, msgs] = await Promise.all([api.state(), api.sheet(), api.messages("out")]);
       setState(st);
       setSheet(sh);
+      setOut(msgs.messages);
       setAppsLoading(true);
       try {
         const r = await api.applications(contains || undefined);
@@ -66,7 +71,8 @@ export function App() {
   }, [refresh]);
 
   const status = state?.autopilot ?? "idle";
-  const running = status === "running" || status === "awaiting-approval";
+  const running = status === "running" || status === "awaiting-approval" || status === "listening";
+  const listen = state?.listen ?? false;
   const pending = state?.pending ?? [];
 
   return (
@@ -107,6 +113,10 @@ export function App() {
               ▶ Autopilot
             </button>
           )}
+          <label className="listen" title="When nothing is left to do, wait for the next message or edit instead of stopping">
+            <input type="checkbox" checked={listen} onChange={(e) => api.listen(e.target.checked).catch(onError)} />
+            listen
+          </label>
           <label className="speed" title="Delay between ticks">
             <input type="range" min={0} max={1500} step={50} value={speed} onChange={(e) => setSpeed(+e.target.value)} />
             <span>{speed} ms</span>
@@ -157,7 +167,13 @@ export function App() {
       )}
 
       <main className="layout">
-        <SheetPanel sheet={sheet} onError={onError} />
+        <SheetPanel
+          sheet={sheet}
+          onError={onError}
+          appMode={state ? !state.directEdits : false}
+          unlocked={unlocked}
+          onUnlock={setUnlocked}
+        />
         <ApplicationsPanel
           apps={apps}
           loading={appsLoading}
@@ -167,7 +183,13 @@ export function App() {
           containsError={containsError}
           onError={onError}
         />
-        <Sidebar controllers={state?.controllers ?? []} trust={state?.trust ?? []} log={state?.log ?? []} onError={onError} />
+        <Sidebar
+          controllers={state?.controllers ?? []}
+          trust={state?.trust ?? []}
+          log={state?.log ?? []}
+          onError={onError}
+          io={<IOPanel out={out} waiting={state?.messages.in ?? 0} onError={onError} />}
+        />
       </main>
 
       {toast && <div className="toast">{toast}</div>}

@@ -56,6 +56,7 @@ class Manifest:
     license: str = ""
     may_run: list[str] = field(default_factory=list)
     extends: str | None = None
+    direct_edits: bool = True  # lr:directEdits false = app mode (D25)
 
     @classmethod
     def from_graph(cls, g: Graph, fallback_title: str) -> "Manifest":
@@ -66,7 +67,8 @@ class Manifest:
         return cls(title=v(DCT.title) or fallback_title, version=v(LR.version) or "0.0.0",
                    description=v(DCT.description), creator=v(DCT.creator), license=v(DCT.license),
                    may_run=sorted(str(x) for x in g.objects(pkg, LR.mayRun)),
-                   extends=str(g.value(pkg, LR.extends)) if g.value(pkg, LR.extends) is not None else None)
+                   extends=str(g.value(pkg, LR.extends)) if g.value(pkg, LR.extends) is not None else None,
+                   direct_edits=str(g.value(pkg, LR.directEdits, default="true")).lower() != "false")
 
     def to_graph(self) -> Graph:
         g = Graph()
@@ -83,6 +85,8 @@ class Manifest:
             g.add((pkg, LR.mayRun, Literal(t)))
         if self.extends:
             g.add((pkg, LR.extends, Literal(self.extends)))
+        if not self.direct_edits:
+            g.add((pkg, LR.directEdits, Literal(False)))
         return g
 
 

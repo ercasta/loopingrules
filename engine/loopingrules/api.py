@@ -20,6 +20,7 @@ from rdflib import RDF, BNode, Graph, Literal, URIRef
 from rdflib.namespace import XSD
 from rdflib.util import from_n3
 
+from .channels import PostError
 from .engine import Engine
 from .operations import Application
 from .project import GEN, Project
@@ -120,7 +121,9 @@ class Session:
         self.lock = asyncio.Lock()
         self.sockets: set[WebSocket] = set()
         self.autopilot_task: asyncio.Task | None = None
-        self.autopilot_status = "idle"  # idle | running | awaiting-approval | done
+        self.autopilot_status = "idle"  # idle | running | awaiting-approval | listening | done
+        self.listen = False  # D25: when at rest, wait for input instead of stopping
+        self.input_event = asyncio.Event()
         self.delay = 0.4
         self.approval_event = asyncio.Event()
         self.log: list[dict] = []
@@ -203,6 +206,12 @@ class Session:
             while True:
                 status = await self.step()
                 if status in ("done", "stopped"):
+                    if self.listen:  # D25: wait for the next post or edit, then carry on
+                        self.input_event.clear()
+                        await self._set_status("listening")
+                        await self.input_event.wait()
+                        await self._set_status("running")
+                        continue
                     if status == "done":
                         self._log("info", "autopilot done: no applicable operations")
                     await self._set_status("done")
@@ -254,6 +263,15 @@ class TripleIn(BaseModel):
     s: str
     p: str
     o: str
+    force: bool = False  # edit even in app mode (the UI's "unlock editing", D25)
+
+
+class PostIn(BaseModel):
+    turtle: str
+
+
+class AckIn(BaseModel):
+    ids: list[str] | None = None  # n3 of the messages; None = every lr:out message
 
 
 class Decision(BaseModel):
@@ -268,6 +286,7 @@ class TemplateIn(BaseModel):
 
 class AutopilotIn(BaseModel):
     delay_ms: int | None = None
+    listen: bool | None = None
 
 
 def create_app(project_path: str | Path, trust_path: str | Path | None = None) -> FastAPI:
@@ -297,6 +316,19 @@ def create_app(project_path: str | Path, trust_path: str | Path | None = None) -
         except Exception as e:
             raise HTTPException(400, str(e))
 
+    direct_edits = manifest.direct_edits if manifest is not None else True
+
+    def editable(body: TripleIn) -> None:
+        if not direct_edits and not body.force:
+            raise HTTPException(403, "this model is in app mode: direct edits are off "
+                                     "(post to lr:in instead, or unlock editing)")
+
+    def message_json(m) -> dict:
+        t = session.terms
+        return {"id": m.iri.n3(), "short": t.short(m.iri), "channel": m.channel, "order": m.order,
+                "text": m.text, "types": [t.short(x) for x in m.types],
+                "triples": [t.triple(x) for x in m.triples]}
+
     @app.get("/api/state")
     async def state():
         return {
@@ -316,6 +348,9 @@ def create_app(project_path: str | Path, trust_path: str | Path | None = None) -
             "log": session.log[-50:],
             "undo": _undo_label(engine.project.last_undoable()),
             "journal": len(engine.project.journal),
+            "directEdits": direct_edits,
+            "listen": session.listen,
+            "messages": {ch: len(engine.messages(ch)) for ch in ("in", "out")},
         }
 
     @app.get("/api/sheet")
@@ -383,13 +418,16 @@ def create_app(project_path: str | Path, trust_path: str | Path | None = None) -
 
     @app.post("/api/sheet/triples")
     async def add_triple(body: TripleIn):
+        editable(body)
         t = to_triple(body)
         entry = session._log("edit", f"+ {' '.join(session.terms.short(x) for x in t)}")
         await session._mutate(lambda: engine.edit(add=[t]), log=entry)
+        session.input_event.set()
         return {"version": session.version}
 
     @app.post("/api/sheet/delete")
     async def delete_triple(body: TripleIn):
+        editable(body)
         try:
             t = tuple(from_n3(x) for x in (body.s, body.p, body.o))
         except Exception as e:
@@ -398,7 +436,37 @@ def create_app(project_path: str | Path, trust_path: str | Path | None = None) -
             raise HTTPException(404, "no such triple")
         entry = session._log("edit", f"− {' '.join(session.terms.short(x) for x in t)}")
         await session._mutate(lambda: engine.edit(remove=[t]), log=entry)
+        session.input_event.set()
         return {"version": session.version}
+
+    @app.post("/api/in")
+    async def post_in(body: PostIn):
+        """Post a message to lr:in (D25). Refused (422) if it breaks the posting rules or the shapes."""
+        try:
+            iri = await session._mutate(lambda: engine.post(body.turtle))
+        except PostError as e:
+            raise HTTPException(422, {"message": str(e), "violations": e.violations})
+        entry = session._log("input", f"posted {session.terms.short(iri)}")
+        await session.broadcast({"type": "log", "entry": entry})
+        session.input_event.set()
+        return {"id": iri.n3(), "short": session.terms.short(iri), "version": session.version}
+
+    @app.get("/api/messages")
+    async def get_messages(channel: str = "out"):
+        if channel not in ("in", "out"):
+            raise HTTPException(400, "channel must be in or out")
+        return {"version": session.version, "messages": [message_json(m) for m in engine.messages(channel)]}
+
+    @app.post("/api/out/ack")
+    async def ack(body: AckIn):
+        try:
+            ids = None if body.ids is None else [from_n3(x) for x in body.ids]
+        except Exception as e:
+            raise HTTPException(400, str(e))
+        if ids is None:
+            ids = [m.iri for m in engine.messages("out")]
+        n = await session._mutate(lambda: engine.ack(ids))
+        return {"acked": n, "version": session.version}
 
     @app.get("/api/applications")
     async def applications(contains: str | None = None):
@@ -435,8 +503,19 @@ def create_app(project_path: str | Path, trust_path: str | Path | None = None) -
     async def autopilot_start(body: AutopilotIn | None = None):
         if body and body.delay_ms is not None:
             session.delay = max(0, body.delay_ms) / 1000
+        if body and body.listen is not None:
+            session.listen = body.listen
         session.start()
         return {"status": "running"}
+
+    @app.post("/api/autopilot/listen")
+    async def autopilot_listen(body: AutopilotIn):
+        """Turn listening on or off (D25). Turning it off while listening lets autopilot finish."""
+        session.listen = bool(body.listen)
+        if not session.listen:
+            session.input_event.set()
+        await session.broadcast({"type": "autopilot", "status": session.autopilot_status, "tick": session.tick})
+        return {"listen": session.listen}
 
     @app.post("/api/autopilot/stop")
     async def autopilot_stop():

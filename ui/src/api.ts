@@ -52,7 +52,7 @@ export type TrustRule = { id: string; template: string };
 
 export type LogEntry = {
   n: number;
-  kind: "tick" | "tool" | "edit" | "info" | "undo";
+  kind: "tick" | "tool" | "edit" | "info" | "undo" | "input";
   text: string;
   tick: number;
   score?: number;
@@ -64,7 +64,18 @@ export type LogEntry = {
 
 export type Controller = { name: string; active: boolean; weight: number; query: string; layer: string | null };
 
-export type AutopilotStatus = "idle" | "running" | "awaiting-approval" | "done";
+export type AutopilotStatus = "idle" | "running" | "awaiting-approval" | "listening" | "done";
+
+/** A message on lr:in or lr:out (design D25). */
+export type Message = {
+  id: string;
+  short: string;
+  channel: "in" | "out";
+  order: number;
+  text: string | null;
+  types: string[];
+  triples: Triple[];
+};
 
 export type State = {
   project: string;
@@ -80,6 +91,10 @@ export type State = {
   undo: string | null;
   journal: number;
   package: { title: string; version: string } | null;
+  /** false = app mode: the sheet is read-only unless unlocked (D25) */
+  directEdits: boolean;
+  listen: boolean;
+  messages: { in: number; out: number };
 };
 
 export type Suggestion = { value: string; hint: string; status?: "missing" | "ok" | "full" };
@@ -107,8 +122,13 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
-    const detail = await res.json().catch(() => ({}));
-    throw new Error(detail.detail ?? `${res.status} ${res.statusText}`);
+    const body = await res.json().catch(() => ({}));
+    const d = body.detail;
+    if (d && typeof d === "object" && "message" in d) {
+      const vs = (d.violations ?? []) as Violation[];
+      throw new Error([d.message, ...vs.map((v) => `${v.path ?? v.focus ?? ""} ${v.message}`.trim())].join("\n"));
+    }
+    throw new Error(d ?? `${res.status} ${res.statusText}`);
   }
   return res.json();
 }
@@ -123,10 +143,15 @@ export const api = {
     ),
   suggest: (field: "s" | "p" | "o", s: string, p: string, q: string) =>
     call<SuggestResult>("GET", `/suggest?${new URLSearchParams({ field, s, p, q })}`),
-  addTriple: (s: string, p: string, o: string) => call("POST", "/sheet/triples", { s, p, o }),
-  deleteTriple: (t: Triple) => call("POST", "/sheet/delete", { s: t.s.n3, p: t.p.n3, o: t.o.n3 }),
+  addTriple: (s: string, p: string, o: string, force = false) => call("POST", "/sheet/triples", { s, p, o, force }),
+  deleteTriple: (t: Triple, force = false) =>
+    call("POST", "/sheet/delete", { s: t.s.n3, p: t.p.n3, o: t.o.n3, force }),
+  post: (turtle: string) => call<{ id: string; short: string }>("POST", "/in", { turtle }),
+  messages: (channel: "in" | "out") => call<{ messages: Message[] }>("GET", `/messages?channel=${channel}`),
+  ack: (ids?: string[]) => call<{ acked: number }>("POST", "/out/ack", ids ? { ids } : {}),
+  listen: (listen: boolean) => call("POST", "/autopilot/listen", { listen }),
   apply: (id: string) => call("POST", `/apply/${id}`),
-  start: (delay_ms: number) => call("POST", "/autopilot/start", { delay_ms }),
+  start: (delay_ms: number, listen?: boolean) => call("POST", "/autopilot/start", { delay_ms, listen }),
   stop: () => call("POST", "/autopilot/stop"),
   step: () => call<{ status: string }>("POST", "/autopilot/step"),
   decide: (id: string, approve: boolean, remember?: string) => call("POST", "/approvals", { id, approve, remember }),

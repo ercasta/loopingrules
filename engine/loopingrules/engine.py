@@ -7,6 +7,7 @@ from typing import Callable, Literal as Lit
 
 from rdflib import Graph
 
+from .channels import Message, PostError, messages, mint_post, parse_post
 from .controllers import Controller, load_controllers, scoring_view
 from .operations import (Application, Operation, condition_violation, enumerate_applications, holds,
                          load_operations)
@@ -190,6 +191,40 @@ class Engine:
             for t in add:
                 self.sheet.add(t)
         self._journaled(do, kind="edit")
+
+    # --- channels (D25) ----------------------------------------------------
+    def post(self, text: str):
+        """Post a message to lr:in; returns its minted IRI.
+
+        Raises PostError if the snippet breaks the posting rules, or if it would add
+        SHACL violations (a malformed command is refused, unlike a direct edit).
+        """
+        triples, root = parse_post(text, self.project.model, self.sheet)
+        added, iri = mint_post(triples, root)
+        state = Overlay(self.sheet, (), added)
+        found = validate(state, self.shapes)
+        if found:
+            baseline = {violation_key(v) for v in self.sheet_violations()}
+            new = [v for v in found if violation_key(v) not in baseline]
+            if new:
+                raise PostError("the message breaks the model's shapes", new)
+        apply_delta(self.sheet, (), added)
+        self.project.record(added, (), kind="input", label=iri.n3(self.sheet.namespace_manager))
+        return iri
+
+    def messages(self, channel: str) -> list[Message]:
+        return messages(self.project, channel)
+
+    def ack(self, iris) -> int:
+        """Acknowledge lr:out messages: delete them and their parts. Returns how many."""
+        wanted = set(iris)
+        found = [m for m in self.messages("out") if m.iri in wanted]
+        gone = {t for m in found for t in m.triples}
+        if gone:
+            apply_delta(self.sheet, gone, ())
+            self.project.record((), gone, kind="ack",
+                                label=" ".join(m.iri.n3(self.sheet.namespace_manager) for m in found))
+        return len(found)
 
     def undo(self):
         """Revert the latest journaled change; returns its transaction or None."""

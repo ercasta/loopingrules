@@ -7,6 +7,11 @@
 - *Performance work is paused after lazy validation and overlays (§5). The next option there is reusing matches across ticks.*
 - ***Next focus: the UI and integration wishes in `doc/hmi_improv.md`**: a graph view, `in:`/`out:` channels, a tutorial written as rules, knowledge in packs, an MCP server, and pre-commit hooks.*
 
+*Updated 2026-11-28, third session (`doc/hmi_improv.md` work):*
+- *D24 (named graphs) was drafted, then **deferred**. Graphs don't scope names, and none of the planned features needs them.*
+- ***D25 is built:** `lr:in`/`lr:out` channels as a convention (`channels.py`), listening autopilot, app mode (`lr:directEdits false`), the Messages panel, `lr run --listen`, and `examples/hello-channels`.*
+- ***Next:** the tutorial written as rules (on D25), then the graph view, the MCP server, knowledge in packs, and `lr check` / pre-commit.*
+
 ## 1. State in one paragraph
 LoopingRules is a working "semantic spreadsheet":
 - **Engine:** a Python engine (rdflib + pySHACL). Operations are SPARQL `WHERE`/`DELETE`/`INSERT`; the SHACL shapes guard every result; controllers are SPARQL queries whose scores are summed; autopilot runs until nothing is applicable.

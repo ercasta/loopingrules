@@ -2,6 +2,7 @@
 
     lr apps  <project>                 list applications with validity and scores
     lr run   <project> [--yes] [--max-ticks N] [--save] [--svg out.svg]
+    lr run   <project> --listen [--yes]    messages in on stdin, lr:out messages on stdout
 """
 
 from __future__ import annotations
@@ -104,6 +105,94 @@ def cmd_run(args, console: Console) -> int:
     return 0
 
 
+def read_block(stream) -> str | None:
+    """The next message from a stream: lines up to a blank line. None at end of input."""
+    lines: list[str] = []
+    for line in stream:
+        if not line.strip():
+            if lines:
+                break
+            continue
+        lines.append(line)
+    return "".join(lines) if lines else None
+
+
+def message_turtle(msg, sheet) -> str:
+    from rdflib import Graph
+
+    g = Graph()
+    for prefix, ns in sheet.namespaces():
+        g.bind(prefix, ns, override=True)
+    for t in msg.triples:
+        g.add(t)
+    return g.serialize(format="turtle").strip() + "\n"
+
+
+def listen(eng: Engine, stdin, stdout, log: Console, max_ticks: int | None = None) -> int:
+    """`lr run --listen` (D25): messages in on stdin, lr:out messages out on stdout.
+
+    Each input message is a Turtle snippet, ended by a blank line. Autopilot runs until
+    it rests; then lr:out messages are printed (and acknowledged) as Turtle blocks, and
+    the next message is read. Diagnostics are Turtle comments, so stdout stays parseable.
+    """
+    from .channels import PostError
+
+    def flush() -> None:
+        out = eng.messages("out")
+        for m in out:
+            stdout.write(message_turtle(m, eng.sheet) + "\n")
+        if out:
+            eng.ack([m.iri for m in out])
+        stdout.flush()
+
+    def on_step(r: StepResult) -> None:
+        if r.status == "applied":
+            log.print(f"[dim]tick[/] [bold cyan]{r.application.operation.name}[/] {_bindings(r.application, eng.sheet)}")
+        elif r.status == "awaiting-approval":
+            log.print("[yellow]a tool call needs approval, and nobody can approve it here: stopping[/]")
+
+    while True:
+        result = eng.run(max_ticks=max_ticks, on_step=on_step)
+        flush()
+        if result.status == "awaiting-approval":
+            return 1
+        text = read_block(stdin)
+        if text is None:
+            return 0
+        try:
+            iri = eng.post(text)
+        except PostError as e:
+            stdout.write(f"# refused: {e}\n")
+            for v in e.violations:
+                stdout.write(f"#   {v['focus']} {v['path'] or ''} {v['message']}\n")
+            stdout.write("\n")
+            stdout.flush()
+            continue
+        stdout.write(f"# posted {iri.n3()}\n\n")
+        stdout.flush()
+
+
+def cmd_listen(args, console: Console) -> int:
+    log = Console(stderr=True)
+    trust = TrustStore(args.project)
+
+    def approver(call: PendingCall) -> bool:
+        # stdin carries messages, so there is no one to ask: the allowlist (or --yes) decides
+        if rule := trust.match(call.command):
+            log.print(f"[yellow]⚙ shell[/] {call.command} [green](trust rule {rule.template})[/]")
+            return True
+        if args.yes:
+            log.print(f"[yellow]⚙ shell[/] {call.command} [green](--yes)[/]")
+            return True
+        log.print(f"[red]⚙ refused[/] {call.command} [dim](not in the allowlist)[/]")
+        return False
+
+    eng = Engine(Project.load(args.project), approver=approver)
+    log.print(f"[bold magenta]LoopingRules[/] listening · project [cyan]{args.project}[/] "
+              "[dim](messages on stdin, a blank line ends each one)[/]")
+    return listen(eng, sys.stdin, sys.stdout, log, args.max_ticks)
+
+
 def cmd_serve(args, console: Console) -> int:
     import uvicorn
 
@@ -141,6 +230,8 @@ def cmd_import(args, console: Console) -> int:
         + (f"\nby {manifest.creator}" if manifest.creator else "")
         + (f" · {manifest.license}" if manifest.license else ""),
         title="imported", border_style="green"))
+    if not manifest.direct_edits:
+        console.print("[cyan]App mode:[/] the sheet is read-only in the UI; send input as messages to lr:in.")
     if manifest.may_run:
         console.print("This model may ask to run:")
         for t in manifest.may_run:
@@ -182,6 +273,8 @@ def main(argv: list[str] | None = None) -> int:
     p_run.add_argument("--yes", action="store_true", help="approve every tool call")
     p_run.add_argument("--max-ticks", type=int, default=None)
     p_run.add_argument("--save", action="store_true", help="also write a snapshot (every change is journaled anyway)")
+    p_run.add_argument("--listen", action="store_true",
+                       help="read lr:in messages from stdin and print lr:out messages (D25)")
     p_serve = sub.add_parser("serve", help="serve the API and web UI")
     p_serve.add_argument("project")
     p_serve.add_argument("--host", default="127.0.0.1")
@@ -205,6 +298,8 @@ def main(argv: list[str] | None = None) -> int:
 
     svg = getattr(args, "svg", None)
     console = Console(record=bool(svg), width=110 if svg else None)
+    if args.cmd == "run" and args.listen:
+        return cmd_listen(args, console)
     code = {"apps": cmd_apps, "run": cmd_run, "serve": cmd_serve, "export": cmd_export, "import": cmd_import,
             "add-layer": cmd_add_layer}[args.cmd](args, console)
     if getattr(args, "svg", None):

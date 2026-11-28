@@ -1,10 +1,28 @@
+import type { ReactNode } from "react";
 import { api, type Controller, type LogEntry, type TrustRule } from "../api";
 
-type Props = { controllers: Controller[]; trust: TrustRule[]; log: LogEntry[]; onError: (e: unknown) => void };
+type Props = {
+  controllers: Controller[];
+  trust: TrustRule[];
+  log: LogEntry[];
+  onError: (e: unknown) => void;
+  /** the I/O panel (D25), shown first */
+  io?: ReactNode;
+};
 
-export function Sidebar({ controllers, trust, log, onError }: Props) {
+export function Sidebar({ controllers, trust, log, onError, io }: Props) {
   return (
     <aside className="panel side">
+      {io && (
+        <>
+          <header className="panel-head">
+            <h2>
+              <span className="glyph">⇄</span> Messages
+            </h2>
+          </header>
+          {io}
+        </>
+      )}
       <header className="panel-head">
         <h2>
           <span className="glyph">◎</span> Controllers
@@ -63,7 +81,7 @@ export function Sidebar({ controllers, trust, log, onError }: Props) {
           <li key={e.n} className={`log-${e.kind} ${e.approved === false ? "rejected" : ""}`}>
             <span className="tick">{e.kind === "tick" ? `#${e.tick}` : ""}</span>
             <span className="icon">
-              {e.kind === "tick" ? (e.manual ? "✋" : "⟳") : e.kind === "tool" ? (e.approved ? "⚙" : "⊘") : e.kind === "edit" ? "✎" : e.kind === "undo" ? "↶" : "■"}
+              {e.kind === "tick" ? (e.manual ? "✋" : "⟳") : e.kind === "tool" ? (e.approved ? "⚙" : "⊘") : e.kind === "edit" ? "✎" : e.kind === "undo" ? "↶" : e.kind === "input" ? "⇥" : "■"}
             </span>
             <span className="text">
               {e.kind === "tool" ? <code>{e.text}</code> : e.text}

@@ -1,0 +1,6 @@
+@prefix cmd: <https://example.org/hello/cmd#> .
+@prefix ex:  <https://example.org/hello/> .
+@prefix lr:  <https://loopingrules.org/ns#> .
+
+# Nobody has said hello yet. Prefixes declared here are usable in messages.
+ex:hello a ex:Greeter .

@@ -1,0 +1,50 @@
+@prefix lr:   <https://loopingrules.org/ns#> .
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix cmd:  <https://example.org/hello/cmd#> .
+@prefix ex:   <https://example.org/hello/> .
+
+# --- commands: the model's interface -------------------------------------
+cmd:HelloShape a sh:NodeShape ;
+  sh:targetClass cmd:Hello ;
+  sh:property [ sh:path cmd:name ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                sh:description "who is saying hello" ] .
+
+# --- state -------------------------------------------------------------------
+ex:PersonShape a sh:NodeShape ;
+  sh:targetClass ex:Person ;
+  sh:property [ sh:path ex:name ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path ex:greetings ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ] .
+
+# --- operations --------------------------------------------------------------
+# A message is consumed in the same application that answers it: the main pattern
+# answers once, and the step deletes the message, one row per triple.
+
+ex:greetNew a lr:Operation ; rdfs:label "greet someone new" ;
+  lr:params "m" ;
+  lr:where  """ ?m lr:channel lr:in ; a cmd:Hello ; cmd:name ?n .
+                FILTER NOT EXISTS { ?p a ex:Person ; ex:name ?n }
+                BIND(CONCAT("Hello, ", ?n, "! Nice to meet you.") AS ?text) """ ;
+  lr:insert """ [] a ex:Person ; ex:name ?n ; ex:greetings 1 .
+                [] lr:channel lr:out ; a lr:Say ; lr:text ?text ; lr:replyTo ?m . """ ;
+  lr:steps ( [ lr:where """ ?m ?p ?o . """ ; lr:delete """ ?m ?p ?o . """ ] ) .
+
+ex:greetAgain a lr:Operation ; rdfs:label "greet someone again" ;
+  lr:params "m" ;
+  lr:where  """ ?m lr:channel lr:in ; a cmd:Hello ; cmd:name ?n .
+                ?p a ex:Person ; ex:name ?n ; ex:greetings ?k .
+                BIND(?k + 1 AS ?k2)
+                BIND(CONCAT("Hello again, ", ?n, "! That's ", STR(?k2), " times.") AS ?text) """ ;
+  lr:delete """ ?p ex:greetings ?k . """ ;
+  lr:insert """ ?p ex:greetings ?k2 .
+                [] lr:channel lr:out ; a lr:Say ; lr:text ?text ; lr:replyTo ?m . """ ;
+  lr:steps ( [ lr:where """ ?m ?p ?o . """ ; lr:delete """ ?m ?p ?o . """ ] ) .
+
+ex:notUnderstood a lr:Operation ; rdfs:label "answer: not understood" ;
+  lr:params "m" ;
+  lr:where  """ ?m lr:channel lr:in .
+                FILTER NOT EXISTS { ?m a cmd:Hello } """ ;
+  lr:insert """ [] lr:channel lr:out ; a lr:Say ; lr:replyTo ?m ;
+                   lr:text "Sorry, I only understand cmd:Hello, e.g.  [] a cmd:Hello ; cmd:name \\"Ada\\" ." . """ ;
+  lr:steps ( [ lr:where """ ?m ?p ?o . """ ; lr:delete """ ?m ?p ?o . """ ] ) .

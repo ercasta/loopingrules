@@ -378,7 +378,7 @@ ex:forgetFolder a lr:Operation ;
 - **A knowledge graph's prefixes must not enter the query prologue.**
 
 ### D25. Input and output channels are a convention
-*Status: agreed, not built. The `in:` and `out:` of `doc/hmi_improv.md` are the resources `lr:in` and `lr:out`.*
+*Status: built (2026-11-28). The `in:` and `out:` of `doc/hmi_improv.md` are the resources `lr:in` and `lr:out`. Example: `examples/hello-channels`.*
 
 **Goal:** humans and tools send commands to a running model, and the model answers, all as SPOs. This is the base for the tutorial, the MCP server and tool integration.
 
@@ -443,6 +443,22 @@ gen:m2 lr:channel lr:out ; a lr:Say ; lr:text "Added." ; lr:replyTo gen:m1 .    
   - The HTTP API serves the UI, so its edit endpoints follow the app-mode lock, not the tool rule. It listens on localhost by default (`--host`).
 - **The tutorial ships in app mode.**
 - **Amends D13:** direct edits can still make the sheet invalid, but only where direct edits are allowed.
+
+**Implementation notes (as built):**
+- `channels.py` parses and checks posts, and lists messages; `Engine.post`, `Engine.messages` and `Engine.ack` do the journaled work.
+- **A post may not use `lr:` terms**, except `lr:text`, `lr:replyTo` and `lr:Say`. Otherwise a tool could post, for example, an `lr:ShellCall` with status `lr:Pending`, or a message that claims to be on `lr:out`.
+- **A message's parts** are the minted (`gen:`) nodes that only the message and its other parts refer to, like blank nodes in Turtle. A minted node that anything else refers to is shared state: it isn't returned with the message, and acknowledging doesn't delete it.
+- **How an operation consumes a message.** Answer in the operation's own `lr:insert`, and delete the message in a step: `lr:steps ( [ lr:where "?m ?p ?o" ; lr:delete "?m ?p ?o" ] )`. Don't put `?m ?p ?o` in the main `lr:where`. Rows are merged by `lr:params`, but each row mints its own `[]`, so the answer would be repeated once per triple of the message.
+- **API:**
+  - `POST /api/in` returns 422 with the violations when a post is refused.
+  - `GET /api/messages?channel=in|out` lists messages, and `POST /api/out/ack` acknowledges them (all of them without `ids`).
+  - `POST /api/autopilot/listen` switches listening on or off, and `start` takes `listen` too. The new status is `listening`.
+  - Edit endpoints take `force` for "unlock editing".
+- **`lr run --listen`:**
+  - stdout carries only Turtle: `lr:out` messages, plus `# posted <iri>` and `# refused: …` comments. The log goes to stderr.
+  - A tool call that needs approval and doesn't match the allowlist is refused; `--yes` approves everything.
+  - If a call is still left pending, the command exits with code 1.
+- **Not built yet:** the per-project grant of direct edits to tools. No tool front can edit yet; it comes with the MCP server.
 
 **Not in this decision:** the tutorial (it builds on this), the MCP server, and any routing beyond the two channels. More channels would just be more resources than `lr:in`/`lr:out`; nothing in the engine assumes there are only two.
 

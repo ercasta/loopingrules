@@ -197,6 +197,34 @@ A pack declares what it extends:
 
 `lr add-layer` checks that the project *is* `folder-scan`, and refuses packs that contain a model or a sheet. To remove a pack, delete its folder under `layers/`.
 
+## Talk to a running model: `lr:in` and `lr:out`
+
+Humans and tools send **messages** to a model, and the model answers with messages. A message is just a resource on a channel. There is no new engine concept, only a convention:
+
+```turtle
+# you post this to lr:in ...
+[] a cmd:Hello ; cmd:name "Ada" .
+
+# ... an operation consumes it and answers on lr:out
+gen:7b7e31e6 lr:channel lr:out ; a lr:Say ;
+  lr:text "Hello, Ada! Nice to meet you." ; lr:replyTo gen:5cf580d1 .
+```
+
+- **A message asks; it doesn't edit.** A post may only describe its own new nodes, so it can't change the state directly. The model's operations decide what happens.
+- **Commands are checked by your shapes.** A post that breaks them is refused, with the violations.
+- **Listening.** With *listen* on, autopilot doesn't stop when nothing is left to do: it waits for the next message.
+- **App mode.** A package can declare `lr:directEdits false`. The sheet becomes read-only, and input goes through the Messages panel. You can still unlock editing for a session.
+
+![A model in app mode, listening: answers in the Messages panel, and a malformed command refused by its shape](doc/ui-channels.png)
+
+The same works headless, as a pipe: messages in on stdin, answers out on stdout, all as Turtle.
+
+```bash
+printf '[] a cmd:Hello ; cmd:name "Ada" .\n' | lr run examples/hello-channels --listen
+```
+
+See [`hello-channels`](examples/hello-channels) and design D25.
+
 ## Share models, controllers and examples
 
 ![The export menu](doc/ui-export.png)
@@ -325,8 +353,10 @@ my-project/
 - [x] Sharing through `.lr.zip` exports with a manifest of declared commands
 - [x] Controller packs (layered controllers) that steer a base model
 - [x] Performance, step 1: each SPARQL query parsed once (7–10× faster)
-- [ ] Performance: lazy validation, overlays, incremental SHACL (see [`doc/handoff.md`](doc/handoff.md))
-- [ ] Named graphs (full SPOG quads)
+- [x] Performance, step 2: lazy validation and overlays
+- [ ] Performance: incremental matching, incremental SHACL (see [`doc/handoff.md`](doc/handoff.md))
+- [x] Input/output channels (`lr:in`/`lr:out`), listening autopilot, app mode
+- [ ] Named graphs (full SPOG quads): deferred, see D24
 - [x] An allowlist for approving tool calls automatically
 - [ ] Controllers learned from your manual choices (anti-unification, RIPPER)
 

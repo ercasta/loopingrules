@@ -3,9 +3,18 @@ import { api, type ObjectConstraint, type Sheet, type Suggestion } from "../api"
 import { Combobox } from "./Combobox";
 import { TermView } from "./TermView";
 
-type Props = { sheet: Sheet | null; onError: (e: unknown) => void };
+type Props = {
+  sheet: Sheet | null;
+  onError: (e: unknown) => void;
+  /** app mode (D25): the model turned direct edits off */
+  appMode?: boolean;
+  /** the user unlocked editing for this session, despite app mode */
+  unlocked?: boolean;
+  onUnlock?: (unlocked: boolean) => void;
+};
 
-export function SheetPanel({ sheet, onError }: Props) {
+export function SheetPanel({ sheet, onError, appMode = false, unlocked = false, onUnlock }: Props) {
+  const locked = appMode && !unlocked;
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState({ s: "", p: "", o: "" });
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -56,7 +65,7 @@ export function SheetPanel({ sheet, onError }: Props) {
 
   const add = async () => {
     try {
-      await api.addTriple(draft.s, draft.p, draft.o);
+      await api.addTriple(draft.s, draft.p, draft.o, appMode);
       setDraft({ s: draft.s, p: "", o: "" });
       pRef.current?.focus();
     } catch (e) {
@@ -124,7 +133,7 @@ export function SheetPanel({ sheet, onError }: Props) {
                   ].join(" ")}
                 >
                   <td className="rownum">{i + 1}</td>
-                  <td className="subj" title={problems?.join("\n") ?? "click to add a property"} onClick={() => editSubject(t.s.short === "a" ? "" : t.s.short)}>
+                  <td className="subj" title={problems?.join("\n") ?? "click to add a property"} onClick={() => !locked && editSubject(t.s.short === "a" ? "" : t.s.short)}>
                     {first && (
                       <>
                         <TermView term={t.s} />
@@ -140,9 +149,11 @@ export function SheetPanel({ sheet, onError }: Props) {
                     {t.changed && <span className="new-tag">new</span>}
                   </td>
                   <td className="act">
-                    <button className="icon" title="Delete triple" onClick={() => api.deleteTriple(t).catch(onError)}>
-                      ×
-                    </button>
+                    {!locked && (
+                      <button className="icon" title="Delete triple" onClick={() => api.deleteTriple(t, appMode).catch(onError)}>
+                        ×
+                      </button>
+                    )}
                   </td>
                 </tr>
               );
@@ -151,7 +162,30 @@ export function SheetPanel({ sheet, onError }: Props) {
         </table>
       </div>
 
-      <div className="add-zone">
+      {appMode && (
+        <div className={`app-mode ${locked ? "" : "unlocked"}`}>
+          {locked ? (
+            <span>
+              <b>App mode:</b> this model takes input as messages. Send them in the Messages panel.
+            </span>
+          ) : (
+            <span>
+              <b>Editing unlocked:</b> direct edits bypass the model's commands.
+            </span>
+          )}
+          <button
+            className="btn ghost small"
+            onClick={() => {
+              if (locked && !window.confirm("Edit the sheet directly? This model expects input as messages; direct edits can leave it in a state its operations don't expect.")) return;
+              onUnlock?.(locked);
+            }}
+          >
+            {locked ? "Unlock editing" : "Lock again"}
+          </button>
+        </div>
+      )}
+
+      <div className="add-zone" hidden={locked}>
         {missing.length > 0 && (
           <div className="assist missing">
             <span className="label">
