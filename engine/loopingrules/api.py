@@ -497,6 +497,7 @@ def create_app(project_path: str | Path, trust_path: str | Path | None = None) -
                              bindings={k: session.terms.short(v) for k, v in a.bindings.items()})
         await session._mutate(lambda: engine.apply(a), log=entry)
         await session.broadcast({"type": "tick", "tick": session.tick, "entry": entry})
+        session.input_event.set()  # a manual move wakes a listening autopilot (D26)
         return {"version": session.version}
 
     @app.post("/api/autopilot/start")
@@ -572,6 +573,7 @@ def create_app(project_path: str | Path, trust_path: str | Path | None = None) -
             raise HTTPException(404, "no such controller")
         c.active = not c.active
         session._apps = None
+        session.input_event.set()
         await session.broadcast({"type": "controllers-changed"})
         return {"active": c.active}
 
@@ -595,6 +597,7 @@ def create_app(project_path: str | Path, trust_path: str | Path | None = None) -
             raise HTTPException(404, "nothing to undo")
         entry = session._log("undo", f"undo {tx.headers.get('kind', '')} {tx.headers.get('label', '')}".strip())
         await session._mutate(engine.undo, log=entry)
+        session.input_event.set()
         return {"version": session.version}
 
     @app.post("/api/project/save")
@@ -617,7 +620,7 @@ def create_app(project_path: str | Path, trust_path: str | Path | None = None) -
 
         @app.get("/")
         async def index():
-            return FileResponse(UI_DIST / "index.html")
+            return FileResponse(UI_DIST / "index.html", headers={"Cache-Control": "no-cache"})  # new builds show up at once
 
     return app
 

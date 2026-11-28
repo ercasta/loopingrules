@@ -2,6 +2,7 @@
 
     lr apps  <project>                 list applications with validity and scores
     lr run   <project> [--yes] [--max-ticks N] [--save] [--svg out.svg]
+    lr tutorial [dir]                    copy the tutorial to dir (default ./lr-tutorial) and serve it
     lr run   <project> --listen [--yes]    messages in on stdin, lr:out messages on stdout
 """
 
@@ -205,6 +206,29 @@ def cmd_serve(args, console: Console) -> int:
     return 0
 
 
+def cmd_tutorial(args, console: Console) -> int:
+    """Copy the tutorial (examples/tutorial) to a folder, unless it is there already, and serve it."""
+    import shutil
+    from pathlib import Path
+
+    source = Path(__file__).resolve().parents[2] / "examples" / "tutorial"
+    dest = Path(args.dir)
+    if not dest.exists():
+        if not source.is_dir():
+            console.print(f"[red]the tutorial was not found at {source}[/]")
+            return 1
+        shutil.copytree(source, dest, ignore=shutil.ignore_patterns(".lr"))
+        console.print(f"[green]tutorial copied to[/] {dest}")
+    elif not (dest / "model.ttl").exists():
+        console.print(f"[red]{dest} exists and is not a LoopingRules project[/]")
+        return 1
+    else:
+        console.print(f"resuming the tutorial in {dest} [dim](delete {dest / '.lr'} to start over)[/]")
+    console.print("Open the page, tick [bold]listen[/] and press [bold]Autopilot[/].")  # ASCII only: legacy Windows consoles are cp1252
+    args.project = str(dest)
+    return cmd_serve(args, console)
+
+
 def cmd_export(args, console: Console) -> int:
     from .package import export_project
 
@@ -279,6 +303,10 @@ def main(argv: list[str] | None = None) -> int:
     p_serve.add_argument("project")
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--port", type=int, default=8765)
+    p_tut = sub.add_parser("tutorial", help="learn LoopingRules: copy the tutorial to a folder and serve it")
+    p_tut.add_argument("dir", nargs="?", default="lr-tutorial", help="where to put it (default: ./lr-tutorial)")
+    p_tut.add_argument("--host", default="127.0.0.1")
+    p_tut.add_argument("--port", type=int, default=8765)
     p_exp = sub.add_parser("export", help="write a shareable .lr.zip of a project's model and controllers")
     p_exp.add_argument("project")
     p_exp.add_argument("-o", "--out", help="output file (default: <title>-<version>.lr.zip next to the project)")
@@ -300,8 +328,8 @@ def main(argv: list[str] | None = None) -> int:
     console = Console(record=bool(svg), width=110 if svg else None)
     if args.cmd == "run" and args.listen:
         return cmd_listen(args, console)
-    code = {"apps": cmd_apps, "run": cmd_run, "serve": cmd_serve, "export": cmd_export, "import": cmd_import,
-            "add-layer": cmd_add_layer}[args.cmd](args, console)
+    code = {"apps": cmd_apps, "run": cmd_run, "serve": cmd_serve, "tutorial": cmd_tutorial,
+            "export": cmd_export, "import": cmd_import, "add-layer": cmd_add_layer}[args.cmd](args, console)
     if getattr(args, "svg", None):
         console.save_svg(args.svg, title="lr " + " ".join(argv if argv is not None else sys.argv[1:]))
     return code

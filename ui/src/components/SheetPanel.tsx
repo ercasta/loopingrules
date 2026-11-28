@@ -3,6 +3,8 @@ import { api, type ObjectConstraint, type Sheet, type Suggestion } from "../api"
 import { Combobox } from "./Combobox";
 import { TermView } from "./TermView";
 
+const LR_CHANNEL = "<https://loopingrules.org/ns#channel>";
+
 type Props = {
   sheet: Sheet | null;
   onError: (e: unknown) => void;
@@ -16,6 +18,8 @@ type Props = {
 export function SheetPanel({ sheet, onError, appMode = false, unlocked = false, onUnlock }: Props) {
   const locked = appMode && !unlocked;
   const [query, setQuery] = useState("");
+  // Messages (D25) are shown in the Messages panel, so the sheet hides them unless asked.
+  const [showMessages, setShowMessages] = useState(false);
   const [draft, setDraft] = useState({ s: "", p: "", o: "" });
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -33,11 +37,17 @@ export function SheetPanel({ sheet, onError, appMode = false, unlocked = false, 
     return m;
   }, [sheet]);
 
+  const messageSubjects = useMemo(
+    () => new Set((sheet?.triples ?? []).filter((t) => t.p.n3 === LR_CHANNEL).map((t) => t.s.n3)),
+    [sheet],
+  );
+
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const all = sheet?.triples ?? [];
+    let all = sheet?.triples ?? [];
+    if (!showMessages) all = all.filter((t) => !messageSubjects.has(t.s.n3));
     return q ? all.filter((t) => `${t.s.short} ${t.p.short} ${t.o.short}`.toLowerCase().includes(q)) : all;
-  }, [sheet, query]);
+  }, [sheet, query, showMessages, messageSubjects]);
 
   // --- SHACL-driven editing (D15) -------------------------------------
   const pRef = useRef<HTMLInputElement>(null);
@@ -97,6 +107,12 @@ export function SheetPanel({ sheet, onError, appMode = false, unlocked = false, 
             <span className="stat good">✓ valid</span>
           )}
         </div>
+        {messageSubjects.size > 0 && (
+          <label className="show-messages" title="Messages on lr:in / lr:out are shown in the Messages panel">
+            <input type="checkbox" checked={showMessages} onChange={(e) => setShowMessages(e.target.checked)} />
+            {messageSubjects.size} messages
+          </label>
+        )}
         <input
           className="search"
           placeholder="Filter triples…"

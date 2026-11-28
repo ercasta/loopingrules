@@ -10,7 +10,10 @@
 *Updated 2026-11-28, third session (`doc/hmi_improv.md` work):*
 - *D24 (named graphs) was drafted, then **deferred**. Graphs don't scope names, and none of the planned features needs them.*
 - ***D25 is built:** `lr:in`/`lr:out` channels as a convention (`channels.py`), listening autopilot, app mode (`lr:directEdits false`), the Messages panel, `lr run --listen`, and `examples/hello-channels`.*
-- ***Next:** the tutorial written as rules (on D25), then the graph view, the MCP server, knowledge in packs, and `lr check` / pre-commit.*
+- ***D26 is built:** the tutorial, `examples/tutorial` + `lr tutorial`, tested end to end in `test_tutorial.py`.*
+  - *UI polish that came with it:* the sheet hides message triples (with a checkbox to show them), the Messages panel keeps the newest message in view, and `index.html` is served with `no-cache`.
+  - ***Known rough edge:** the sheet scrolls to the first changed row, which in the tutorial is often the tutorial's own bookkeeping (`tut:Lx tut:presented true`), so the learner's `ex:` rows scroll out of view. Possible fixes: scroll only for edits the user made, or prefer changed rows of the user's namespaces.*
+- ***Next:** the graph view (Cytoscape.js, not started), the MCP server, knowledge in packs, and `lr check` / pre-commit.*
 
 ## 1. State in one paragraph
 LoopingRules is a working "semantic spreadsheet":

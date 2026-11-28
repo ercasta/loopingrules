@@ -1,0 +1,167 @@
+@prefix lr:   <https://loopingrules.org/ns#> .
+@prefix tut:  <https://loopingrules.org/tutorial#> .
+@prefix ex:   <https://example.org/> .
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+# The tutorial (design D26) is an ordinary model:
+#   - shapes: the rules of the learner's world, and of the commands it accepts;
+#   - tutorial operations: present a lesson, answer messages, check exercises;
+#   - world operations: what the learner's world can do, unlocked lesson by lesson;
+#   - a no-op "wait", so autopilot can rest until the learner does something.
+# Which operation runs is decided by controllers.ttl.
+
+# ================================================================== shapes
+
+ex:PersonShape a sh:NodeShape ;
+  sh:targetClass ex:Person ;
+  sh:property [ sh:path ex:name ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                sh:name "name" ; sh:description "what the person is called" ] ;
+  sh:property [ sh:path ex:knows ; sh:class ex:Person ; sh:description "someone this person knows" ] .
+
+# A command (lesson 7): checked when it is posted, like everything else.
+ex:IntroduceShape a sh:NodeShape ;
+  sh:targetClass ex:Introduce ;
+  sh:property [ sh:path ex:who ; sh:minCount 1 ; sh:maxCount 1 ; sh:class ex:Person ] ;
+  sh:property [ sh:path ex:to ;  sh:minCount 1 ; sh:maxCount 1 ; sh:class ex:Person ] .
+
+# ====================================================== tutorial operations
+
+tut:present a lr:Operation ; rdfs:label "present the lesson" ;
+  lr:where  """ tut:progress tut:current ?lesson . ?lesson tut:intro ?text .
+                FILTER NOT EXISTS { ?lesson tut:presented true } """ ;
+  lr:insert """ ?lesson tut:presented true .
+                [] lr:channel lr:out ; a lr:Say ; lr:text ?text . """ .
+
+# Each message is consumed by the operation that answers it: the answer is in the
+# operation's own insert, and a step deletes the message (see design D25).
+
+tut:hint a lr:Operation ; rdfs:label "give a hint" ;
+  lr:params "m" ;
+  lr:where  """ ?m lr:channel lr:in ; a tut:Hint .
+                tut:progress tut:current ?lesson . ?lesson tut:hint ?text . """ ;
+  lr:insert """ [] lr:channel lr:out ; a lr:Say ; lr:text ?text ; lr:replyTo ?m . """ ;
+  lr:steps ( [ lr:where """ ?m ?p ?o . """ ; lr:delete """ ?m ?p ?o . """ ] ) .
+
+tut:next a lr:Operation ; rdfs:label "next lesson" ;
+  lr:params "m" ;
+  lr:where  """ ?m lr:channel lr:in ; a tut:Next .
+                tut:progress tut:current ?lesson . ?lesson a tut:Reading ; tut:next ?following . """ ;
+  lr:delete """ tut:progress tut:current ?lesson . """ ;
+  lr:insert """ tut:progress tut:current ?following . """ ;
+  lr:steps ( [ lr:where """ ?m ?p ?o . """ ; lr:delete """ ?m ?p ?o . """ ] ) .
+
+tut:skip a lr:Operation ; rdfs:label "skip the lesson" ;
+  lr:params "m" ;
+  lr:where  """ ?m lr:channel lr:in ; a tut:Skip .
+                tut:progress tut:current ?lesson . ?lesson tut:next ?following . """ ;
+  lr:delete """ tut:progress tut:current ?lesson . """ ;
+  lr:insert """ tut:progress tut:current ?following .
+                [] lr:channel lr:out ; a lr:Say ; lr:text "Skipped." ; lr:replyTo ?m . """ ;
+  lr:steps ( [ lr:where """ ?m ?p ?o . """ ; lr:delete """ ?m ?p ?o . """ ] ) .
+
+# Matches every message. The "fallback" controller scores it below any specific
+# answer, so it only runs when nothing else can handle the message.
+tut:notUnderstood a lr:Operation ; rdfs:label "answer: not understood" ;
+  lr:params "m" ;
+  lr:where  """ ?m lr:channel lr:in . """ ;
+  lr:insert """ [] lr:channel lr:out ; a lr:Say ; lr:replyTo ?m ;
+                   lr:text "I can't do anything with that right now. I understand  [] a tut:Hint .  for help,  [] a tut:Skip .  to skip a lesson, and  [] a tut:Next .  on lessons without an exercise." . """ ;
+  lr:steps ( [ lr:where """ ?m ?p ?o . """ ; lr:delete """ ?m ?p ?o . """ ] ) .
+
+# --- one check per lesson: its WHERE is the exercise ------------------------------
+# The exercise is a FILTER EXISTS, so it binds nothing: one application per lesson.
+
+tut:checkL1 a lr:Operation ; rdfs:label "check lesson 1" ;
+  lr:where  """ tut:progress tut:current tut:L1 . tut:L1 tut:presented true ; tut:praise ?text ; tut:next ?following .
+                FILTER EXISTS { ?x a ex:Person } """ ;
+  lr:delete """ tut:progress tut:current tut:L1 . """ ;
+  lr:insert """ tut:progress tut:current ?following . [] lr:channel lr:out ; a lr:Say ; lr:text ?text . """ .
+
+tut:checkL2 a lr:Operation ; rdfs:label "check lesson 2" ;
+  lr:where  """ tut:progress tut:current tut:L2 . tut:L2 tut:presented true ; tut:praise ?text ; tut:next ?following .
+                FILTER EXISTS { ?x a ex:Person ; ex:name ?name } """ ;
+  lr:delete """ tut:progress tut:current tut:L2 . """ ;
+  lr:insert """ tut:progress tut:current ?following . [] lr:channel lr:out ; a lr:Say ; lr:text ?text . """ .
+
+tut:checkL3 a lr:Operation ; rdfs:label "check lesson 3" ;
+  lr:where  """ tut:progress tut:current tut:L3 . tut:L3 tut:presented true ; tut:praise ?text ; tut:next ?following .
+                FILTER EXISTS { ?a a ex:Person ; ex:knows ?b . ?b a ex:Person . FILTER(?a != ?b) } """ ;
+  lr:delete """ tut:progress tut:current tut:L3 . """ ;
+  lr:insert """ tut:progress tut:current ?following . [] lr:channel lr:out ; a lr:Say ; lr:text ?text . """ .
+
+tut:checkL4 a lr:Operation ; rdfs:label "check lesson 4" ;
+  lr:where  """ tut:progress tut:current tut:L4 . tut:L4 tut:presented true ; tut:praise ?text ; tut:next ?following .
+                FILTER EXISTS { ?a a ex:Person . ?b a ex:Person . FILTER(?a != ?b) }
+                FILTER NOT EXISTS { ?p a ex:Person . FILTER NOT EXISTS { ?p ex:name ?name } } """ ;
+  lr:delete """ tut:progress tut:current tut:L4 . """ ;
+  lr:insert """ tut:progress tut:current ?following . [] lr:channel lr:out ; a lr:Say ; lr:text ?text . """ .
+
+tut:checkL5 a lr:Operation ; rdfs:label "check lesson 5" ;
+  lr:where  """ tut:progress tut:current tut:L5 . tut:L5 tut:presented true ; tut:praise ?text ; tut:next ?following .
+                FILTER EXISTS { ?a ex:introduced ?b } """ ;
+  lr:delete """ tut:progress tut:current tut:L5 . """ ;
+  lr:insert """ tut:progress tut:current ?following . [] lr:channel lr:out ; a lr:Say ; lr:text ?text . """ .
+
+tut:checkL6 a lr:Operation ; rdfs:label "check lesson 6" ;
+  lr:where  """ tut:progress tut:current tut:L6 . tut:L6 tut:presented true ; tut:praise ?text ; tut:next ?following .
+                FILTER EXISTS { ?p ex:greetingStyle "casual" } """ ;
+  lr:delete """ tut:progress tut:current tut:L6 . """ ;
+  lr:insert """ tut:progress tut:current ?following . [] lr:channel lr:out ; a lr:Say ; lr:text ?text . """ .
+
+tut:checkL7 a lr:Operation ; rdfs:label "check lesson 7" ;
+  lr:where  """ tut:progress tut:current tut:L7 . tut:L7 tut:presented true ; tut:praise ?text ; tut:next ?following .
+                FILTER EXISTS { ?i a ex:Introduction } """ ;
+  lr:delete """ tut:progress tut:current tut:L7 . """ ;
+  lr:insert """ tut:progress tut:current ?following . [] lr:channel lr:out ; a lr:Say ; lr:text ?text . """ .
+
+# ========================================================= world operations
+# Each one is unlocked by a lesson: until then, the UI lists it as blocked by its guard.
+
+tut:introduce a lr:Operation ; rdfs:label "introduce" ;
+  lr:params "a b" ;
+  lr:where  """ ?a ex:knows ?b ; ex:name ?aName . ?b ex:name ?bName .
+                FILTER NOT EXISTS { ?a ex:introduced ?b }
+                BIND(CONCAT(?aName, " has been introduced to ", ?bName, ".") AS ?text) """ ;
+  lr:requires [ rdfs:label "unlocked in lesson 5" ;
+                lr:ask """ tut:progress tut:current ?l . ?l tut:order ?k . FILTER(?k >= 5) """ ] ;
+  lr:insert """ ?a ex:introduced ?b .
+                [] lr:channel lr:out ; a lr:Say ; lr:text ?text . """ .
+
+tut:greetFormally a lr:Operation ; rdfs:label "greet formally" ;
+  lr:params "p" ;
+  lr:where  """ ?p a ex:Person ; ex:name ?name . FILTER NOT EXISTS { ?p ex:greetingStyle ?style }
+                BIND(CONCAT("Good day, ", ?name, ". A pleasure.") AS ?text) """ ;
+  lr:requires [ rdfs:label "unlocked in lesson 6" ;
+                lr:ask """ tut:progress tut:current ?l . ?l tut:order ?k . FILTER(?k >= 6) """ ] ;
+  lr:insert """ ?p ex:greetingStyle "formal" .
+                [] lr:channel lr:out ; a lr:Say ; lr:text ?text . """ .
+
+tut:greetCasually a lr:Operation ; rdfs:label "greet casually" ;
+  lr:params "p" ;
+  lr:where  """ ?p a ex:Person ; ex:name ?name . FILTER NOT EXISTS { ?p ex:greetingStyle ?style }
+                BIND(CONCAT("Hey ", ?name, "! 👋") AS ?text) """ ;
+  lr:requires [ rdfs:label "unlocked in lesson 6" ;
+                lr:ask """ tut:progress tut:current ?l . ?l tut:order ?k . FILTER(?k >= 6) """ ] ;
+  lr:insert """ ?p ex:greetingStyle "casual" .
+                [] lr:channel lr:out ; a lr:Say ; lr:text ?text . """ .
+
+# The handler for the ex:Introduce command (lesson 7). The request leaves a fact
+# behind, an ex:Introduction, and the message itself is deleted.
+tut:fulfilIntroduce a lr:Operation ; rdfs:label "fulfil: introduce" ;
+  lr:params "m" ;
+  lr:where  """ ?m lr:channel lr:in ; a ex:Introduce ; ex:who ?who ; ex:to ?to .
+                OPTIONAL { ?who ex:name ?whoName } OPTIONAL { ?to ex:name ?toName }
+                BIND(CONCAT("Done: ", COALESCE(?toName, STR(?to)), " now knows ", COALESCE(?whoName, STR(?who)), ".") AS ?text) """ ;
+  lr:requires [ rdfs:label "unlocked in lesson 7" ;
+                lr:ask """ tut:progress tut:current ?l . ?l tut:order ?k . FILTER(?k >= 7) """ ] ;
+  lr:insert """ ?to ex:knows ?who .
+                [] a ex:Introduction ; ex:who ?who ; ex:to ?to .
+                [] lr:channel lr:out ; a lr:Say ; lr:text ?text ; lr:replyTo ?m . """ ;
+  lr:steps ( [ lr:where """ ?m ?p ?o . """ ; lr:delete """ ?m ?p ?o . """ ] ) .
+
+# ==================================================================== rest
+# Always available, changes nothing (design D21). When it wins, autopilot rests;
+# with "listen" on, it waits for the next edit or message.
+tut:wait a lr:Operation ; rdfs:label "wait for you" ; lr:where "" .

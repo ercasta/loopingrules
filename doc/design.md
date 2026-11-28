@@ -441,7 +441,7 @@ gen:m2 lr:channel lr:out ; a lr:Say ; lr:text "Added." ; lr:replyTo gen:m1 .    
   - The user can grant direct edits to tools for one project. That grant is stored per user in `~/.loopingrules/trust.ttl`, like command templates (D10), so a shared project can't grant it to itself.
   - Here the restriction *is* a boundary: a tool may ask, but not rewrite.
   - The HTTP API serves the UI, so its edit endpoints follow the app-mode lock, not the tool rule. It listens on localhost by default (`--host`).
-- **The tutorial ships in app mode.**
+- ~~The tutorial ships in app mode.~~ **Revised in D26:** the tutorial keeps direct edits on, because its exercises are edits to the sheet, which a post can't make.
 - **Amends D13:** direct edits can still make the sheet invalid, but only where direct edits are allowed.
 
 **Implementation notes (as built):**
@@ -461,6 +461,64 @@ gen:m2 lr:channel lr:out ; a lr:Say ; lr:text "Added." ; lr:replyTo gen:m1 .    
 - **Not built yet:** the per-project grant of direct edits to tools. No tool front can edit yet; it comes with the MCP server.
 
 **Not in this decision:** the tutorial (it builds on this), the MCP server, and any routing beyond the two channels. More channels would just be more resources than `lr:in`/`lr:out`; nothing in the engine assumes there are only two.
+
+### D26. The tutorial is a model
+*Status: built (2026-11-28): `examples/tutorial`, `lr tutorial`, `engine/tests/test_tutorial.py`.*
+
+**Goal:** get used to thinking in SPOs, by doing. The tutorial is an ordinary project, `examples/tutorial`, built only from data, operations, shapes and controllers. The only code added is the `lr tutorial` command.
+
+**Direct edits stay on (this revises D25).** The exercises are edits to the sheet, such as `ex:me ex:knows ex:grace`, and a post can only describe its own new nodes. So you practise in the sheet and talk to the tutorial with messages, which teaches both ways of giving input.
+
+**Lessons are data in the sheet:**
+```turtle
+tut:L3 a tut:Lesson ; tut:order 3 ; tut:next tut:L4 ;
+  tut:intro "…" ; tut:hint "…" ; tut:praise "…" .
+tut:progress tut:current tut:L3 .
+```
+- Progress is a triple too. Editing it is allowed, and that's a lesson in itself: the tutorial's state is your data.
+- `tut:` is the tutorial's own machinery; `ex:` is the learner's world.
+- The first message, a welcome on `lr:out`, is in the seed, so it shows up before anything runs. It asks the learner to tick *listen* and start autopilot.
+
+**Operations:**
+- **Generic ones work for any lesson:**
+  - *present* says the current lesson's intro, once (`tut:presented true`);
+  - *hint* answers `[] a tut:Hint .`;
+  - *next* answers `[] a tut:Next .`, on reading lessons only (`a tut:Reading`);
+  - *skip* answers `[] a tut:Skip .`;
+  - *not understood* answers any other message.
+- **One check operation per lesson.** Its `WHERE` is the exercise, written as `FILTER EXISTS { … }` so it binds no extra variables. When it matches, the check says the praise text and moves `tut:current` on.
+  - Lessons can't store their check as data, because an operation can't evaluate a pattern it reads from the sheet. That would be an engine feature, and we prefer conventions.
+- **The learner's world has its own operations:** *introduce*, *greet formally*, *greet casually*, and the handler for the `ex:Introduce` command. Each is guarded (`lr:requires`, D22) by the lesson that unlocks it, so before then the UI shows them as "blocked by: unlocked in lesson N".
+- **A no-op *wait* (D21)** lets autopilot rest while there's nothing the tutorial should do by itself. Listening (D25) then waits for the learner's next edit, message or manual application.
+
+**Controllers (they're also lesson material):**
+| Controller | Scores |
+|---|---|
+| tutorial first | 2 for the tutorial's own operations and the command handler |
+| fallback | 1 for *not understood*, so a specific answer always wins |
+| rest | 0.5 for *wait* |
+| prefer formal (active) | 3 for *greet formally* |
+| prefer casual (inactive) | 3 for *greet casually* |
+
+Operations in the learner's world score 0. So *wait* beats *introduce*, and the learner applies it by hand in lesson 5. In lesson 6, switching the controllers over changes what autopilot does.
+
+**Curriculum:**
+| # | Lesson | Exercise / check |
+|---|---|---|
+| 0 | Messages | read it, then send `[] a tut:Next .` |
+| 1 | A triple | some `?x a ex:Person` |
+| 2 | Properties and literals | a person with an `ex:name` |
+| 3 | Links | `?a ex:knows ?b`, where `?b` is also an `ex:Person` |
+| 4 | Shapes | a shape requires names; at least two people, and none without a name |
+| 5 | Operations | apply *introduce* by hand; check: some `ex:introduced` |
+| 6 | Controllers | switch to casual, then add a person; check: some `ex:greetingStyle "casual"` |
+| 7 | Commands | post `[] a ex:Introduce ; ex:who … ; ex:to … .`; check: some `ex:Introduction` (the record of a request, which is a fact) |
+| 8 | Wrap-up | reading only, with pointers to the other examples |
+
+**Delivery and checks:**
+- `lr tutorial [dir]` copies `examples/tutorial` to `dir` (default `./lr-tutorial`) unless it already exists, and serves it. Running it again resumes where the learner left off.
+- A test plays the whole tutorial with scripted edits, posts, a manual application and a controller switch. That keeps lesson changes from breaking the flow, and documents the intended solutions.
+- **Small API change:** a manual application, an undo and a controller switch now wake a listening autopilot, like posts and edits do.
 
 ## Open questions
 

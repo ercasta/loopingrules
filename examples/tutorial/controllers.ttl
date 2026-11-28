@@ -1,0 +1,32 @@
+@prefix lr:   <https://loopingrules.org/ns#> .
+@prefix tut:  <https://loopingrules.org/tutorial#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+# Controllers score each possible action; autopilot runs the highest total.
+# Anything not mentioned here scores 0, like "introduce": so "wait" (0.5) wins
+# over it, and in lesson 5 you apply it by hand.
+
+tut:tutorialFirst a lr:Controller ; rdfs:label "tutorial first" ;
+  lr:query """
+    SELECT (2 AS ?score) WHERE {
+      GRAPH lr:action { lr:this lr:operation ?op }
+      VALUES ?op { tut:present tut:hint tut:next tut:skip tut:fulfilIntroduce
+                   tut:checkL1 tut:checkL2 tut:checkL3 tut:checkL4 tut:checkL5 tut:checkL6 tut:checkL7 }
+    }""" .
+
+tut:fallback a lr:Controller ; rdfs:label "fallback" ;
+  lr:query """
+    SELECT (1 AS ?score) WHERE { GRAPH lr:action { lr:this lr:operation tut:notUnderstood } }""" .
+
+tut:rest a lr:Controller ; rdfs:label "rest" ;
+  lr:query """
+    SELECT (0.5 AS ?score) WHERE { GRAPH lr:action { lr:this lr:operation tut:wait } }""" .
+
+# Lesson 6: switch these two over and watch autopilot change its behaviour.
+tut:preferFormal a lr:Controller ; rdfs:label "prefer formal" ;
+  lr:query """
+    SELECT (3 AS ?score) WHERE { GRAPH lr:action { lr:this lr:operation tut:greetFormally } }""" .
+
+tut:preferCasual a lr:Controller ; rdfs:label "prefer casual" ; lr:active false ;
+  lr:query """
+    SELECT (3 AS ?score) WHERE { GRAPH lr:action { lr:this lr:operation tut:greetCasually } }""" .

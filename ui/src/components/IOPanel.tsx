@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, type Message } from "../api";
 import { TermView } from "./TermView";
 
@@ -8,13 +8,21 @@ type Props = {
   onError: (e: unknown) => void;
 };
 
-const EXAMPLE = '[] a cmd:Hello ;\n   cmd:name "Ada" .';
+const EXAMPLE = "[] a ex:Request ;\n   ex:about ex:thing .";
 
 /** The lr:in / lr:out channels (design D25): send messages to the model, read its answers. */
 export function IOPanel({ out, waiting, onError }: Props) {
   const [draft, setDraft] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const listRef = useRef<HTMLOListElement>(null);
+  const newest = out[out.length - 1]?.id;
+
+  // Keep the newest message in view, like a chat.
+  useEffect(() => {
+    const el = listRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [newest]);
 
   const send = async () => {
     if (!draft.trim()) return;
@@ -32,7 +40,7 @@ export function IOPanel({ out, waiting, onError }: Props) {
 
   return (
     <div className="io">
-      <ol className="io-out">
+      <ol className="io-out" ref={listRef}>
         {out.length === 0 && <li className="empty">No messages from the model.</li>}
         {out.map((m) => (
           <li key={m.id} title={m.short}>

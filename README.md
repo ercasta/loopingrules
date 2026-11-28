@@ -15,6 +15,8 @@ Then you either drive the computation one step at a time, or put it on **autopil
 
 The example lists the files in a folder with `ls`, registers and classifies each one, and counts the lines of the `.txt` files with `wc`. There is no workflow script: it's 5 rules, a few SHACL shapes and 2 scoring queries.
 
+> **New here?** Run `lr tutorial`. It's an interactive tutorial that is itself a LoopingRules model ([more below](#learn-by-doing-the-tutorial)).
+
 ---
 
 ## Why?
@@ -223,7 +225,37 @@ The same works headless, as a pipe: messages in on stdin, answers out on stdout,
 printf '[] a cmd:Hello ; cmd:name "Ada" .\n' | lr run examples/hello-channels --listen
 ```
 
-See [`hello-channels`](examples/hello-channels) and design D25.
+See [`hello-channels`](examples/hello-channels) and design D25. The sheet hides message triples by default, since they appear in the Messages panel; a checkbox in the sheet header shows them.
+
+## Learn by doing: the tutorial
+
+```bash
+lr tutorial            # copies it to ./lr-tutorial and serves it on http://127.0.0.1:8765
+```
+
+Tick **listen**, press **▶ Autopilot**, and follow the messages. Nine short lessons teach you to *think in SPOs*:
+1. messages;
+2. a triple;
+3. properties and literals;
+4. links;
+5. shapes;
+6. operations (you apply one by hand);
+7. controllers (you switch them and watch autopilot change course);
+8. commands;
+9. a wrap-up.
+
+You do the exercises in the sheet, and talk to the tutorial in the Messages panel: `[] a tut:Hint .`, `[] a tut:Skip .`, `[] a tut:Next .`.
+
+![The tutorial at lesson 4: the shape flags ex:grace, who has no name yet, and the tutorial explains why](doc/ui-tutorial.png)
+
+**The tutorial is itself a LoopingRules model**, with no special engine support:
+- lessons and your progress are triples in the sheet;
+- operations present each lesson, answer messages, and check each exercise with a pattern;
+- the operations of the learner's world are unlocked lesson by lesson by guards (`lr:requires`);
+- a no-op *wait* lets autopilot rest until you act;
+- controllers decide that the tutorial answers first, and that autopilot waits instead of applying "introduce" for you.
+
+Read [`examples/tutorial`](examples/tutorial) once you've finished: it's the best example of how a model is put together. It's also tested end to end (`engine/tests/test_tutorial.py`). Design: D26.
 
 ## Share models, controllers and examples
 
@@ -278,6 +310,9 @@ npm run build
 # 3. serve a project and open http://127.0.0.1:8765
 cd ..
 engine/.venv/Scripts/lr serve examples/folder-scan
+
+# or start with the tutorial
+engine/.venv/Scripts/lr tutorial
 ```
 
 The UI starts in a light theme. The ☾ button switches to dark, and the choice is remembered.
@@ -356,6 +391,10 @@ my-project/
 - [x] Performance, step 2: lazy validation and overlays
 - [ ] Performance: incremental matching, incremental SHACL (see [`doc/handoff.md`](doc/handoff.md))
 - [x] Input/output channels (`lr:in`/`lr:out`), listening autopilot, app mode
+- [x] An interactive tutorial, written as a model (`lr tutorial`)
+- [ ] A graph view of the sheet (pan, zoom, filter, expand/compact subjects)
+- [ ] An MCP server, so coding agents can use LoopingRules as a tool
+- [ ] Knowledge in packs; `lr check` for pre-commit hooks
 - [ ] Named graphs (full SPOG quads): deferred, see D24
 - [x] An allowlist for approving tool calls automatically
 - [ ] Controllers learned from your manual choices (anti-unification, RIPPER)

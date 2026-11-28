@@ -1,0 +1,112 @@
+@prefix lr:   <https://loopingrules.org/ns#> .
+@prefix tut:  <https://loopingrules.org/tutorial#> .
+@prefix ex:   <https://example.org/> .
+
+# The tutorial's own state: where you are, and the lessons. It's data like any other.
+# tut: is the tutorial's machinery; ex: is your world.
+
+tut:progress tut:current tut:L0 .
+
+# The first message is part of the seed, so it shows up before anything runs.
+tut:welcome lr:channel lr:out ; a lr:Say ;
+  lr:text """Welcome to LoopingRules!
+
+This tutorial runs itself, as rules. To start it, tick "listen" in the top bar, then press ▶ Autopilot. From then on, the tutorial reacts to every edit you make and every message you send.""" .
+
+# --- lessons -------------------------------------------------------------------
+
+tut:L0 a tut:Lesson, tut:Reading ; tut:order 0 ; tut:next tut:L1 ;
+  tut:intro """Lesson 0 · Messages
+
+Everything in LoopingRules is a list of statements. Each has a subject, a predicate and an object: an SPO, or triple. Even this message is: look in the sheet for a subject with lr:channel lr:out. That's how the tutorial talks to you.
+
+You talk back the same way, by posting a message to lr:in. Type this in the box below, and press Send:
+
+    [] a tut:Next .""" ;
+  tut:hint """Type  [] a tut:Next .  in the Messages box (don't forget the final dot), and press Send.""" .
+
+tut:L1 a tut:Lesson ; tut:order 1 ; tut:next tut:L2 ;
+  tut:intro """Lesson 1 · A triple
+
+The sheet is where state lives. Add your first triple, with the row at the bottom of the sheet:
+
+    subject    ex:me
+    predicate  a
+    object     ex:Person
+
+"a" is short for rdf:type: it says what kind of thing ex:me is. A ⚠ will appear next to it. That's expected; we'll get to it in lesson 4.""" ;
+  tut:hint """Click the subject field at the bottom of the sheet, type ex:me, then a, then ex:Person, and press + Add. Any name works instead of ex:me.""" ;
+  tut:praise """There it is: ex:me a ex:Person. One statement, three parts. Every fact in LoopingRules looks like this.""" .
+
+tut:L2 a tut:Lesson ; tut:order 2 ; tut:next tut:L3 ;
+  tut:intro """Lesson 2 · Properties and literals
+
+An object can be a plain value: a literal. Give the person a name:
+
+    ex:me  ex:name  "Ada"
+
+The quotes make it a string; 42 would be a number, and true a boolean. Tip: click a subject in the sheet to add more properties to it.""" ;
+  tut:hint """Subject ex:me, predicate ex:name, object "Ada", with the quotes.""" ;
+  tut:praise """A literal is a value, not a thing, so it can't have properties of its own. Notice that the ⚠ on ex:me is gone, too.""" .
+
+tut:L3 a tut:Lesson ; tut:order 3 ; tut:next tut:L4 ;
+  tut:intro """Lesson 3 · Links
+
+An object can also be another thing, which then has statements of its own. That's how a sheet becomes a graph. Say that you know someone, and what they are:
+
+    ex:me     ex:knows  ex:grace
+    ex:grace  a         ex:Person
+
+There's no separate "link" concept: a link is just a triple whose object is also a subject.""" ;
+  tut:hint """Two rows: (ex:me, ex:knows, ex:grace) and (ex:grace, a, ex:Person).""" ;
+  tut:praise """Now ex:grace is a node of its own. Names are global: ex:grace means the same thing wherever it appears.""" .
+
+tut:L4 a tut:Lesson ; tut:order 4 ; tut:next tut:L5 ;
+  tut:intro """Lesson 4 · Shapes
+
+See the ⚠ next to ex:grace? The model has a SHACL shape that says: every ex:Person has exactly one ex:name.
+
+Your own edits may break a shape; the sheet just shows the violations. Operations never may: an operation whose result would break a shape isn't offered.
+
+Make the sheet valid again: give everyone a name. (If everyone already has one, you're ahead of the tutorial.)""" ;
+  tut:hint """Add (ex:grace, ex:name, "Grace"). The sheet header says ✓ valid when every shape is satisfied.""" ;
+  tut:praise """Valid again. Shapes are the rules of your world, and they guard every step the engine takes.""" .
+
+tut:L5 a tut:Lesson ; tut:order 5 ; tut:next tut:L6 ;
+  tut:intro """Lesson 5 · Operations
+
+An operation is a pattern plus a change: WHERE these triples exist, DELETE some and INSERT others. Each match is one application. The Applications panel lists them, each with the change it would make.
+
+This model has an operation called "introduce": when someone knows someone, record that they've been introduced. It's offered now, but autopilot won't pick it, because the "rest" controller scores waiting higher.
+
+Find "introduce" in the Applications panel, look at its preview, and apply it yourself.""" ;
+  tut:hint """In the Applications panel, find "introduce" and press its Apply button. If it isn't there, check that two people with names know each other.""" ;
+  tut:praise """You chose a move by hand. Autopilot does the same thing: at each tick, it applies the best-scoring valid application.""" .
+
+tut:L6 a tut:Lesson ; tut:order 6 ; tut:next tut:L7 ;
+  tut:intro """Lesson 6 · Controllers
+
+When several applications are possible, controllers score them, and autopilot runs the best one. As this lesson started, autopilot greeted everyone formally; look for ex:greetingStyle in the sheet. It did that because the "prefer formal" controller is on.
+
+In the Controllers panel, switch "prefer formal" off and "prefer casual" on. Then add someone new, with a name, and watch how they're greeted.""" ;
+  tut:hint """Toggle the two controllers. Then add (ex:alan, a, ex:Person) and (ex:alan, ex:name, "Alan").""" ;
+  tut:praise """Same model, same operations, different behaviour: you changed only the preferences. That's what controllers are for.""" .
+
+tut:L7 a tut:Lesson ; tut:order 7 ; tut:next tut:L8 ;
+  tut:intro """Lesson 7 · Commands
+
+A message is a request, not a fact. It describes itself with its own node, and an operation decides what to do with it. Ask the model to introduce two people (use names from your sheet):
+
+    [] a ex:Introduce ; ex:who ex:alan ; ex:to ex:me .
+
+The model checks requests with shapes too. Try one that names something that isn't an ex:Person, and see it refused.""" ;
+  tut:hint """In the Messages box, post  [] a ex:Introduce ; ex:who ex:grace ; ex:to ex:me .  Both must be an ex:Person.""" ;
+  tut:praise """The request is gone. What's left is a fact: an ex:Introduction that records it. Requests come in, facts stay in the sheet, and answers go out.""" .
+
+tut:L8 a tut:Lesson, tut:Reading ; tut:order 8 ;
+  tut:intro """Lesson 8 · That's it
+
+You've written triples, linked things, met shapes, applied an operation, steered autopilot with controllers, and sent a command. That's all of LoopingRules: the state, the rules for valid states, the moves, and the preferences, all as SPOs.
+
+Next, open model.ttl and controllers.ttl in this folder and read how this tutorial is made: it's the same four things. Then try examples/hello-channels and examples/folder-scan.""" ;
+  tut:hint """You've finished! Read model.ttl to see how the tutorial works.""" .

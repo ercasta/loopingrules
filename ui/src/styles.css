@@ -501,7 +501,7 @@ tr:hover .icon { opacity: 1; }
 .listen input { accent-color: var(--accent); }
 
 .io { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px 10px; border-bottom: 1px solid var(--line); }
-.io-out { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow: auto; display: flex; flex-direction: column; gap: 6px; }
+.io-out { list-style: none; margin: 0; padding: 0; max-height: 340px; overflow: auto; display: flex; flex-direction: column; gap: 6px; }
 .io-out li {
   border: 1px solid var(--accent-line); background: var(--accent-soft); border-radius: 8px 8px 8px 2px;
   padding: 6px 9px; font-size: 12.5px; line-height: 1.4; position: relative;
@@ -526,3 +526,5 @@ tr:hover .icon { opacity: 1; }
   padding: 8px 14px; border-top: 1px solid var(--accent-line); background: var(--accent-bg); font-size: 12px;
 }
 .app-mode.unlocked { border-top-color: var(--warn-line); background: var(--warn-bg); }
+.show-messages { display: flex; align-items: center; gap: 4px; color: var(--muted); font-size: 11px; cursor: pointer; white-space: nowrap; }
+.show-messages input { accent-color: var(--accent); }
