@@ -50,7 +50,11 @@ def test_folder_scan_matches_alike_at_every_tick(tmp_path, example, layer):
     assert ticks > 3
 
 
-def test_rubik_matches_alike_at_every_tick(tmp_path):
+# The first 20 ticks of a solve cover a round of questions, planning and the first
+# moves; the whole solve (~500 ticks, enumerated twice each: ~4 min) with --slow.
+# test_planning_pack_matches_alike_at_every_tick covers every pack operation, cheaply.
+@pytest.mark.parametrize("limit", [20, pytest.param(None, marks=pytest.mark.slow)])
+def test_rubik_matches_alike_at_every_tick(tmp_path, limit):
     d = tmp_path / "rubik"
     shutil.copytree(ROOT / "rubik", d, ignore=shutil.ignore_patterns(".lr", "*.py", "__pycache__"))
     eng = Engine(Project.load(d, persist=False))
@@ -61,12 +65,25 @@ def test_rubik_matches_alike_at_every_tick(tmp_path):
         same_enumeration(eng)
     eng.post("[] a rk:Solve .")
     ticks = 0
-    while True:
+    while limit is None or ticks < limit:
         same_enumeration(eng)
         if eng.step().status != "applied":
             break
         ticks += 1
     assert ticks > 3
+
+
+def test_planning_pack_matches_alike_at_every_tick(tmp_path):
+    """The counter domain of test_d31: stages, cases, Repeat, Until, finish."""
+    from test_d31 import project as counter
+    eng = counter(tmp_path, goal=7)
+    ticks = 0
+    while True:
+        same_enumeration(eng)
+        if eng.step().status != "applied":
+            break
+        ticks += 1
+    assert ticks > 20
 
 
 def test_terms_round_trip_and_sync_follows_the_sheet():

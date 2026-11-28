@@ -68,7 +68,7 @@ There are 60 tests, all green, and the suite takes ~25 s. Every decision is reco
 ```bash
 # engine
 cd engine && python -m venv .venv && .venv/Scripts/pip install -e ".[dev,server]"
-.venv/Scripts/python -m pytest -q                       # 60 tests, ~25 s
+.venv/Scripts/python -m pytest -q                       # ~210 tests, ~2 min; add --slow for the full Rubik solves
 .venv/Scripts/python benchmarks/bench_folder_scan.py    # perf baseline (see §5)
 
 # UI

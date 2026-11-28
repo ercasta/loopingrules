@@ -9,7 +9,7 @@ Every query the engine runs on behalf of a model is checked here.
 from __future__ import annotations
 
 import rdflib.plugins.sparql as _sparql
-from rdflib.plugins.sparql import prepareQuery
+from .store import prepared  # parsed once per process (the same cache queries use)
 
 # Never dereference graphs named in FROM / FROM NAMED.
 _sparql.SPARQL_LOAD_GRAPHS = False
@@ -35,7 +35,7 @@ def _names(node) -> set[str]:
 def check_query(query: str, what: str = "query") -> None:
     """Raise UnsafeQuery if the query could touch anything outside the sheet."""
     try:
-        q = prepareQuery(query)
+        q = prepared(query)
     except Exception as e:
         raise UnsafeQuery(f"{what}: does not parse: {e}") from e
     if "ServiceGraphPattern" in _names(q.algebra):

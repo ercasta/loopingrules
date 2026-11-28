@@ -269,7 +269,8 @@ STAGES = ["white cross", "white corners", "middle layer", "yellow cross", "yello
           "yellow corners placed", "yellow corners oriented"]
 
 
-@pytest.mark.parametrize("seed", range(6))
+# one solve by default; the other five with --slow
+@pytest.mark.parametrize("seed", [0] + [pytest.param(s, marks=pytest.mark.slow) for s in range(1, 6)])
 def test_solver_solves_the_cube(eng, seed):
     rng = random.Random(seed)
     play(eng, [rng.choice(ALL_MOVES) for _ in range(25)])

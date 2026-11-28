@@ -12,7 +12,7 @@ Controllers are not restricted: they are full SPARQL.
 from __future__ import annotations
 
 from rdflib.paths import Path
-from rdflib.plugins.sparql import prepareQuery
+from .store import prepared  # parsed once per process (the same cache queries use)
 from rdflib.plugins.sparql.parserutils import CompValue
 
 
@@ -63,7 +63,7 @@ def _problems(node, out: set[str], top: bool = False) -> None:
 def check_pattern(pattern: str, prefixes: str, what: str = "pattern") -> None:
     """Raise UnsupportedPattern if a WHERE pattern leaves the allowed subset."""
     try:
-        q = prepareQuery(f"{prefixes}SELECT * WHERE {{ {pattern} }}")
+        q = prepared(f"{prefixes}SELECT * WHERE {{ {pattern} }}")
     except Exception as e:
         raise UnsupportedPattern(f"{what}: does not parse: {e}") from e
     found: set[str] = set()

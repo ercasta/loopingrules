@@ -423,7 +423,8 @@ To scan a different folder, edit `ex:path` in `examples/folder-scan/sheet.ttl`. 
 Run the tests with:
 
 ```bash
-.venv/Scripts/python -m pytest
+.venv/Scripts/python -m pytest          # ~2 min
+.venv/Scripts/python -m pytest --slow   # also the slow ones: five more full Rubik solves, and a whole solve compared on both matchers
 ```
 
 ## Architecture
