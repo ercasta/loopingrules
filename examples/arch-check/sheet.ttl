@@ -1,0 +1,4 @@
+@prefix arch: <https://loopingrules.org/arch#> .
+
+# What to check, relative to where lr check runs (the repository root).
+arch:engine_package a arch:Package ; arch:path "engine/loopingrules" .

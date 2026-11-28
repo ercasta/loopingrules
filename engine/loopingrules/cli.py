@@ -2,6 +2,7 @@
 
     lr apps  <project>                 list applications with validity and scores
     lr run   <project> [--yes] [--max-ticks N] [--save] [--svg out.svg]
+    lr check <project> [--trust-declared] [--json]   run to rest, report; exit 0 ok / 1 failed / 2 incomplete
     lr tutorial [dir]                    copy the tutorial to dir (default ./lr-tutorial) and serve it
     lr run   <project> --listen [--yes]    messages in on stdin, lr:out messages on stdout
 """
@@ -206,6 +207,35 @@ def cmd_serve(args, console: Console) -> int:
     return 0
 
 
+def cmd_check(args, console: Console) -> int:
+    """Run a project to rest from its seed and report: for CI, pre-commit and agent hooks (D29)."""
+    import json
+
+    from .check import check
+
+    r = check(args.project, trust_declared=args.trust_declared, max_ticks=args.max_ticks)
+    if args.json:
+        print(json.dumps(r.as_dict(), indent=2, ensure_ascii=False))
+        return r.exit_code
+    out = Console(stderr=True) if args.stderr else console
+    mark = {"passed": "[green]✓ passed[/]", "failed": "[red]✗ failed[/]", "incomplete": "[yellow]? incomplete[/]"}
+    out.print(f"lr check {args.project}: {mark[r.status]} [dim]({r.ticks} ticks)[/]")
+    if r.incomplete:
+        out.print(f"  [yellow]{r.incomplete}[/]")
+    for c in r.refused:
+        out.print(f"  [yellow]refused tool call[/] {c} [dim](trust it, or use --trust-declared)[/]")
+    for f in r.findings:
+        out.print(f"  [red]finding[/] {f}")
+    for v in r.violations:
+        out.print(f"  [red]violation[/] {v['focus']} {v['path'] or ''} {v['message']}")
+    if not args.quiet:
+        for v in r.warnings:
+            out.print(f"  [yellow]warning[/] {v['focus']} {v['path'] or ''} {v['message']}")
+        for n in r.notes:
+            out.print(f"  [dim]note[/] {n}")
+    return r.exit_code
+
+
 def cmd_tutorial(args, console: Console) -> int:
     """Copy the tutorial (examples/tutorial) to a folder, unless it is there already, and serve it."""
     import shutil
@@ -320,6 +350,14 @@ def main(argv: list[str] | None = None) -> int:
     p_serve.add_argument("project")
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--port", type=int, default=8765)
+    p_chk = sub.add_parser("check", help="run a project to rest from its seed and report; exit 0/1/2 (CI, hooks)")
+    p_chk.add_argument("project")
+    p_chk.add_argument("--trust-declared", action="store_true",
+                       help="also run the commands the project and its packs declare (lr:mayRun)")
+    p_chk.add_argument("--max-ticks", type=int, default=1000)
+    p_chk.add_argument("--json", action="store_true", help="machine-readable output")
+    p_chk.add_argument("--quiet", action="store_true", help="only failures")
+    p_chk.add_argument("--stderr", action="store_true", help="write the report to stderr (for agent hooks)")
     p_tut = sub.add_parser("tutorial", help="learn LoopingRules: copy the tutorial to a folder and serve it")
     p_tut.add_argument("dir", nargs="?", default="lr-tutorial", help="where to put it (default: ./lr-tutorial)")
     p_tut.add_argument("--host", default="127.0.0.1")
@@ -347,7 +385,7 @@ def main(argv: list[str] | None = None) -> int:
     console = Console(record=bool(svg), width=110 if svg else None)
     if args.cmd == "run" and args.listen:
         return cmd_listen(args, console)
-    code = {"apps": cmd_apps, "run": cmd_run, "serve": cmd_serve, "tutorial": cmd_tutorial,
+    code = {"apps": cmd_apps, "run": cmd_run, "serve": cmd_serve, "tutorial": cmd_tutorial, "check": cmd_check,
             "export": cmd_export, "import": cmd_import, "add-layer": cmd_add_layer}[args.cmd](args, console)
     if getattr(args, "svg", None):
         console.save_svg(args.svg, title="lr " + " ".join(argv if argv is not None else sys.argv[1:]))

@@ -172,24 +172,14 @@ Every change is **saved automatically** in an append-only journal, `.lr/history.
 - **Your files are never rewritten.** `sheet.ttl`, `model.ttl` and `controllers.ttl` are what you wrote, comments included; `sheet.ttl` is just the starting point. Delete `.lr/` to start over.
 - **Minted names, not blank nodes.** Things the engine creates get stable names like `gen:3f2a9c1e`, so the journal can always refer to them.
 
-## Controller packs: change the trajectory, not the model
+## Packs: share complete features, as plain triples
 
-A **controller pack** contains only controllers. It can't add operations or data; it can only **steer** the choices a model already offers. Packs stack on top of a base model, and their scores are summed with the model's own controllers. These are the *layered controllers* from the original idea.
+**Everything is SPO.** Operations, shapes and controllers are already RDF, so a project or a **pack** is just a set of Turtle files, and file names don't matter. The engine sorts the triples by convention:
+- a subject `a lr:Operation`, `a lr:Controller`, or a shape (`sh:NodeShape`, `sh:targetClass`, …) is a definition, together with the blank nodes it uses;
+- `a lr:Package` is the manifest;
+- **everything else is knowledge:** read-only facts that sit beside the sheet. Operations, controllers and shapes can see them, but nothing can change them, and they're never journaled.
 
-The examples show how it works:
-- **The base model, [`folder-scan`](examples/folder-scan),** offers two ways to count lines: one `wc` call per file, or a single batch `wc -l 'folder'/*.txt`. Its own controllers prefer one call per file.
-- **The pack, [`big-folders`](examples/big-folders),** holds one controller that says *"if a folder has more than N files, prefer the batch"*. N is data in the sheet (`ex:settings ex:batchThreshold 10`, default 4), not code in the pack.
-
-![A controller pack steering the choice: batch counting wins because of the big-folders controller](doc/ui-layers.png)
-
-```bash
-lr import exports/folder-scan-0.2.0.lr.zip my-scan
-lr add-layer exports/big-folders-0.1.0.lr.zip my-scan    # → my-scan/layers/big-folders/
-```
-
-**What it looks like in practice.** With 7 files, autopilot makes **one** batch call instead of one call per `.txt` file. With 3 files, the pack scores 0 and nothing changes. The condition is evaluated on what the sheet knows *so far*, so the choice flips the moment the 5th file is registered.
-
-A pack declares what it extends:
+A **pack** declares what it extends, and can carry anything except state: new operations, shapes, controllers, knowledge. It's a complete feature you can share. Packs stack on the base project, and can also extend other packs.
 
 ```turtle
 <urn:lr:package> a lr:Package ;
@@ -197,7 +187,68 @@ A pack declares what it extends:
   lr:extends "folder-scan" .
 ```
 
-`lr add-layer` checks that the project *is* `folder-scan`, and refuses packs that contain a model or a sheet. To remove a pack, delete its folder under `layers/`.
+```bash
+lr import exports/folder-scan-0.2.0.lr.zip my-scan
+lr add-layer exports/big-folders-0.1.0.lr.zip my-scan    # → my-scan/layers/big-folders/
+```
+
+`lr add-layer` refuses a pack that doesn't fit:
+- one that extends something not installed;
+- one that redefines an operation, shape or controller already defined;
+- one that binds a prefix to a different namespace.
+
+A pack's declared commands are trusted only with `--trust-declared`. To remove a pack, delete its folder under `layers/`.
+
+**The example: steering.** The base model, [`folder-scan`](examples/folder-scan), offers two ways to count lines: one `wc` call per file, or a single batch `wc -l 'folder'/*.txt`. The pack [`big-folders`](examples/big-folders) adds one controller: *"if a folder has more than N files, prefer the batch"*. With 7 files, autopilot makes **one** batch call; with 3, nothing changes.
+
+![A pack steering the choice: batch counting wins because of the big-folders controller](doc/ui-layers.png)
+
+Knowledge rows show up in the sheet marked with their source (`⧉ knowledge`, or the pack's name), and can't be edited. An operation that would delete knowledge is invalid. Names are global, so knowledge and state describe the same resources: below, `arch:validation`'s layer comes from `knowledge.ttl`, and its file and imports come from the run.
+
+![arch-check after a run: each module's layer is read-only knowledge, next to the facts the run collected about it](doc/ui-knowledge.png)
+
+## Check your code with rules: `lr check`
+
+`lr check` runs a project to rest, starting fresh from its seed and writing nothing, then reports. It's made for CI, pre-commit and coding-agent hooks:
+
+| Exit | Meaning |
+|---|---|
+| 0 | passed |
+| 1 | failed: SHACL violations in the final state, or **findings** (`lr:out` messages of type `lr:Finding`) |
+| 2 | incomplete: a command that isn't trusted, the tick limit reached, or a project that doesn't load |
+
+[`arch-check`](examples/arch-check) is LoopingRules checking LoopingRules:
+- **Architecture:** its layering is knowledge. There are five ranked layers, from core to front, and each module has a layer.
+- **Facts:** two declared commands, `ls` and `grep`, collect each module's imports.
+- **Findings:** rules report any import from a higher layer, and any module without a layer.
+
+```bash
+$ lr check examples/arch-check --trust-declared
+lr check examples/arch-check: ✓ passed (87 ticks)
+```
+
+**As a pre-commit hook** (`.pre-commit-config.yaml`):
+
+```yaml
+repos:
+  - repo: local
+    hooks:
+      - id: arch-check
+        name: architecture check (LoopingRules)
+        entry: lr check examples/arch-check --trust-declared --quiet
+        language: system
+        pass_filenames: false
+        files: ^engine/loopingrules/.*[.]py$
+```
+
+**As a Claude Code hook** (`.claude/settings.json`). Exit code 2 sends the report back to the agent, so it fixes the layering before it stops:
+
+```json
+{ "hooks": { "Stop": [ { "hooks": [ { "type": "command",
+  "command": "lr check examples/arch-check --trust-declared --quiet --stderr || exit 2" } ] } ] } }
+```
+
+`--json` gives machine-readable output. See design D29.
 
 ## See it as a graph
 
@@ -284,7 +335,7 @@ Read [`examples/tutorial`](examples/tutorial) once you've finished: it's the bes
 | File | |
 |---|---|
 | `package.ttl` | the manifest: title, version, description, author, license, and **`lr:mayRun`**: every command the model may ask to run |
-| `model.ttl`, `controllers.ttl` | the model and its controllers |
+| `*.ttl` | definitions and knowledge: usually `model.ttl`, `controllers.ttl`, `knowledge.ttl` |
 | `sheet.ttl` | optional: your example seed sheet, the current state, or nothing |
 | `README.md` | optional |
 
@@ -386,11 +437,12 @@ examples/ ready-to-run projects
 ```
 my-project/
   sheet.ttl         # the seed state (yours, never rewritten)
-  model.ttl         # SHACL shapes + lr:Operations
-  controllers.ttl   # lr:Controllers
-  package.ttl       # optional manifest, used when sharing
+  model.ttl         # SHACL shapes + lr:Operations      ┐ any *.ttl: sorted by type,
+  controllers.ttl   # lr:Controllers                    │ so names are just habits
+  knowledge.ttl     # read-only facts                   │
+  package.ttl       # optional manifest, for sharing    ┘
   README.md         # optional
-  layers/<pack>/    # controller packs added with lr add-layer
+  layers/<pack>/    # packs added with lr add-layer: any *.ttl but a sheet
   .lr/              # runtime state: journal + snapshot (delete to reset)
 ```
 
@@ -404,7 +456,7 @@ my-project/
 - [x] Goal-driven computation as a modeling pattern (no engine changes)
 - [x] Automatic persistence with an append-only journal, and undo
 - [x] Sharing through `.lr.zip` exports with a manifest of declared commands
-- [x] Controller packs (layered controllers) that steer a base model
+- [x] Packs that carry complete features (operations, shapes, controllers, knowledge) as plain triples
 - [x] Performance, step 1: each SPARQL query parsed once (7–10× faster)
 - [x] Performance, step 2: lazy validation and overlays
 - [ ] Performance: incremental matching, incremental SHACL (see [`doc/handoff.md`](doc/handoff.md))
@@ -412,7 +464,7 @@ my-project/
 - [x] An interactive tutorial, written as a model (`lr tutorial`)
 - [x] A graph view of the sheet (pan, zoom, filter, expand/compact, edges or chips)
 - [ ] An MCP server, so coding agents can use LoopingRules as a tool
-- [ ] Knowledge in packs; `lr check` for pre-commit hooks
+- [x] `lr check` for CI, pre-commit and agent hooks; `arch-check` checks this repository
 - [ ] Named graphs (full SPOG quads): deferred, see D24
 - [x] An allowlist for approving tool calls automatically
 - [ ] Controllers learned from your manual choices (anti-unification, RIPPER)

@@ -1,0 +1,55 @@
+@prefix lr:   <https://loopingrules.org/ns#> .
+@prefix arch: <https://loopingrules.org/arch#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+# Facts come from two shell commands (declared in package.ttl). Problems are reported
+# as findings: lr:out messages of type lr:Finding, which make `lr check` fail (D29).
+# Operations can't break shapes (the SHACL guard), so a checker reports, it doesn't break.
+
+arch:listModules a lr:Operation ; rdfs:label "list modules" ;
+  lr:where """ ?pkg a arch:Package ; arch:path ?path .
+               FILTER NOT EXISTS { ?pkg arch:listed true }
+               BIND(CONCAT("ls -1 '", ?path, "'") AS ?cmd) """ ;
+  lr:insert """ ?pkg arch:listed true .
+                [] a lr:ShellCall ; lr:command ?cmd ; lr:status lr:Pending ; arch:listingOf ?pkg . """ .
+
+arch:registerModule a lr:Operation ; rdfs:label "register module" ;
+  lr:where """ ?call arch:listingOf ?pkg ; lr:status lr:Done ; lr:stdoutLine ?line .
+               ?line lr:text ?file .
+               FILTER(STRENDS(?file, ".py") && ?file != "__init__.py")
+               BIND(IRI(CONCAT(STR(arch:), STRBEFORE(?file, ".py"))) AS ?module)
+               FILTER NOT EXISTS { ?module arch:file ?any } """ ;
+  lr:insert """ ?module a arch:Module ; arch:file ?file ; arch:inPackage ?pkg . """ .
+
+arch:scanImports a lr:Operation ; rdfs:label "scan imports" ;
+  lr:where """ ?module arch:file ?file ; arch:inPackage ?pkg . ?pkg arch:path ?path .
+               FILTER NOT EXISTS { ?c arch:importsOf ?module }
+               BIND(CONCAT("grep -oE '^ *from [.][a-z_]+ import' '", ?path, "/", ?file, "'") AS ?cmd) """ ;
+  lr:insert """ [] a lr:ShellCall ; lr:command ?cmd ; lr:status lr:Pending ; arch:importsOf ?module . """ .
+
+arch:recordImport a lr:Operation ; rdfs:label "record import" ;
+  lr:where """ ?call arch:importsOf ?module ; lr:status lr:Done ; lr:stdoutLine ?line .
+               ?line lr:text ?text .
+               BIND(IRI(CONCAT(STR(arch:), STRBEFORE(STRAFTER(?text, "from ."), " import"))) AS ?target)
+               FILTER NOT EXISTS { ?module arch:imports ?target } """ ;
+  lr:insert """ ?module arch:imports ?target . """ .
+
+# --- findings ----------------------------------------------------------------------
+
+arch:reportUpwardImport a lr:Operation ; rdfs:label "report: import from a higher layer" ;
+  lr:where """ ?a arch:imports ?b ; arch:layer ?la . ?b arch:layer ?lb .
+               ?la arch:rank ?ra ; rdfs:label ?na . ?lb arch:rank ?rb ; rdfs:label ?nb .
+               FILTER(?ra < ?rb)
+               FILTER NOT EXISTS { ?f arch:from ?a ; arch:to ?b }
+               BIND(CONCAT(STRAFTER(STR(?a), STR(arch:)), " (", ?na, ") imports ",
+                           STRAFTER(STR(?b), STR(arch:)), " (", ?nb, "): ",
+                           "a module may only import from its own layer or the layers below") AS ?text) """ ;
+  lr:insert """ [] lr:channel lr:out ; a lr:Finding ; lr:text ?text ; arch:from ?a ; arch:to ?b . """ .
+
+arch:reportUnlayered a lr:Operation ; rdfs:label "report: module without a layer" ;
+  lr:where """ ?m a arch:Module ; arch:file ?file .
+               FILTER NOT EXISTS { ?m arch:layer ?l }
+               FILTER NOT EXISTS { ?f arch:unlayered ?m }
+               BIND(CONCAT(?file, " has no layer: add  arch:", STRAFTER(STR(?m), STR(arch:)),
+                           " arch:layer …  to knowledge.ttl") AS ?text) """ ;
+  lr:insert """ [] lr:channel lr:out ; a lr:Finding ; lr:text ?text ; arch:unlayered ?m . """ .

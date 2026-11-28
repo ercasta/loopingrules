@@ -1,0 +1,39 @@
+@prefix arch: <https://loopingrules.org/arch#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+# The architecture, as knowledge (design D28): read-only facts, not state.
+# A module may import from its own layer or from lower ranks, never from higher ones.
+
+arch:Core    a arch:Layer ; rdfs:label "core"    ; arch:rank 0 .
+arch:Model   a arch:Layer ; rdfs:label "model"   ; arch:rank 1 .
+arch:Runtime a arch:Layer ; rdfs:label "runtime" ; arch:rank 2 .
+arch:Sharing a arch:Layer ; rdfs:label "sharing" ; arch:rank 3 .
+arch:Front   a arch:Layer ; rdfs:label "front"   ; arch:rank 4 .
+
+# core: vocabulary, storage, checks
+arch:vocab       arch:layer arch:Core .
+arch:store       arch:layer arch:Core .
+arch:security    arch:layer arch:Core .
+arch:patterns    arch:layer arch:Core .
+arch:validation  arch:layer arch:Core .
+arch:project     arch:layer arch:Core .
+arch:trust       arch:layer arch:Core .
+arch:definitions arch:layer arch:Core .
+
+# model: what operations, controllers, channels and tools are
+arch:operations  arch:layer arch:Model .
+arch:controllers arch:layer arch:Model .
+arch:channels    arch:layer arch:Model .
+arch:suggest     arch:layer arch:Model .
+arch:tools       arch:layer arch:Model .
+
+# runtime: the engine
+arch:engine      arch:layer arch:Runtime .
+
+# sharing and checking: built on the engine
+arch:package     arch:layer arch:Sharing .
+arch:check       arch:layer arch:Sharing .
+
+# front ends
+arch:api         arch:layer arch:Front .
+arch:cli         arch:layer arch:Front .

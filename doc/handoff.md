@@ -15,7 +15,9 @@
   - ***Known rough edge:** the sheet scrolls to the first changed row, which in the tutorial is often the tutorial's own bookkeeping (`tut:Lx tut:presented true`), so the learner's `ex:` rows scroll out of view. Possible fixes: scroll only for edits the user made, or prefer changed rows of the user's namespaces.*
 - ***D27 is built:** the Graph tab (`ui/src/components/GraphPanel.tsx`, lazy-loaded Cytoscape.js). `window.__lrGraph` exposes the Cytoscape instance for `scripts/dev/shot.py`.*
 - *Also fixed: the CLI no longer crashes on cp1252 consoles or pipes (`main()` reconfigures the output streams to replace characters they can't encode).*
-- ***Next:** the MCP server, knowledge in packs, and `lr check` / pre-commit.*
+- ***D28 is built: everything is SPO.** Definitions are recognised by type (`definitions.py`). Everything else is read-only knowledge (`store.Union`, `Engine.view`). Packs carry complete features and can extend packs. Conflicts are refused.*
+- ***D29 is built:** `lr check` (`check.py`), with exit codes 0/1/2, findings (`lr:Finding`), and `examples/arch-check`, which checks this repo's layering. Pre-commit and Claude Code hook snippets are in the README.*
+- ***Next session:** the MCP server (the user's choice). Its tools only post to `lr:in`, read `lr:out` and run (D25); granting direct edits per project is still to be built.*
 
 ## 1. State in one paragraph
 LoopingRules is a working "semantic spreadsheet":

@@ -598,6 +598,40 @@ A **Graph** tab next to the Sheet shows the same triples as a graph, built with 
 - version constraints on `lr:extends`;
 - definitions inside the sheet itself, which would let operations rewrite operations. That's a separate, bigger decision.
 
+### D29. `lr check`: run to rest, report, exit code
+*Status: built (2026-11-28). Example: `examples/arch-check` checks this repository's layering.*
+
+**Goal:** use a model as a check in CI, pre-commit, and coding-agent hooks. For example: "the code respects the architecture", with the architecture written as knowledge (D28).
+
+`lr check <project> [--trust-declared] [--max-ticks N] [--json] [--quiet] [--stderr]`:
+- **It starts fresh from the seed and writes nothing:** it doesn't read the journal, and no `.lr/` folder appears. The same commit always gives the same result.
+- **It runs autopilot until it rests** (D8, D21).
+- **Tool calls run only if they're trusted:** they must match the user's trust rules (D10), or, with `--trust-declared`, the `lr:mayRun` templates of the project and its packs. Anything else is refused, because nobody is there to approve it.
+- **Exit codes:**
+  - **0 passed;**
+  - **1 failed:** SHACL violations in the final state, or findings;
+  - **2 incomplete:** a refused tool call, the tick limit reached (default 1000), or a project that doesn't load.
+- **Severities:** `sh:Warning` and `sh:Info` results are reported but don't fail the check.
+- **Output:** a human summary by default, or `--json` with status, exit code, ticks, violations, warnings, findings, notes and refused calls. `--stderr` writes the report to stderr, for agent hooks.
+
+**Findings are how a check model reports problems.** The SHACL guard (D4) means an operation can never make the state invalid. So a model that checks something can't report a problem by breaking a shape: the operation that recorded it would never be offered.
+- **Convention:** a model reports a problem as an `lr:out` message of type **`lr:Finding`** (D25), with `lr:text`. `lr check` fails on any finding. Other `lr:out` messages are printed as notes.
+- **SHACL violations in the final state still fail the check.** Since operations can't create them, they come from the seed or from tool results.
+- **A post can't fake a finding.** `lr:Finding` isn't one of the `lr:` terms a post may use (D25).
+
+**Hooks:**
+- **pre-commit:** a `repo: local` hook with `entry: lr check <project> --trust-declared --quiet`, `language: system` and `pass_filenames: false`. There's no packaged `.pre-commit-hooks.yaml` yet: that needs `lr` installable from the repository root, and the package lives in `engine/`.
+- **Claude Code:** a `Stop` hook that runs `lr check <project> --trust-declared --quiet --stderr || exit 2`. Exit code 2 sends the report back to the agent, so it fixes the problem before stopping.
+- **Other agents' hooks:** any hook that runs a command and reads its exit code works the same way.
+
+**Dogfooding: `examples/arch-check`:**
+- **Facts:** `ls` lists `engine/loopingrules`, and `grep` collects each module's relative imports.
+- **Architecture (knowledge):** five ranked layers (core, model, runtime, sharing, front), and each module's layer.
+- **Findings:**
+  - an import from a higher layer;
+  - a module with no layer.
+- **Limitation:** imports are found with a regular expression on `from .x import` lines, so other forms of import are missed.
+
 ## Open questions
 
 - **Q3. Ties and no-ops.** Partly settled by D21: empty deltas are excluded except for no-op operations, and a tie between a no-op and an application with effects goes to continuing. Other ties: still first found.

@@ -16,6 +16,7 @@ LR = Namespace("https://loopingrules.org/ns#")
 # Statuses:    lr:Pending, lr:Done, lr:Rejected, lr:Failed
 # Channels (D25): a message is ?m lr:channel lr:in / lr:out, with optional
 #              lr:text, lr:replyTo; lr:Say is a plain text message (channels.py)
+# Checks (D29): an lr:out message of type lr:Finding makes `lr check` fail
 # Package:     lr:directEdits false = app mode: the sheet is read-only in the UI (D25)
 # Goals (D16): a convention only, the engine gives them no meaning:
 #              goal classes are rdfs:subClassOf lr:Goal; achievement is lr:reached true
