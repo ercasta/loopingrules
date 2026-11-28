@@ -1,6 +1,6 @@
 # Rubik: a rich example
 
-*Status: design (2026-11-28). Steps 1 and 2 are built: `examples/rubik`, `examples/rubik-viewer`, `engine/tests/test_rubik.py`.*
+*Status: design (2026-11-28). Steps 1–3 are built: `examples/rubik`, `examples/rubik-viewer`, `examples/rubik-show`, `engine/tests/test_rubik.py`.*
 
 ## Goal
 A complete example built from separate, shareable parts:
@@ -136,6 +136,19 @@ rubik            project   cube, moves, solver
   - both channels ended empty.
 - **Dev tooling:** `scripts/dev/shot.py` takes `LR_SHOT_URL` and `LR_SHOT_SCALE`, and prints the values steps return.
   - Headless Edge renders WebGL in software. Use scale 1, and read async probes back synchronously, because promises awaited over CDP stall while WebGL frames render.
+
+## Step 3: as built
+- **The pack** (`examples/rubik-show/show.ttl`) holds back the plan with a **penalty** rather than a block.
+  - The controller `hold the plan until the last turn is shown` scores `turn` −10 while an executed turn is unannounced, or a `viz:Turn` is unacknowledged.
+  - `wait for the viewer` is a no-op scoring 0, so it strictly beats only a held-back turn.
+  - **Why not a block:** a viewer that has just loaded holds back its acks until it has the state. If waiting beat everything, its `viz:Sync` would never be answered, and the run would deadlock.
+- **CLI fix:** `lr run --listen` runs again after it acknowledges `lr:out`, instead of blocking on stdin while the policy could continue.
+- **Tests:**
+  - with the engine: one turn per ack;
+  - a sync is answered while the plan is held;
+  - over the API with a listening autopilot: never more than one `viz:Turn` waiting;
+  - over stdin.
+- **Live, with the viewer:** the model's turn count now advances one turn at a time, in step with the viewer, instead of jumping to 20. The log shows the cycle `turn` → `announce turn` → `wait for the viewer won`.
 
 ## Engine changes needed (small)
 - *(done in step 2)* **`POST /api/out/ack` must wake a listening autopilot** (`session.input_event.set()`, as the other mutations do). Today an ack doesn't, so `show:wait` would never be re-evaluated.

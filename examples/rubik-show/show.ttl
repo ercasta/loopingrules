@@ -1,0 +1,29 @@
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix lr:   <https://loopingrules.org/ns#> .
+@prefix rk:   <https://example.org/rubik#> .
+@prefix viz:  <https://example.org/rubik/viz#> .
+@prefix show: <https://example.org/rubik/show#> .
+
+# Pace the plan with the display (design: doc/rubik.md, part 3).
+# No new state and no engine code: one no-op and one controller.
+#
+# - The next turn is held back while the last one hasn't been announced, or the
+#   viewer hasn't acknowledged its viz:Turn yet.
+# - Holding back is a penalty, not a block: everything else (sync, reset,
+#   announcing) still scores 0 and runs, so the viewer can always get the state.
+# - show:wait scores 0 too: it strictly beats only a held-back turn (D21), and a
+#   listening autopilot then rests until the next ack wakes it.
+
+show:wait a lr:Operation ; rdfs:label "wait for the viewer" ;
+  lr:where """ FILTER EXISTS { ?msg lr:channel lr:out ; a viz:Turn } """ .
+
+show:holdThePlan a lr:Controller ; rdfs:label "hold the plan until the last turn is shown" ;
+  lr:query """
+    SELECT (-10 AS ?score) WHERE {
+      GRAPH lr:action { lr:this lr:operation rk:turn }
+      GRAPH lr:before {
+        { ?e a rk:Executed . FILTER NOT EXISTS { ?e viz:announced true } }
+        UNION
+        { ?msg lr:channel lr:out ; a viz:Turn }
+      }
+    } LIMIT 1 """ .

@@ -179,3 +179,74 @@ def test_ack_wakes_a_listening_autopilot(tmp_path):
         session.input_event.clear()
         assert c.post("/api/out/ack", json={}).json()["acked"] >= 1
         assert session.input_event.is_set()
+
+
+# --- rubik-show: the policy pack (doc/rubik.md, step 3) ---------------------------
+
+SHOW = EXAMPLE.parent / "rubik-show"
+
+
+def project_with(tmp_path, *packs) -> Path:
+    proj = tmp_path / "rubik"
+    shutil.copytree(EXAMPLE, proj, ignore=shutil.ignore_patterns(".lr", "*.py"))
+    for pack in packs:
+        install(proj, pack)
+    return proj
+
+
+def test_show_paces_turns_with_acks(tmp_path):
+    eng = Engine(Project.load(project_with(tmp_path, VIEWER, SHOW)))
+    eng.post("[] a rk:Scramble ; rk:moves ( mv:R mv:U mv:F ) .")
+    seen = []
+    for expected in (1, 2, 3):
+        result = eng.run(max_ticks=20)
+        assert result.status == "stopped" and result.application.operation.name == "wait for the viewer"
+        [turn] = out_of(eng, "Turn")  # exactly one turn waits to be shown
+        assert int(eng.sheet.value(RK.cube, RK.turns)) == expected
+        seen.append(int(eng.sheet.value(turn.iri, VIZ.seq)))
+        eng.ack([m.iri for m in eng.messages("out")])
+    assert seen == [1, 2, 3]
+    assert eng.run(max_ticks=5).status == "done"
+
+
+def test_show_never_blocks_a_sync(tmp_path):
+    """A viewer that holds back acks until it has the state must still get the state."""
+    eng = Engine(Project.load(project_with(tmp_path, VIEWER, SHOW)))
+    eng.post("[] a rk:Scramble ; rk:moves ( mv:R mv:U ) .")
+    assert eng.run(max_ticks=20).status == "stopped"
+    eng.post("[] a viz:Sync .")
+    assert eng.run(max_ticks=20).status == "stopped"
+    assert len(out_of(eng, "State")) == 1
+    assert int(eng.sheet.value(RK.cube, RK.turns)) == 1  # still held
+
+
+def test_show_with_a_listening_autopilot(tmp_path):
+    import time
+    from fastapi.testclient import TestClient
+    from loopingrules.api import create_app
+    app = create_app(project_with(tmp_path, VIEWER, SHOW), trust_path=tmp_path / "trust.ttl")
+    with TestClient(app) as c:
+        c.post("/api/autopilot/start", json={"delay_ms": 0, "listen": True})
+        c.post("/api/in", json={"turtle": "[] a rk:Scramble ; rk:moves ( mv:R mv:U mv:F mv:D ) ."})
+        shown = []
+        deadline = time.time() + 30
+        while len(shown) < 4 and time.time() < deadline:
+            turns = [m for m in c.get("/api/messages").json()["messages"] if "viz:Turn" in m["types"]]
+            assert len(turns) <= 1  # never more than one turn ahead of the viewer
+            for m in turns:
+                shown.append(next(int(t["o"]["value"]) for t in m["triples"] if t["p"]["short"] == "viz:seq"))
+                c.post("/api/out/ack", json={"ids": [m["id"]]})
+            time.sleep(0.05)
+        assert shown == [1, 2, 3, 4]
+
+
+def test_show_over_stdin(tmp_path):
+    import io
+    from rich.console import Console
+    from loopingrules.cli import listen
+    eng = Engine(Project.load(project_with(tmp_path, VIEWER, SHOW)))
+    stdout = io.StringIO()
+    stdin = io.StringIO("[] a rk:Scramble ; rk:moves ( mv:R mv:U mv:Ri ) .\n\n")
+    assert listen(eng, stdin, stdout, Console(file=io.StringIO())) == 0
+    assert stdout.getvalue().count("viz:Turn") == 3
+    assert int(eng.sheet.value(RK.cube, RK.turns)) == 3

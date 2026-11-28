@@ -139,13 +139,14 @@ def listen(eng: Engine, stdin, stdout, log: Console, max_ticks: int | None = Non
     """
     from .channels import PostError
 
-    def flush() -> None:
+    def flush() -> int:
         out = eng.messages("out")
         for m in out:
             stdout.write(message_turtle(m, eng.sheet) + "\n")
         if out:
             eng.ack([m.iri for m in out])
         stdout.flush()
+        return len(out)
 
     def on_step(r: StepResult) -> None:
         if r.status == "applied":
@@ -155,9 +156,11 @@ def listen(eng: Engine, stdin, stdout, log: Console, max_ticks: int | None = Non
 
     while True:
         result = eng.run(max_ticks=max_ticks, on_step=on_step)
-        flush()
+        acked = flush()
         if result.status == "awaiting-approval":
             return 1
+        if acked and result.status == "stopped":
+            continue  # a policy may have been waiting for these acks (doc/rubik.md)
         text = read_block(stdin)
         if text is None:
             return 0

@@ -1,0 +1,10 @@
+@prefix lr:      <https://loopingrules.org/ns#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+<urn:lr:package> a lr:Package ;
+  dcterms:title "rubik-show" ;
+  lr:version "0.1.0" ;
+  lr:extends "rubik-viewer" ;
+  dcterms:description "A policy: make one turn, wait until the viewer has shown it, make the next." ;
+  dcterms:creator "Antonio Castaldo D'Ursi" ;
+  dcterms:license "MIT" .
