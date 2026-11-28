@@ -56,9 +56,13 @@ class RdflibMatcher:
         from .operations import _holds
         return _holds(self.graph, ask, bindings, prefixes)
 
+    def step_solutions(self, state, where, prefixes, bindings):
+        from .operations import _solutions
+        return _solutions(state, where, prefixes, bindings)
+
 
 class Mirror:
-    """A pyoxigraph store kept equal to sheet Ã¢Ë†Âª knowledge."""
+    """A pyoxigraph store kept equal to sheet + knowledge."""
 
     def __init__(self, knowledge: Graph):
         self.store = ox.Store()
@@ -69,6 +73,7 @@ class Mirror:
         self.store.bulk_extend(ox.Quad(*map(self._to, t)) for t in self.knowledge)
         self.snapshot: set = set()
         self.unsupported: set[str] = set()  # queries oxigraph can't parse: they run on rdflib
+        self.scope: dict[str, set[str]] = {}  # pattern -> its in-scope variables
         self._fallback: RdflibMatcher | None = None
 
     # --- terms ---------------------------------------------------------------
@@ -136,10 +141,41 @@ class Mirror:
             self.unsupported.add(text)
             return None
 
-    def solutions(self, where, prefixes):
-        res = self._query(f"{prefixes}SELECT * WHERE {{ {where} }}")
+    def _bind(self, pattern: str, prefixes: str, bindings: dict) -> tuple[str, dict] | None:
+        """How to bind `bindings` in `pattern`, as rdflib's initBindings do: everywhere.
+
+        - Variables in scope go in as oxigraph substitutions, which bind them inside
+          UNION branches too. (A VALUES join is evaluated after the union: a step with a
+          UNION took 31 ms instead of 0.4.)
+        - oxigraph refuses substitutions for variables not in scope, e.g. ones that only
+          appear inside FILTER NOT EXISTS: those are joined in with VALUES, which reaches
+          the filters.
+        Returns (VALUES text, substitutions), or None if a blank node would need VALUES.
+        """
+        if not bindings:
+            return "", {}
+        if pattern not in self.scope:
+            res = self._query(f"{prefixes}SELECT * WHERE {{ {pattern} }} LIMIT 0")
+            self.scope[pattern] = {v.value for v in res.variables} if res is not None else set()
+        scope = self.scope[pattern]
+        subs = {ox.Variable(k): self._to(v) for k, v in bindings.items() if k in scope}
+        rest = sorted(k for k in bindings if k not in scope)
+        if any(isinstance(bindings[k], BNode) for k in rest):
+            return None
+        values = ""
+        if rest:
+            row = " ".join(str(self._to(bindings[k])) for k in rest)
+            values = f"VALUES ({' '.join('?' + k for k in rest)}) {{ ({row}) }}\n"
+        return values, subs
+
+    def solutions(self, where, prefixes, bindings=None):
+        """With `bindings` (a step), None when oxigraph can't answer: the caller falls back."""
+        bound = self._bind(where, prefixes, bindings or {})
+        res = None
+        if bound is not None:
+            res = self._query(f"{prefixes}SELECT * WHERE {{ {bound[0]}{where} }}", substitutions=bound[1])
         if res is None:
-            return self._fallback.solutions(where, prefixes)
+            return None if bindings is not None else self._fallback.solutions(where, prefixes)
         names = [v.value for v in res.variables]
         out = []
         for sol in res:
@@ -152,20 +188,32 @@ class Mirror:
         return out
 
     def holds(self, ask, bindings, prefixes):
-        # rdflib binds the parameters everywhere, also inside FILTER (NOT) EXISTS. oxigraph's
-        # substitutions only take variables in scope, so the parameters are joined in with
-        # VALUES, which also reaches the filters. VALUES can't hold blank nodes: rdflib then.
+        bound = self._bind(ask, prefixes, bindings)
         res = None
-        if not any(isinstance(v, BNode) for v in bindings.values()):
-            names = sorted(bindings)
-            values = ""
-            if names:
-                row = " ".join(str(self._to(bindings[n])) for n in names)
-                values = f"VALUES ({' '.join('?' + n for n in names)}) {{ ({row}) }}\n"
-            res = self._query(f"{prefixes}ASK {{ {values}{ask} }}")
+        if bound is not None:
+            res = self._query(f"{prefixes}ASK {{ {bound[0]}{ask} }}", substitutions=bound[1])
         if res is None:
             return self._fallback.holds(ask, bindings, prefixes)
         return bool(res)
+
+    def step_solutions(self, state, where, prefixes, bindings):
+        """A step's solutions on `state`, an Overlay of the view: its net delta is applied
+        to the mirror for the query, then reverted."""
+        deleted = [ox.Quad(*map(self._to, t)) for t in state.deleted]
+        added = [ox.Quad(*map(self._to, t)) for t in state.added]
+        for q in deleted:
+            self.store.remove(q)
+        self.store.extend(added)
+        try:
+            rows = self.solutions(where, prefixes, bindings)
+        finally:
+            for q in added:
+                self.store.remove(q)
+            self.store.extend(deleted)
+        if rows is None:  # a blank-node binding, or a pattern oxigraph can't parse
+            from .operations import _solutions
+            rows = _solutions(state, where, prefixes, bindings)
+        return rows
 
 
 def available() -> bool:

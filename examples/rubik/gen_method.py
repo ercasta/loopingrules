@@ -54,6 +54,17 @@ def _apply(state: tuple[str, ...], move: str) -> tuple[str, ...]:
     return tuple(m[p] for p in state)
 
 
+# The search tracks where some stickers are: a state is a `bytes` of facelet
+# indices, and a move is a translation table, so a turn is one bytes.translate.
+INDEX = {name: i for i, name in enumerate(sorted(FL))}
+TABLE = {}
+for _mv, _m in MOVES.items():
+    _t = bytearray(range(256))
+    for _a, _b in _m.items():
+        _t[INDEX[_a]] = INDEX[_b]
+    TABLE[_mv] = bytes(_t)
+
+
 def search(start: tuple[str, ...], goal: tuple[str, ...], depth: int = 5) -> list[str]:
     """The shortest move sequence taking the tracked stickers from `start` to `goal`.
 
@@ -62,34 +73,46 @@ def search(start: tuple[str, ...], goal: tuple[str, ...], depth: int = 5) -> lis
     """
     if start == goal:
         return []
-    fwd = {start: []}
-    bwd = {goal: []}
-    fwd_frontier, bwd_frontier = [start], [goal]
+    s0 = bytes(INDEX[p] for p in start)
+    g0 = bytes(INDEX[p] for p in goal)
+    # state -> (previous state, move), on each side; backwards, the move is the one
+    # that leads from this state towards the goal
+    fwd: dict[bytes, tuple] = {s0: (None, None)}
+    bwd: dict[bytes, tuple] = {g0: (None, None)}
+    frontiers = {"f": [s0], "b": [g0]}
+
+    def path(seen, s):
+        out = []
+        while seen[s][0] is not None:
+            s, mv = seen[s]
+            out.append(mv)
+        return out
+
     for _ in range(depth):
         for side in ("f", "b"):
-            frontier = fwd_frontier if side == "f" else bwd_frontier
             seen, other = (fwd, bwd) if side == "f" else (bwd, fwd)
             nxt = []
-            for state in frontier:
-                path = seen[state]
-                for mv in MOVES:
-                    if path and path[-1][0] == mv[0]:
+            for state in frontiers[side]:
+                last = seen[state][1]
+                for mv, table in (TABLE.items() if side == "f" else INV_TABLE.items()):
+                    if last is not None and last[0] == mv[0]:
                         continue
-                    # backwards, undo `mv`: the forward path then ends with `mv`
-                    s2 = _apply(state, mv if side == "f" else INVERSE[mv])
+                    s2 = state.translate(table)
                     if s2 in seen:
                         continue
-                    seen[s2] = path + [mv]
+                    seen[s2] = (state, mv)
                     nxt.append(s2)
                     if s2 in other:
-                        f = seen[s2] if side == "f" else other[s2]
-                        b = other[s2] if side == "f" else seen[s2]
-                        return f + list(reversed(b))
-            if side == "f":
-                fwd_frontier = nxt
-            else:
-                bwd_frontier = nxt
+                        f = path(fwd, s2)[::-1]
+                        b = path(bwd, s2)
+                        return f + b
+            frontiers[side] = nxt
     raise ValueError(f"no sequence within {2 * depth} moves: {start} -> {goal}")
+
+
+# backwards: undoing `mv` steps from a state towards the start, and the forward
+# path then takes `mv`, so the move recorded is `mv` itself
+INV_TABLE = {mv: TABLE[INVERSE[mv]] for mv in MOVES}
 
 
 def check(alg: list[str], start: tuple[str, ...], goal: tuple[str, ...]) -> None:
@@ -123,6 +146,37 @@ def cross_cases():
         yield f"cross_{white}", label, [(white, "D5"), (other, "F5")], alg
 
 
+# --- stage 2: the white corners ---------------------------------------------------
+# Target: the corner white + front + right colours, into DFR with white on D.
+# Kept: the cross, and the other three bottom corner slots (except the one the
+# target is in), sticker for sticker.
+
+CORNER = ("D3", "F9", "R7")  # DFR, as white / front colour / right colour
+CROSS = ("D2", "F8") + tuple(p for slot in CROSS_SLOTS for p in slot)
+BOTTOM_CORNERS = (("D1", "F7", "L9"), ("D7", "B9", "L7"), ("D9", "B7", "R9"))
+
+
+def corner_states():
+    """Every place and twist of the target corner: everything moves can reach."""
+    seen, frontier = {CORNER}, [CORNER]
+    while frontier:
+        frontier = [s2 for s in frontier for mv in MOVES
+                    if (s2 := _apply(s, mv)) not in seen and not seen.add(s2)]
+    return sorted(seen - {CORNER})
+
+
+def corner_cases():
+    for white, front, right in corner_states():
+        keep = CROSS + tuple(p for slot in BOTTOM_CORNERS if white not in slot for p in slot)
+        start = (white, front, right) + keep
+        goal = CORNER + keep
+        alg = search(start, goal)
+        check(alg, start, goal)
+        slot = "".join(sorted({white[0], front[0], right[0]}, key="UDFBRL".index))
+        label = f"the white-front-right corner is at {slot}, white facing {FACE_WORD[white[0]]}"
+        yield f"corner_{white}", label, [(white, "D5"), (front, "F5"), (right, "R5")], alg
+
+
 def emit_case(out: list[str], stage: str, name: str, label: str, needs, alg: list[str]) -> None:
     need_names = [f"need:{name}_{i}" for i in range(len(needs))]
     first = f"alg:{name}_0" if alg else "rdf:nil"
@@ -140,18 +194,26 @@ def main() -> None:
     out.append("rk:beginnerMethod a rk:Method ; rdfs:label \"beginner method (layer by layer)\" ; rk:firstStage stage:Cross .\n")
 
     out.append("# --- stages ------------------------------------------------------------------")
-    out.append("stage:Cross a rk:Stage ; rdfs:label \"white cross\" ; rk:next stage:Done ;")
+    out.append("stage:Cross a rk:Stage ; rdfs:label \"white cross\" ; rk:next stage:Corners ;")
     out.append("  rk:goal need:crossGoal_0, need:crossGoal_1 .")
     out.append("need:crossGoal_0 rk:at rpos:D2 ; rk:like rpos:D5 .")
     out.append("need:crossGoal_1 rk:at rpos:F8 ; rk:like rpos:F5 .")
+    # the corners keep the cross, so their goal needs only the corners
+    out.append("stage:Corners a rk:Stage ; rdfs:label \"white corners\" ; rk:next stage:Done ;")
+    out.append("  rk:goal need:cornerGoal_0, need:cornerGoal_1, need:cornerGoal_2 .")
+    out.append("need:cornerGoal_0 rk:at rpos:D3 ; rk:like rpos:D5 .")
+    out.append("need:cornerGoal_1 rk:at rpos:F9 ; rk:like rpos:F5 .")
+    out.append("need:cornerGoal_2 rk:at rpos:R7 ; rk:like rpos:R5 .")
     out.append("stage:Done a rk:Stage ; rdfs:label \"done\" .")
 
-    out.append("\n# --- stage 1: the white cross, one edge at a time ------------------------")
-    lengths = []
-    for name, label, needs, alg in cross_cases():
-        emit_case(out, "Cross", name, label, needs, alg)
-        lengths.append(len(alg))
-    print(f"cross: {len(lengths)} cases, algorithms of {min(lengths)}-{max(lengths)} moves")
+    for stage, title, cases in (("Cross", "stage 1: the white cross, one edge at a time", cross_cases),
+                                ("Corners", "stage 2: the white corners, one at a time", corner_cases)):
+        out.append(f"\n# --- {title} " + "-" * (72 - len(title)))
+        lengths = []
+        for name, label, needs, alg in cases():
+            emit_case(out, stage, name, label, needs, alg)
+            lengths.append(len(alg))
+        print(f"{stage}: {len(lengths)} cases, algorithms of {min(lengths)}-{max(lengths)} moves")
 
     (HERE / "method.ttl").write_text("\n".join(out) + "\n", encoding="utf-8", newline="\n")
 

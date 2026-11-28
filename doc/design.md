@@ -638,13 +638,16 @@ A **Graph** tab next to the Sheet shows the same triples as a graph, built with 
 **Why:** after lazy validation and overlays, matching operation patterns was most of a tick (74% on the Rubik solver). rdflib evaluates SPARQL in pure Python, and nested `FILTER NOT EXISTS` over knowledge is its slowest case. pyoxigraph (Oxigraph, in Rust) gave identical results on every operation pattern, 8–15× faster.
 
 **What runs where:**
-- **On the mirror:** operation `lr:where`s and guards (`lr:requires`), against sheet + knowledge.
-- **On rdflib, as before:** steps (`lr:steps`) and postconditions (`lr:ensures`), which read per-application overlays; controllers, which read the `lr:before`/`lr:inserted`/… graphs (D20); SHACL, since pySHACL needs rdflib. rdflib stays the source of truth.
+- **On the mirror:** operation `lr:where`s and guards (`lr:requires`), against sheet + knowledge; and steps (`lr:steps`, phase 2). A step runs with its state's net delta applied to the mirror, which is reverted right after.
+- **On rdflib, as before:** postconditions (`lr:ensures`); controllers, which read the `lr:before`/`lr:inserted`/… graphs (D20); SHACL, since pySHACL needs rdflib. rdflib stays the source of truth.
 
 **How:**
 - **Sync:** the knowledge is loaded once per model load. The sheet is synced before each enumeration by diffing it against the last snapshot: O(sheet), but no write path (edits, tools, undo, acks) can be missed.
 - **Terms map back to the rdflib terms they came from**, so templates instantiate exactly what's in the sheet. Oxigraph stores some typed literals in canonical form (`"1.50"^^xsd:decimal` as `"1.5"`), and the map accounts for that. *Limitation:* two sheet literals with the same canonical form are one term in the mirror.
-- **Guards:** the parameters are joined in with `VALUES`, which binds them inside `FILTER (NOT) EXISTS` too, as rdflib's `initBindings` do. Oxigraph's own substitutions only reach variables in scope. A blank-node parameter, which `VALUES` can't hold, falls back to rdflib.
+- **Parameters (guards, steps)** must be bound everywhere, as rdflib's `initBindings` are:
+  - **variables in scope** go in as Oxigraph substitutions, which also reach `UNION` branches. A `VALUES` join is evaluated after the union, and made a step 80× slower;
+  - **variables only inside `FILTER (NOT) EXISTS`**, which substitutions refuse, are joined in with `VALUES`;
+  - a blank node that would need `VALUES` (which can't hold one) falls back to rdflib.
 - **Anything Oxigraph can't parse runs on rdflib**, and is listed in `Mirror.unsupported`. The equivalence tests assert that the examples have none.
 - **Security is unchanged:** patterns are checked at load time (D11, D23), before either store sees them.
 
@@ -661,6 +664,8 @@ A **Graph** tab next to the Sheet shows the same triples as a graph, built with 
 | folder-scan, per tick | 56 ms | 33 ms |
 
 Validating in place (pySHACL no longer copies the data graph) gave ~20% before this.
+
+*Update (same day, Rubik stage 2):* with steps on the mirror and a cheap `__bool__` on `Overlay`/`Union` (pySHACL's `if graph:` was counting every knowledge triple), a Rubik tick averages ~36 ms (turns ~27 ms, planning ~65 ms) over two stages and 46 cases. See `doc/rubik.md`.
 
 ## Open questions
 

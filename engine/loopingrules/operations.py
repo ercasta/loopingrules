@@ -267,7 +267,8 @@ def _step_delta(delete: str, insert: str, rows: list[dict], prefixes: str) -> tu
     return deletes, inserts
 
 
-def _effects(sheet: Graph, op: Operation, rows: list[dict], params: dict, prefixes: str) -> Overlay:
+def _effects(sheet: Graph, op: Operation, rows: list[dict], params: dict, prefixes: str,
+             matcher) -> Overlay:
     """The state after the operation, as an overlay on the sheet: its `deleted` and
     `added` are the net delta. Each step applies every delete, then every insert
     (SPARQL Update order), and later steps query the state earlier ones left."""
@@ -275,7 +276,7 @@ def _effects(sheet: Graph, op: Operation, rows: list[dict], params: dict, prefix
     for step in op.steps:
         # The parameters carry over even when the step's pattern doesn't mention them
         # (SELECT * only returns the pattern's own variables).
-        step_rows = ([{**params, **row} for row in _solutions(state, step.where, prefixes, params)]
+        step_rows = ([{**params, **row} for row in matcher.step_solutions(state, step.where, prefixes, params)]
                      if step.where.strip() else [dict(params)])
         deletes, inserts = _step_delta(step.delete, step.insert, step_rows, prefixes)
         for t in deletes:
@@ -317,7 +318,7 @@ def enumerate_applications(sheet: Graph, ops: list[Operation], model: Graph,
                 apps.append(Application(app_id, op, params, set(), set(), valid=False,
                                         violations=[condition_violation("lr:requires", c) for c in failed]))
                 continue
-            delta = _effects(sheet, op, rows, params, prefixes)
+            delta = _effects(sheet, op, rows, params, prefixes, matcher)
             if not delta.deleted and not delta.added and not op.noop:
                 continue
             apps.append(Application(app_id, op, params, delta.deleted, delta.added))

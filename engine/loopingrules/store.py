@@ -70,6 +70,11 @@ class Overlay(Graph):
     def __len__(self) -> int:
         return len(self.base) - len(self.deleted) + len(self.added)
 
+    def __bool__(self) -> bool:
+        # Without this, truthiness falls back to __len__, which costs O(base) on a Union;
+        # pySHACL tests `if graph:` three times per validation.
+        return bool(self.added) or any(True for _ in self.triples((None, None, None)))
+
     def add(self, triple):  # type: ignore[override]
         if triple in self.deleted:
             self.deleted.discard(triple)
@@ -117,6 +122,9 @@ class Union(Graph):
 
     def __len__(self) -> int:
         return len(self.first) + sum(1 for t in self.second if t not in self.first)
+
+    def __bool__(self) -> bool:  # see Overlay.__bool__: len() is O(second) here
+        return bool(len(self.first)) or bool(len(self.second))
 
     def add(self, triple):  # type: ignore[override]
         raise TypeError("the combined view is read-only: write to the sheet")

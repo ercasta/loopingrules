@@ -36,7 +36,11 @@
 - ***D30 is built:** operation `WHERE`s and guards match on an optional pyoxigraph mirror (`mirror.py`, extra `[fast]`). Rubik planning ticks: ~500 → ~85 ms. See §5, "Done: pyoxigraph phase 1".*
 - *SHACL validates in place: pySHACL was copying the data graph before every validation (~20% of a Rubik tick).*
 - *Applications now come in a fixed order (operation IRI, then parameter values). Ties used to depend on the hash seed, so the same seed could solve in 13 or 17 ticks.*
-- ***Next:** phase 2 (steps on the mirror) or incremental SHACL; see §5. We also discussed Rete and a Rust engine; both are deferred until we re-profile after these.*
+- *We also discussed Rete and a Rust engine; both are deferred (see §5, "Next options").*
+- ***Rubik stage 2 (white corners) is built**, as a stress test: only `gen_method.py` changed; the solver picked up the new stage unchanged. See `doc/rubik.md`, "Step 4, stage 2".*
+  - *It drove two more fixes: steps also run on the mirror (D30 phase 2, with substitutions instead of `VALUES` for in-scope bindings: Oxigraph doesn't push `VALUES` into `UNION`s), and a cheap `__bool__` on `Overlay`/`Union` (pySHACL's `if graph:` counted every knowledge triple).*
+  - *A Rubik tick now averages ~36 ms (was ~210 at the start of the session).*
+- ***Next:** Rubik stage 3 (middle-layer edges). On performance, SHACL is now ~60% of a tick: incremental validation (§5, step 3) is the next lever. Also re-check the per-stage case counts as stages land.*
 
 ## 1. State in one paragraph
 LoopingRules is a working "semantic spreadsheet":
@@ -176,8 +180,8 @@ engine/.venv/Scripts/lr run examples/folder-scan --yes  # headless
 - **Now a Rubik turn (~70 ms) is the slowest tick.** What's left: steps on overlays (rdflib), SHACL (one validation per tick), scoring, and the O(sheet) diff to sync the mirror.
 
 ### Next options (re-profile first)
-1. **Phase 2: steps on the mirror.** Apply each application's overlay delta to the mirror, run the step, revert. Steps were ~3 s of an 18 s profiled run.
-2. **Incremental SHACL** (`focus_nodes`, step 3 above).
+1. ~~**Phase 2: steps on the mirror.**~~ Done the same session, with Rubik stage 2. Now: **SHACL ~60% of `pick`**, matching + steps ~35%.
+2. **Incremental SHACL** (`focus_nodes`, step 3 above). Validation also re-checks the knowledge every tick, though it can't change.
 3. **A bigger folder-scan** (500+ files): the mirror is a constant factor, while cost per tick still grows with the sheet. That's where incremental matching (Rete, or DBSP/Differential Dataflow over the D23 subset) would pay off.
 4. **A Rust engine (store + SPARQL subset + SHACL + incremental matching):** discussed and deferred. Prove the incremental algorithms in Python first, then port them, building on Oxigraph's crates (`oxrdf`, `spargebra`) and rudof (SHACL).
 

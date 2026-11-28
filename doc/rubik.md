@@ -177,6 +177,30 @@ rubik            project   cube, moves, solver
 
   The profile shows **matching 74%, SHACL 26%**. Planning grows with the number of cases. The full method will have about 100 cases, so expect planning ticks of about 2 s.
 
+## Step 4, stage 2 (white corners): as built, and a stress test
+- **Only knowledge changed.** `gen_method.py` adds `stage:Corners` (after `stage:Cross`) and 23 corner cases. **The solver didn't change:** `plan a case`, `turn` and `next stage` picked up the new stage as they are. That's the design working as intended.
+  - **Target:** the white-front-right corner into DFR (`D3`, `F9`, `R7` like `D5`, `F5`, `R5`).
+  - **Cases:** every place and twist of that corner. They're found by applying moves to the solved corner, so a twist that can't happen can't be written.
+  - **Kept:** the cross, and the other three bottom corner slots except the one the target is in, sticker for sticker.
+  - **Algorithms:** 3–6 moves, each replayed against the 20 tracked stickers.
+- **The search is now byte-based.** A state is a `bytes` of facelet indices, a move is a `bytes.translate` table, and paths are parent pointers. The cross output is identical. Both stages generate in under a second.
+- **Test:** 6 random scrambles reach cross + corners in at most 4×4 + 4×6 turns.
+- **Cost** (`bench_rubik_solve.py`, seeds 3–5, cross + corners, ~32–37 ticks):
+
+  | tick | start of session (rdflib) | mirror (D30) | + cheap `__bool__` | + steps on the mirror |
+  |---|---|---|---|---|
+  | plan a case | ~570 | ~100 | ~66 | **~65** |
+  | turn | ~75 | ~75 | ~47 | **~27** |
+  | average | ~210 | ~78 | ~52 | **~36** |
+
+- **Findings from the stress test:**
+  - **The number of cases per stage matters, not the total.** Doubling the cases (23 → 46) took planning from ~85 to ~100 ms, because patterns join on `?stage` first. ~100 cases over 7 stages should keep planning near 100 ms or below.
+  - **pySHACL tested `if graph:` 3 times per validation**, and our `Union.__len__` is O(knowledge), so 74% of SHACL time went to counting triples. `Overlay` and `Union` now have a cheap `__bool__`.
+  - **Steps now run on the mirror** (D30, phase 2).
+  - **Oxigraph doesn't push a `VALUES` join into `UNION` branches.** The quarter-turn step took 31 ms instead of 0.4 ms. Bindings now go in as substitutions where they're in scope.
+  - **What's left per tick:** SHACL is ~60% of `pick` (one validation per tick), and matching plus steps ~35%.
+- **Estimate for the full method:** ~150 turns at ~27 ms plus ~40 planning ticks at ~65 ms, so ~7 s per solve, down from ~45 s at the start of the session.
+
 ## Engine changes needed (small)
 - *(done in step 2)* **`POST /api/out/ack` must wake a listening autopilot** (`session.input_event.set()`, as the other mutations do). Today an ack doesn't, so `show:wait` would never be re-evaluated.
 - Nothing else is expected. Revisit this if the solver's performance demands it.

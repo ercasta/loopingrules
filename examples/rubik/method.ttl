@@ -13,13 +13,18 @@
 rk:beginnerMethod a rk:Method ; rdfs:label "beginner method (layer by layer)" ; rk:firstStage stage:Cross .
 
 # --- stages ------------------------------------------------------------------
-stage:Cross a rk:Stage ; rdfs:label "white cross" ; rk:next stage:Done ;
+stage:Cross a rk:Stage ; rdfs:label "white cross" ; rk:next stage:Corners ;
   rk:goal need:crossGoal_0, need:crossGoal_1 .
 need:crossGoal_0 rk:at rpos:D2 ; rk:like rpos:D5 .
 need:crossGoal_1 rk:at rpos:F8 ; rk:like rpos:F5 .
+stage:Corners a rk:Stage ; rdfs:label "white corners" ; rk:next stage:Done ;
+  rk:goal need:cornerGoal_0, need:cornerGoal_1, need:cornerGoal_2 .
+need:cornerGoal_0 rk:at rpos:D3 ; rk:like rpos:D5 .
+need:cornerGoal_1 rk:at rpos:F9 ; rk:like rpos:F5 .
+need:cornerGoal_2 rk:at rpos:R7 ; rk:like rpos:R5 .
 stage:Done a rk:Stage ; rdfs:label "done" .
 
-# --- stage 1: the white cross, one edge at a time ------------------------
+# --- stage 1: the white cross, one edge at a time ----------------------------
 case:cross_B2 a rk:Case ; rk:stage stage:Cross ; rdfs:label "the white-front edge is at UB, white facing back" ;
   rk:need need:cross_B2_0, need:cross_B2_1 ; rk:algorithm alg:cross_B2_0 .
 need:cross_B2_0 rk:at rpos:B2 ; rk:like rpos:D5 .
@@ -174,3 +179,225 @@ case:cross_U8 a rk:Case ; rk:stage stage:Cross ; rdfs:label "the white-front edg
 need:cross_U8_0 rk:at rpos:U8 ; rk:like rpos:D5 .
 need:cross_U8_1 rk:at rpos:F2 ; rk:like rpos:F5 .
 alg:cross_U8_0 a rk:AlgorithmStep ; rdf:first rmv:F2 ; rdf:rest rdf:nil .
+
+# --- stage 2: the white corners, one at a time -------------------------------
+case:corner_B1 a rk:Case ; rk:stage stage:Corners ; rdfs:label "the white-front-right corner is at UBR, white facing back" ;
+  rk:need need:corner_B1_0, need:corner_B1_1, need:corner_B1_2 ; rk:algorithm alg:corner_B1_0 .
+need:corner_B1_0 rk:at rpos:B1 ; rk:like rpos:D5 .
+need:corner_B1_1 rk:at rpos:R3 ; rk:like rpos:F5 .
+need:corner_B1_2 rk:at rpos:U3 ; rk:like rpos:R5 .
+alg:corner_B1_0 a rk:AlgorithmStep ; rdf:first rmv:Fi ; rdf:rest alg:corner_B1_1 .
+alg:corner_B1_1 a rk:AlgorithmStep ; rdf:first rmv:U ; rdf:rest alg:corner_B1_2 .
+alg:corner_B1_2 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest rdf:nil .
+case:corner_B3 a rk:Case ; rk:stage stage:Corners ; rdfs:label "the white-front-right corner is at UBL, white facing back" ;
+  rk:need need:corner_B3_0, need:corner_B3_1, need:corner_B3_2 ; rk:algorithm alg:corner_B3_0 .
+need:corner_B3_0 rk:at rpos:B3 ; rk:like rpos:D5 .
+need:corner_B3_1 rk:at rpos:U1 ; rk:like rpos:F5 .
+need:corner_B3_2 rk:at rpos:L1 ; rk:like rpos:R5 .
+alg:corner_B3_0 a rk:AlgorithmStep ; rdf:first rmv:R ; rdf:rest alg:corner_B3_1 .
+alg:corner_B3_1 a rk:AlgorithmStep ; rdf:first rmv:U2 ; rdf:rest alg:corner_B3_2 .
+alg:corner_B3_2 a rk:AlgorithmStep ; rdf:first rmv:Ri ; rdf:rest rdf:nil .
+case:corner_B7 a rk:Case ; rk:stage stage:Corners ; rdfs:label "the white-front-right corner is at DBR, white facing back" ;
+  rk:need need:corner_B7_0, need:corner_B7_1, need:corner_B7_2 ; rk:algorithm alg:corner_B7_0 .
+need:corner_B7_0 rk:at rpos:B7 ; rk:like rpos:D5 .
+need:corner_B7_1 rk:at rpos:D9 ; rk:like rpos:F5 .
+need:corner_B7_2 rk:at rpos:R9 ; rk:like rpos:R5 .
+alg:corner_B7_0 a rk:AlgorithmStep ; rdf:first rmv:Fi ; rdf:rest alg:corner_B7_1 .
+alg:corner_B7_1 a rk:AlgorithmStep ; rdf:first rmv:B ; rdf:rest alg:corner_B7_2 .
+alg:corner_B7_2 a rk:AlgorithmStep ; rdf:first rmv:U ; rdf:rest alg:corner_B7_3 .
+alg:corner_B7_3 a rk:AlgorithmStep ; rdf:first rmv:Bi ; rdf:rest alg:corner_B7_4 .
+alg:corner_B7_4 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest rdf:nil .
+case:corner_B9 a rk:Case ; rk:stage stage:Corners ; rdfs:label "the white-front-right corner is at DBL, white facing back" ;
+  rk:need need:corner_B9_0, need:corner_B9_1, need:corner_B9_2 ; rk:algorithm alg:corner_B9_0 .
+need:corner_B9_0 rk:at rpos:B9 ; rk:like rpos:D5 .
+need:corner_B9_1 rk:at rpos:L7 ; rk:like rpos:F5 .
+need:corner_B9_2 rk:at rpos:D7 ; rk:like rpos:R5 .
+alg:corner_B9_0 a rk:AlgorithmStep ; rdf:first rmv:Bi ; rdf:rest alg:corner_B9_1 .
+alg:corner_B9_1 a rk:AlgorithmStep ; rdf:first rmv:R ; rdf:rest alg:corner_B9_2 .
+alg:corner_B9_2 a rk:AlgorithmStep ; rdf:first rmv:U2 ; rdf:rest alg:corner_B9_3 .
+alg:corner_B9_3 a rk:AlgorithmStep ; rdf:first rmv:Ri ; rdf:rest alg:corner_B9_4 .
+alg:corner_B9_4 a rk:AlgorithmStep ; rdf:first rmv:B ; rdf:rest rdf:nil .
+case:corner_D1 a rk:Case ; rk:stage stage:Corners ; rdfs:label "the white-front-right corner is at DFL, white facing down" ;
+  rk:need need:corner_D1_0, need:corner_D1_1, need:corner_D1_2 ; rk:algorithm alg:corner_D1_0 .
+need:corner_D1_0 rk:at rpos:D1 ; rk:like rpos:D5 .
+need:corner_D1_1 rk:at rpos:L9 ; rk:like rpos:F5 .
+need:corner_D1_2 rk:at rpos:F7 ; rk:like rpos:R5 .
+alg:corner_D1_0 a rk:AlgorithmStep ; rdf:first rmv:Ri ; rdf:rest alg:corner_D1_1 .
+alg:corner_D1_1 a rk:AlgorithmStep ; rdf:first rmv:F2 ; rdf:rest alg:corner_D1_2 .
+alg:corner_D1_2 a rk:AlgorithmStep ; rdf:first rmv:R ; rdf:rest alg:corner_D1_3 .
+alg:corner_D1_3 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest alg:corner_D1_4 .
+alg:corner_D1_4 a rk:AlgorithmStep ; rdf:first rmv:U ; rdf:rest alg:corner_D1_5 .
+alg:corner_D1_5 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest rdf:nil .
+case:corner_D7 a rk:Case ; rk:stage stage:Corners ; rdfs:label "the white-front-right corner is at DBL, white facing down" ;
+  rk:need need:corner_D7_0, need:corner_D7_1, need:corner_D7_2 ; rk:algorithm alg:corner_D7_0 .
+need:corner_D7_0 rk:at rpos:D7 ; rk:like rpos:D5 .
+need:corner_D7_1 rk:at rpos:B9 ; rk:like rpos:F5 .
+need:corner_D7_2 rk:at rpos:L7 ; rk:like rpos:R5 .
+alg:corner_D7_0 a rk:AlgorithmStep ; rdf:first rmv:Fi ; rdf:rest alg:corner_D7_1 .
+alg:corner_D7_1 a rk:AlgorithmStep ; rdf:first rmv:Bi ; rdf:rest alg:corner_D7_2 .
+alg:corner_D7_2 a rk:AlgorithmStep ; rdf:first rmv:U2 ; rdf:rest alg:corner_D7_3 .
+alg:corner_D7_3 a rk:AlgorithmStep ; rdf:first rmv:B ; rdf:rest alg:corner_D7_4 .
+alg:corner_D7_4 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest rdf:nil .
+case:corner_D9 a rk:Case ; rk:stage stage:Corners ; rdfs:label "the white-front-right corner is at DBR, white facing down" ;
+  rk:need need:corner_D9_0, need:corner_D9_1, need:corner_D9_2 ; rk:algorithm alg:corner_D9_0 .
+need:corner_D9_0 rk:at rpos:D9 ; rk:like rpos:D5 .
+need:corner_D9_1 rk:at rpos:R9 ; rk:like rpos:F5 .
+need:corner_D9_2 rk:at rpos:B7 ; rk:like rpos:R5 .
+alg:corner_D9_0 a rk:AlgorithmStep ; rdf:first rmv:B ; rdf:rest alg:corner_D9_1 .
+alg:corner_D9_1 a rk:AlgorithmStep ; rdf:first rmv:Ui ; rdf:rest alg:corner_D9_2 .
+alg:corner_D9_2 a rk:AlgorithmStep ; rdf:first rmv:Bi ; rdf:rest alg:corner_D9_3 .
+alg:corner_D9_3 a rk:AlgorithmStep ; rdf:first rmv:Fi ; rdf:rest alg:corner_D9_4 .
+alg:corner_D9_4 a rk:AlgorithmStep ; rdf:first rmv:U ; rdf:rest alg:corner_D9_5 .
+alg:corner_D9_5 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest rdf:nil .
+case:corner_F1 a rk:Case ; rk:stage stage:Corners ; rdfs:label "the white-front-right corner is at UFL, white facing front" ;
+  rk:need need:corner_F1_0, need:corner_F1_1, need:corner_F1_2 ; rk:algorithm alg:corner_F1_0 .
+need:corner_F1_0 rk:at rpos:F1 ; rk:like rpos:D5 .
+need:corner_F1_1 rk:at rpos:L3 ; rk:like rpos:F5 .
+need:corner_F1_2 rk:at rpos:U7 ; rk:like rpos:R5 .
+alg:corner_F1_0 a rk:AlgorithmStep ; rdf:first rmv:U2 ; rdf:rest alg:corner_F1_1 .
+alg:corner_F1_1 a rk:AlgorithmStep ; rdf:first rmv:Fi ; rdf:rest alg:corner_F1_2 .
+alg:corner_F1_2 a rk:AlgorithmStep ; rdf:first rmv:U ; rdf:rest alg:corner_F1_3 .
+alg:corner_F1_3 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest rdf:nil .
+case:corner_F3 a rk:Case ; rk:stage stage:Corners ; rdfs:label "the white-front-right corner is at UFR, white facing front" ;
+  rk:need need:corner_F3_0, need:corner_F3_1, need:corner_F3_2 ; rk:algorithm alg:corner_F3_0 .
+need:corner_F3_0 rk:at rpos:F3 ; rk:like rpos:D5 .
+need:corner_F3_1 rk:at rpos:U9 ; rk:like rpos:F5 .
+need:corner_F3_2 rk:at rpos:R1 ; rk:like rpos:R5 .
+alg:corner_F3_0 a rk:AlgorithmStep ; rdf:first rmv:Fi ; rdf:rest alg:corner_F3_1 .
+alg:corner_F3_1 a rk:AlgorithmStep ; rdf:first rmv:Ui ; rdf:rest alg:corner_F3_2 .
+alg:corner_F3_2 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest rdf:nil .
+case:corner_F7 a rk:Case ; rk:stage stage:Corners ; rdfs:label "the white-front-right corner is at DFL, white facing front" ;
+  rk:need need:corner_F7_0, need:corner_F7_1, need:corner_F7_2 ; rk:algorithm alg:corner_F7_0 .
+need:corner_F7_0 rk:at rpos:F7 ; rk:like rpos:D5 .
+need:corner_F7_1 rk:at rpos:D1 ; rk:like rpos:F5 .
+need:corner_F7_2 rk:at rpos:L9 ; rk:like rpos:R5 .
+alg:corner_F7_0 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest alg:corner_F7_1 .
+alg:corner_F7_1 a rk:AlgorithmStep ; rdf:first rmv:U ; rdf:rest alg:corner_F7_2 .
+alg:corner_F7_2 a rk:AlgorithmStep ; rdf:first rmv:F2 ; rdf:rest alg:corner_F7_3 .
+alg:corner_F7_3 a rk:AlgorithmStep ; rdf:first rmv:U2 ; rdf:rest alg:corner_F7_4 .
+alg:corner_F7_4 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest rdf:nil .
+case:corner_F9 a rk:Case ; rk:stage stage:Corners ; rdfs:label "the white-front-right corner is at DFR, white facing front" ;
+  rk:need need:corner_F9_0, need:corner_F9_1, need:corner_F9_2 ; rk:algorithm alg:corner_F9_0 .
+need:corner_F9_0 rk:at rpos:F9 ; rk:like rpos:D5 .
+need:corner_F9_1 rk:at rpos:R7 ; rk:like rpos:F5 .
+need:corner_F9_2 rk:at rpos:D3 ; rk:like rpos:R5 .
+alg:corner_F9_0 a rk:AlgorithmStep ; rdf:first rmv:R ; rdf:rest alg:corner_F9_1 .
+alg:corner_F9_1 a rk:AlgorithmStep ; rdf:first rmv:Ui ; rdf:rest alg:corner_F9_2 .
+alg:corner_F9_2 a rk:AlgorithmStep ; rdf:first rmv:Ri ; rdf:rest alg:corner_F9_3 .
+alg:corner_F9_3 a rk:AlgorithmStep ; rdf:first rmv:Fi ; rdf:rest alg:corner_F9_4 .
+alg:corner_F9_4 a rk:AlgorithmStep ; rdf:first rmv:Ui ; rdf:rest alg:corner_F9_5 .
+alg:corner_F9_5 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest rdf:nil .
+case:corner_L1 a rk:Case ; rk:stage stage:Corners ; rdfs:label "the white-front-right corner is at UBL, white facing left" ;
+  rk:need need:corner_L1_0, need:corner_L1_1, need:corner_L1_2 ; rk:algorithm alg:corner_L1_0 .
+need:corner_L1_0 rk:at rpos:L1 ; rk:like rpos:D5 .
+need:corner_L1_1 rk:at rpos:B3 ; rk:like rpos:F5 .
+need:corner_L1_2 rk:at rpos:U1 ; rk:like rpos:R5 .
+alg:corner_L1_0 a rk:AlgorithmStep ; rdf:first rmv:Fi ; rdf:rest alg:corner_L1_1 .
+alg:corner_L1_1 a rk:AlgorithmStep ; rdf:first rmv:U2 ; rdf:rest alg:corner_L1_2 .
+alg:corner_L1_2 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest rdf:nil .
+case:corner_L3 a rk:Case ; rk:stage stage:Corners ; rdfs:label "the white-front-right corner is at UFL, white facing left" ;
+  rk:need need:corner_L3_0, need:corner_L3_1, need:corner_L3_2 ; rk:algorithm alg:corner_L3_0 .
+need:corner_L3_0 rk:at rpos:L3 ; rk:like rpos:D5 .
+need:corner_L3_1 rk:at rpos:U7 ; rk:like rpos:F5 .
+need:corner_L3_2 rk:at rpos:F1 ; rk:like rpos:R5 .
+alg:corner_L3_0 a rk:AlgorithmStep ; rdf:first rmv:R ; rdf:rest alg:corner_L3_1 .
+alg:corner_L3_1 a rk:AlgorithmStep ; rdf:first rmv:Ui ; rdf:rest alg:corner_L3_2 .
+alg:corner_L3_2 a rk:AlgorithmStep ; rdf:first rmv:Ri ; rdf:rest rdf:nil .
+case:corner_L7 a rk:Case ; rk:stage stage:Corners ; rdfs:label "the white-front-right corner is at DBL, white facing left" ;
+  rk:need need:corner_L7_0, need:corner_L7_1, need:corner_L7_2 ; rk:algorithm alg:corner_L7_0 .
+need:corner_L7_0 rk:at rpos:L7 ; rk:like rpos:D5 .
+need:corner_L7_1 rk:at rpos:D7 ; rk:like rpos:F5 .
+need:corner_L7_2 rk:at rpos:B9 ; rk:like rpos:R5 .
+alg:corner_L7_0 a rk:AlgorithmStep ; rdf:first rmv:Fi ; rdf:rest alg:corner_L7_1 .
+alg:corner_L7_1 a rk:AlgorithmStep ; rdf:first rmv:L ; rdf:rest alg:corner_L7_2 .
+alg:corner_L7_2 a rk:AlgorithmStep ; rdf:first rmv:U2 ; rdf:rest alg:corner_L7_3 .
+alg:corner_L7_3 a rk:AlgorithmStep ; rdf:first rmv:Li ; rdf:rest alg:corner_L7_4 .
+alg:corner_L7_4 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest rdf:nil .
+case:corner_L9 a rk:Case ; rk:stage stage:Corners ; rdfs:label "the white-front-right corner is at DFL, white facing left" ;
+  rk:need need:corner_L9_0, need:corner_L9_1, need:corner_L9_2 ; rk:algorithm alg:corner_L9_0 .
+need:corner_L9_0 rk:at rpos:L9 ; rk:like rpos:D5 .
+need:corner_L9_1 rk:at rpos:F7 ; rk:like rpos:F5 .
+need:corner_L9_2 rk:at rpos:D1 ; rk:like rpos:R5 .
+alg:corner_L9_0 a rk:AlgorithmStep ; rdf:first rmv:R ; rdf:rest alg:corner_L9_1 .
+alg:corner_L9_1 a rk:AlgorithmStep ; rdf:first rmv:Li ; rdf:rest alg:corner_L9_2 .
+alg:corner_L9_2 a rk:AlgorithmStep ; rdf:first rmv:Ui ; rdf:rest alg:corner_L9_3 .
+alg:corner_L9_3 a rk:AlgorithmStep ; rdf:first rmv:L ; rdf:rest alg:corner_L9_4 .
+alg:corner_L9_4 a rk:AlgorithmStep ; rdf:first rmv:Ri ; rdf:rest rdf:nil .
+case:corner_R1 a rk:Case ; rk:stage stage:Corners ; rdfs:label "the white-front-right corner is at UFR, white facing right" ;
+  rk:need need:corner_R1_0, need:corner_R1_1, need:corner_R1_2 ; rk:algorithm alg:corner_R1_0 .
+need:corner_R1_0 rk:at rpos:R1 ; rk:like rpos:D5 .
+need:corner_R1_1 rk:at rpos:F3 ; rk:like rpos:F5 .
+need:corner_R1_2 rk:at rpos:U9 ; rk:like rpos:R5 .
+alg:corner_R1_0 a rk:AlgorithmStep ; rdf:first rmv:R ; rdf:rest alg:corner_R1_1 .
+alg:corner_R1_1 a rk:AlgorithmStep ; rdf:first rmv:U ; rdf:rest alg:corner_R1_2 .
+alg:corner_R1_2 a rk:AlgorithmStep ; rdf:first rmv:Ri ; rdf:rest rdf:nil .
+case:corner_R3 a rk:Case ; rk:stage stage:Corners ; rdfs:label "the white-front-right corner is at UBR, white facing right" ;
+  rk:need need:corner_R3_0, need:corner_R3_1, need:corner_R3_2 ; rk:algorithm alg:corner_R3_0 .
+need:corner_R3_0 rk:at rpos:R3 ; rk:like rpos:D5 .
+need:corner_R3_1 rk:at rpos:U3 ; rk:like rpos:F5 .
+need:corner_R3_2 rk:at rpos:B1 ; rk:like rpos:R5 .
+alg:corner_R3_0 a rk:AlgorithmStep ; rdf:first rmv:U ; rdf:rest alg:corner_R3_1 .
+alg:corner_R3_1 a rk:AlgorithmStep ; rdf:first rmv:Fi ; rdf:rest alg:corner_R3_2 .
+alg:corner_R3_2 a rk:AlgorithmStep ; rdf:first rmv:Ui ; rdf:rest alg:corner_R3_3 .
+alg:corner_R3_3 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest rdf:nil .
+case:corner_R7 a rk:Case ; rk:stage stage:Corners ; rdfs:label "the white-front-right corner is at DFR, white facing right" ;
+  rk:need need:corner_R7_0, need:corner_R7_1, need:corner_R7_2 ; rk:algorithm alg:corner_R7_0 .
+need:corner_R7_0 rk:at rpos:R7 ; rk:like rpos:D5 .
+need:corner_R7_1 rk:at rpos:D3 ; rk:like rpos:F5 .
+need:corner_R7_2 rk:at rpos:F9 ; rk:like rpos:R5 .
+alg:corner_R7_0 a rk:AlgorithmStep ; rdf:first rmv:Fi ; rdf:rest alg:corner_R7_1 .
+alg:corner_R7_1 a rk:AlgorithmStep ; rdf:first rmv:Ri ; rdf:rest alg:corner_R7_2 .
+alg:corner_R7_2 a rk:AlgorithmStep ; rdf:first rmv:F2 ; rdf:rest alg:corner_R7_3 .
+alg:corner_R7_3 a rk:AlgorithmStep ; rdf:first rmv:R ; rdf:rest alg:corner_R7_4 .
+alg:corner_R7_4 a rk:AlgorithmStep ; rdf:first rmv:Ui ; rdf:rest alg:corner_R7_5 .
+alg:corner_R7_5 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest rdf:nil .
+case:corner_R9 a rk:Case ; rk:stage stage:Corners ; rdfs:label "the white-front-right corner is at DBR, white facing right" ;
+  rk:need need:corner_R9_0, need:corner_R9_1, need:corner_R9_2 ; rk:algorithm alg:corner_R9_0 .
+need:corner_R9_0 rk:at rpos:R9 ; rk:like rpos:D5 .
+need:corner_R9_1 rk:at rpos:B7 ; rk:like rpos:F5 .
+need:corner_R9_2 rk:at rpos:D9 ; rk:like rpos:R5 .
+alg:corner_R9_0 a rk:AlgorithmStep ; rdf:first rmv:Ri ; rdf:rest alg:corner_R9_1 .
+alg:corner_R9_1 a rk:AlgorithmStep ; rdf:first rmv:Ui ; rdf:rest alg:corner_R9_2 .
+alg:corner_R9_2 a rk:AlgorithmStep ; rdf:first rmv:R2 ; rdf:rest alg:corner_R9_3 .
+alg:corner_R9_3 a rk:AlgorithmStep ; rdf:first rmv:U2 ; rdf:rest alg:corner_R9_4 .
+alg:corner_R9_4 a rk:AlgorithmStep ; rdf:first rmv:Ri ; rdf:rest rdf:nil .
+case:corner_U1 a rk:Case ; rk:stage stage:Corners ; rdfs:label "the white-front-right corner is at UBL, white facing up" ;
+  rk:need need:corner_U1_0, need:corner_U1_1, need:corner_U1_2 ; rk:algorithm alg:corner_U1_0 .
+need:corner_U1_0 rk:at rpos:U1 ; rk:like rpos:D5 .
+need:corner_U1_1 rk:at rpos:L1 ; rk:like rpos:F5 .
+need:corner_U1_2 rk:at rpos:B3 ; rk:like rpos:R5 .
+alg:corner_U1_0 a rk:AlgorithmStep ; rdf:first rmv:Fi ; rdf:rest alg:corner_U1_1 .
+alg:corner_U1_1 a rk:AlgorithmStep ; rdf:first rmv:L ; rdf:rest alg:corner_U1_2 .
+alg:corner_U1_2 a rk:AlgorithmStep ; rdf:first rmv:Fi ; rdf:rest alg:corner_U1_3 .
+alg:corner_U1_3 a rk:AlgorithmStep ; rdf:first rmv:Li ; rdf:rest alg:corner_U1_4 .
+alg:corner_U1_4 a rk:AlgorithmStep ; rdf:first rmv:F2 ; rdf:rest rdf:nil .
+case:corner_U3 a rk:Case ; rk:stage stage:Corners ; rdfs:label "the white-front-right corner is at UBR, white facing up" ;
+  rk:need need:corner_U3_0, need:corner_U3_1, need:corner_U3_2 ; rk:algorithm alg:corner_U3_0 .
+need:corner_U3_0 rk:at rpos:U3 ; rk:like rpos:D5 .
+need:corner_U3_1 rk:at rpos:B1 ; rk:like rpos:F5 .
+need:corner_U3_2 rk:at rpos:R3 ; rk:like rpos:R5 .
+alg:corner_U3_0 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest alg:corner_U3_1 .
+alg:corner_U3_1 a rk:AlgorithmStep ; rdf:first rmv:D2 ; rdf:rest alg:corner_U3_2 .
+alg:corner_U3_2 a rk:AlgorithmStep ; rdf:first rmv:Bi ; rdf:rest alg:corner_U3_3 .
+alg:corner_U3_3 a rk:AlgorithmStep ; rdf:first rmv:D2 ; rdf:rest alg:corner_U3_4 .
+alg:corner_U3_4 a rk:AlgorithmStep ; rdf:first rmv:Fi ; rdf:rest rdf:nil .
+case:corner_U7 a rk:Case ; rk:stage stage:Corners ; rdfs:label "the white-front-right corner is at UFL, white facing up" ;
+  rk:need need:corner_U7_0, need:corner_U7_1, need:corner_U7_2 ; rk:algorithm alg:corner_U7_0 .
+need:corner_U7_0 rk:at rpos:U7 ; rk:like rpos:D5 .
+need:corner_U7_1 rk:at rpos:F1 ; rk:like rpos:F5 .
+need:corner_U7_2 rk:at rpos:L3 ; rk:like rpos:R5 .
+alg:corner_U7_0 a rk:AlgorithmStep ; rdf:first rmv:Ri ; rdf:rest alg:corner_U7_1 .
+alg:corner_U7_1 a rk:AlgorithmStep ; rdf:first rmv:D2 ; rdf:rest alg:corner_U7_2 .
+alg:corner_U7_2 a rk:AlgorithmStep ; rdf:first rmv:L ; rdf:rest alg:corner_U7_3 .
+alg:corner_U7_3 a rk:AlgorithmStep ; rdf:first rmv:D2 ; rdf:rest alg:corner_U7_4 .
+alg:corner_U7_4 a rk:AlgorithmStep ; rdf:first rmv:R ; rdf:rest rdf:nil .
+case:corner_U9 a rk:Case ; rk:stage stage:Corners ; rdfs:label "the white-front-right corner is at UFR, white facing up" ;
+  rk:need need:corner_U9_0, need:corner_U9_1, need:corner_U9_2 ; rk:algorithm alg:corner_U9_0 .
+need:corner_U9_0 rk:at rpos:U9 ; rk:like rpos:D5 .
+need:corner_U9_1 rk:at rpos:R1 ; rk:like rpos:F5 .
+need:corner_U9_2 rk:at rpos:F3 ; rk:like rpos:R5 .
+alg:corner_U9_0 a rk:AlgorithmStep ; rdf:first rmv:Fi ; rdf:rest alg:corner_U9_1 .
+alg:corner_U9_1 a rk:AlgorithmStep ; rdf:first rmv:Ri ; rdf:rest alg:corner_U9_2 .
+alg:corner_U9_2 a rk:AlgorithmStep ; rdf:first rmv:F2 ; rdf:rest alg:corner_U9_3 .
+alg:corner_U9_3 a rk:AlgorithmStep ; rdf:first rmv:R ; rdf:rest alg:corner_U9_4 .
+alg:corner_U9_4 a rk:AlgorithmStep ; rdf:first rmv:F ; rdf:rest rdf:nil .

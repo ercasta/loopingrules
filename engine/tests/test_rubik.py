@@ -261,6 +261,13 @@ def cross_done(eng) -> bool:
                for u, s in (("U8", "F2"), ("U6", "R2"), ("U2", "B2"), ("U4", "L2")))
 
 
+def corners_done(eng) -> bool:
+    """The four U corners: white up, and each side sticker matching its centre."""
+    cs = colours(eng)
+    return all(cs[u] == "White" and cs[a] == cs[a[0] + "5"] and cs[b] == cs[b[0] + "5"]
+               for u, a, b in (("U9", "F3", "R1"), ("U7", "F1", "L3"), ("U1", "B3", "L1"), ("U3", "B1", "R3")))
+
+
 def solve(eng, max_ticks=400):
     eng.post("[] a rk:Solve .")
     result = eng.run(max_ticks=max_ticks)
@@ -270,15 +277,16 @@ def solve(eng, max_ticks=400):
 
 
 @pytest.mark.parametrize("seed", range(6))
-def test_solver_makes_the_white_cross(eng, seed):
+def test_solver_makes_the_first_layer(eng, seed):
     rng = random.Random(seed)
     play(eng, [rng.choice(ALL_MOVES) for _ in range(25)])
     before = int(eng.sheet.value(RK.cube, RK.turns))
     said = solve(eng)
-    assert cross_done(eng)
-    assert "Done: white cross." in said and "Finished." in said
+    assert cross_done(eng) and corners_done(eng)
+    assert "Done: white cross." in said and "Done: white corners." in said and "Finished." in said
     assert eng.sheet_violations() == []
-    assert int(eng.sheet.value(RK.cube, RK.turns)) - before <= 4 * 4  # at most 4 moves per edge
+    # at most 4 moves per edge and 6 per corner: each piece takes one algorithm
+    assert int(eng.sheet.value(RK.cube, RK.turns)) - before <= 4 * 4 + 4 * 6
 
 
 def test_solving_a_solved_cube_makes_no_turns(eng):
