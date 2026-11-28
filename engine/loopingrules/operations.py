@@ -27,7 +27,7 @@ from rdflib.term import Node
 from .patterns import check_pattern
 from .project import mint
 from .security import check_query
-from .store import Triple, apply_delta, copy_graph, prepared, prologue
+from .store import Overlay, Triple, prepared, prologue
 from .vocab import LR
 
 
@@ -251,28 +251,6 @@ def _app_id(op: Operation, bindings: dict) -> str:
     return hashlib.sha1(key.encode()).hexdigest()[:12]
 
 
-class _Delta:
-    """The net change to `base` made by a sequence of deletes and inserts."""
-
-    def __init__(self, base: Graph):
-        self.base = base
-        self.deleted: set[Triple] = set()
-        self.added: set[Triple] = set()
-
-    def apply(self, deletes: set[Triple], inserts: set[Triple]) -> None:
-        """SPARQL Update order: every delete, then every insert."""
-        for t in deletes:
-            if t in self.added:
-                self.added.discard(t)
-            elif t in self.base:
-                self.deleted.add(t)
-        for t in inserts:
-            if t in self.deleted:
-                self.deleted.discard(t)
-            elif t not in self.base:
-                self.added.add(t)
-
-
 def _step_delta(delete: str, insert: str, rows: list[dict], prefixes: str) -> tuple[set, set]:
     """One step's templates instantiated with every row, unioned."""
     deletes: set[Triple] = set()
@@ -283,23 +261,19 @@ def _step_delta(delete: str, insert: str, rows: list[dict], prefixes: str) -> tu
     return deletes, inserts
 
 
-def _effects(sheet: Graph, op: Operation, rows: list[dict], params: dict, prefixes: str) -> _Delta:
-    delta = _Delta(sheet)
-    delta.apply(*_step_delta(op.delete, op.insert, rows, prefixes))
-    if not op.steps:
-        return delta
-    # Later steps query the state the earlier ones left. A working copy for now;
-    # an overlay would avoid copying the sheet (handoff, performance step 2).
-    state = copy_graph(sheet)
-    apply_delta(state, delta.deleted, delta.added)
+def _effects(sheet: Graph, op: Operation, rows: list[dict], params: dict, prefixes: str) -> Overlay:
+    """The state after the operation, as an overlay on the sheet: its `deleted` and
+    `added` are the net delta. Each step applies every delete, then every insert
+    (SPARQL Update order), and later steps query the state earlier ones left."""
+    state = Overlay(sheet, *_step_delta(op.delete, op.insert, rows, prefixes))
     for step in op.steps:
         step_rows = _solutions(state, step.where, prefixes, params) if step.where.strip() else [dict(params)]
         deletes, inserts = _step_delta(step.delete, step.insert, step_rows, prefixes)
-        deletes = {t for t in deletes if t in state}
-        inserts = {t for t in inserts if t not in state}
-        apply_delta(state, deletes, inserts)
-        delta.apply(deletes, inserts)
-    return delta
+        for t in deletes:
+            state.remove(t)
+        for t in inserts:
+            state.add(t)
+    return state
 
 
 def enumerate_applications(sheet: Graph, ops: list[Operation], model: Graph) -> list[Application]:

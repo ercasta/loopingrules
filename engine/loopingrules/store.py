@@ -6,6 +6,7 @@ from functools import lru_cache
 from typing import Callable, Iterator
 
 from rdflib import Dataset, Graph, URIRef
+from rdflib.paths import Path
 from rdflib.plugins.sparql import prepareQuery
 from rdflib.plugins.sparql.evaluate import evalPart
 from rdflib.plugins.sparql.sparql import Query, QueryContext
@@ -26,6 +27,64 @@ def apply_delta(g: Graph, deletes: set[Triple], inserts: set[Triple]) -> None:
         g.remove(t)
     for t in inserts:
         g.add(t)
+
+
+class Overlay(Graph):
+    """`base` with some triples deleted and others added, without copying `base`.
+
+    `base` must not change while the overlay is in use. Adding to or removing
+    from the overlay only changes its own two sets, which always hold the net
+    change: `deleted` ⊆ base, `added` ∩ base = ∅.
+    """
+
+    def __init__(self, base: Graph, deletes=(), inserts=()):
+        super().__init__()
+        self.namespace_manager = base.namespace_manager  # same prefixes in messages as the base
+        self.base = base
+        self.deleted: set[Triple] = set()
+        self.added: set[Triple] = set()
+        for t in deletes:
+            self.remove(t)
+        for t in inserts:
+            self.add(t)
+
+    def triples(self, pattern):  # type: ignore[override]
+        s, p, o = pattern
+        if isinstance(p, Path):
+            for _s, _o in p.eval(self, s, o):
+                yield _s, p, _o
+            return
+        deleted = self.deleted
+        for t in self.base.triples(pattern):
+            if t not in deleted:
+                yield t
+        for t in self.added:
+            if (s is None or s == t[0]) and (p is None or p == t[1]) and (o is None or o == t[2]):
+                yield t
+
+    def __contains__(self, triple) -> bool:
+        if None in triple:
+            return any(True for _ in self.triples(triple))
+        return triple in self.added or (triple not in self.deleted and triple in self.base)
+
+    def __len__(self) -> int:
+        return len(self.base) - len(self.deleted) + len(self.added)
+
+    def add(self, triple):  # type: ignore[override]
+        if triple in self.deleted:
+            self.deleted.discard(triple)
+        elif triple not in self.base:
+            self.added.add(triple)
+        return self
+
+    def remove(self, triple):  # type: ignore[override]
+        if None in triple:
+            raise ValueError("Overlay.remove takes a concrete triple, not a pattern")
+        if triple in self.added:
+            self.added.discard(triple)
+        elif triple in self.base:
+            self.deleted.add(triple)
+        return self
 
 
 def prologue(*graphs: Graph) -> str:

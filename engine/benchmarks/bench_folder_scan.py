@@ -4,7 +4,7 @@
 
 Reports, per folder size: ticks, final triples, total time, time per tick, and
 the share of time spent in SPARQL parsing/translation, SHACL validation and
-graph copying. Nothing touches the disk or the real shell.
+building resulting states. Nothing touches the disk or the real shell.
 """
 
 import shutil
@@ -43,7 +43,7 @@ def instrument():
     processor.parseQuery = timed("sparql parse", parser.parseQuery)
     processor.translateQuery = timed("sparql translate", algebra.translateQuery)
     engine_mod.validate = timed("shacl validate", engine_mod.validate)
-    engine_mod.copy_graph = timed("graph copy", engine_mod.copy_graph)
+    Engine.resulting_state = timed("resulting state", Engine.resulting_state)
     Controller.score = timed("scoring", Controller.score)
 
 

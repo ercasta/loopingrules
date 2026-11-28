@@ -11,7 +11,7 @@ from .controllers import Controller, load_controllers, scoring_view
 from .operations import (Application, Operation, condition_violation, enumerate_applications, holds,
                          load_operations)
 from .project import Project
-from .store import apply_delta, copy_graph, prologue
+from .store import Overlay, apply_delta, prologue
 from .tools.shell import PendingCall, ShellTool
 from .validation import validate, violation_key
 from .vocab import BUILTIN_SHAPES
@@ -157,12 +157,13 @@ class Engine:
         return stop
 
     def resulting_state(self, app: Application) -> Graph:
-        """The state after `app`; for a no-op, the sheet itself (do not modify it)."""
+        """The state after `app`, as a read-only overlay on the sheet (not a copy).
+
+        For a no-op, the sheet itself. Do not modify either.
+        """
         if app.noop:
             return self.sheet
-        state = copy_graph(self.sheet)
-        apply_delta(state, app.deletes, app.inserts)
-        return state
+        return Overlay(self.sheet, app.deletes, app.inserts)
 
     def apply(self, app: Application, run_tools: bool = True, kind: str = "tick") -> None:
         if app.noop:  # choosing to stop changes nothing, so there's nothing to journal
