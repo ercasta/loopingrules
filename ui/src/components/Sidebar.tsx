@@ -19,6 +19,11 @@ export function Sidebar({ controllers, trust, log, onError }: Props) {
             <div>
               <div className="cname">
                 {c.name}
+                {c.weight !== 1 && (
+                  <span className="layer" title="lr:weight: this controller's score is multiplied by this">
+                    ×{c.weight}
+                  </span>
+                )}
                 {c.layer && (
                   <span className="layer" title={`from the ${c.layer} controller pack (layers/${c.layer}/)`}>
                     ⧉ {c.layer}

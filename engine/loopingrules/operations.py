@@ -9,6 +9,7 @@ from functools import lru_cache
 from rdflib import RDF, RDFS, BNode, Graph, Literal, URIRef, Variable
 from rdflib.term import Node
 
+from .patterns import check_pattern
 from .project import mint
 from .security import check_query
 from .store import Triple, prepared, prologue
@@ -57,6 +58,7 @@ def load_operations(model: Graph) -> list[Operation]:
             insert=str(model.value(iri, LR.insert) or ""),
         )
         check_query(f"{prefixes}SELECT * WHERE {{ {op.where} }}", f"operation {op.name}")
+        check_pattern(op.where, prefixes, f"operation {op.name}")
         for part in (op.delete, op.insert):
             if part.strip():
                 check_query(f"{prefixes}CONSTRUCT {{ {part} }} WHERE {{}}", f"operation {op.name}")
@@ -108,6 +110,21 @@ def _app_id(op: Operation, bindings: dict) -> str:
     return hashlib.sha1(key.encode()).hexdigest()[:12]
 
 
+def _solutions(sheet: Graph, where: str, prefixes: str) -> list[dict[str, Node]]:
+    """The solutions of a WHERE pattern, as {variable name: value}.
+
+    rdflib drops solutions that bind nothing, so a pattern without (bound)
+    variables would never apply, although SPARQL gives it one empty solution
+    when it matches. A marker BIND makes every solution non-empty.
+    """
+    query = prepared(f"{prefixes}SELECT * WHERE {{ {where}\n BIND(true AS ?{_MARKER}) }}")
+    return [{str(k): v for k, v in row.asdict().items() if v is not None and str(k) != _MARKER}
+            for row in sheet.query(query)]
+
+
+_MARKER = "lr__row"
+
+
 def enumerate_applications(sheet: Graph, ops: list[Operation], model: Graph) -> list[Application]:
     """Every binding of every operation's WHERE, with its effective delta.
 
@@ -117,9 +134,7 @@ def enumerate_applications(sheet: Graph, ops: list[Operation], model: Graph) -> 
     prefixes = prologue(model, sheet)
     apps: list[Application] = []
     for op in ops:
-        rows = sheet.query(prepared(f"{prefixes}SELECT * WHERE {{ {op.where} }}"))
-        for row in rows:
-            bindings = {str(k): v for k, v in row.asdict().items() if v is not None}
+        for bindings in _solutions(sheet, op.where, prefixes):
             deletes = _instantiate(op.delete, bindings, prefixes)
             if any(isinstance(term, BNode) and term not in bindings.values() for t in deletes for term in t):
                 raise ValueError(f"{op.name}: DELETE templates may not introduce blank nodes")

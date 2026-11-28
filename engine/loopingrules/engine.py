@@ -70,7 +70,8 @@ class Engine:
             app.valid = not new
             app.violations = new
             if app.valid:
-                app.scores = {c.name: c.score(state, prefixes) for c in active}
+                # Each entry is the controller's weighted contribution (D23).
+                app.scores = {c.name: c.weight * c.score(state, prefixes) for c in active}
         return apps
 
     def resulting_state(self, app: Application) -> Graph:

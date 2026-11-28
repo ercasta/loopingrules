@@ -60,7 +60,7 @@ export type LogEntry = {
   bindings?: Record<string, string>;
 };
 
-export type Controller = { name: string; active: boolean; query: string; layer: string | null };
+export type Controller = { name: string; active: boolean; weight: number; query: string; layer: string | null };
 
 export type AutopilotStatus = "idle" | "running" | "awaiting-approval" | "done";
 

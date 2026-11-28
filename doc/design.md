@@ -79,6 +79,7 @@ An operation is an RDF resource whose parts are SPARQL fragments:
 ### D8. Autopilot stops only when nothing is applicable, or when the user stops it
 - There is no local-optimum stop: autopilot always runs the best application, even when its resulting score is lower than the current state's.
 - Consequence: a model can loop forever, for example between two operations that undo each other. The user stopping it is the safety net. We may add loop *detection* later as an indicator, not as a stop rule.
+- **Amended by D21:** a model can also let controllers choose to stop, by authoring a no-op operation. Models without one keep the behaviour above.
 
 ### D9. Models and controllers are pure data, with no user code
 - The goal is that models and controllers can be shared without the risks of sharing code.
@@ -182,12 +183,84 @@ Lessons from `examples/folder-scan-goal`:
 - **Observation:** a pack's condition is evaluated on what the sheet knows at each tick, so a decision can flip as knowledge grows. With `big-folders`, the batch wins as soon as the 5th file is registered, even before all files are known. That's fine here, because the batch counts every `*.txt` in the folder anyway.
 - **Not yet:** pinning the version of the base package (`lr:extends` matches the title only), packs that extend other packs, and freezing a layer's controllers versus editing them.
 
+### D20. Controllers score actions, not only resulting states
+Goal: be able to say "from this situation, this change looks better than that one", which is a score of Q(before, action), not just V(after). That is what learned controllers need.
+
+Each controller query runs against a dataset that describes one application:
+
+| Graph | Contents |
+|---|---|
+| default graph | the resulting state (unchanged, so existing controllers keep working) |
+| `GRAPH lr:before` | the current sheet (the live graph, not a copy) |
+| `GRAPH lr:inserted`, `GRAPH lr:deleted` | the effective delta |
+| `GRAPH lr:action` | `lr:this lr:operation <op> ; lr:binds [ lr:var "file" ; lr:value <node> ]`, one `lr:binds` per parameter (D22) |
+
+```sparql
+# reward each line count this action records
+SELECT (COUNT(?f) AS ?score) WHERE { GRAPH lr:inserted { ?f ex:lineCount ?n } }
+```
+
+- Pure SPARQL, so D9 holds.
+- **Performance:** a controller whose patterns all sit inside `GRAPH` clauses doesn't need the resulting state, so the engine skips building it. A delta-only controller costs O(|Δ|) per candidate. A whole-state aggregate costs O(N) per candidate, so O(N·A) per tick. Prefer delta controllers. The engine detects this from the query algebra.
+- **Learning:** the features are the action, the delta, and the neighbourhood of the bound nodes in `lr:before`. Ranking within a tick only depends on differences, so the user's choices give pairwise preferences: chosen vs. not chosen, stop included (D21).
+
+### D21. Stopping is an authored no-op operation
+- **A no-op operation** is an operation with no effects: no `lr:delete`, `lr:insert` or `lr:steps`. Its `WHERE` says when it is available; an empty `WHERE` means always.
+- Its applications are kept even though their delta is empty. An operation that *has* effects but produces an empty effective delta for some binding is still dropped (as before).
+- Controllers score no-op applications like any other, mostly through `GRAPH lr:action` (D20).
+- **Rule: if the winning application changes nothing, autopilot stops.** Applying it wouldn't change the state, so every later tick would choose it again. Stopping is a shortcut for that fixpoint. No halt flag is needed.
+- **Ties go to continuing:** a no-op must strictly beat the best application that has effects. It's just a matter of scoring.
+- **It's authored, not built in.** If the engine always offered a stop, models that rely on D8 would break. For example, `folder-scan`'s first `scanFolder` lowers the score, so a built-in stop would win on tick 1.
+- A model may have several no-ops, e.g. "goal reached" and "give up when stuck". Which one won says why the run stopped.
+- **Manual mode:** pressing Stop is recorded as choosing a no-op. That's a training signal.
+- **Later, with asynchronous tools (D7):** an empty winner while calls are in flight means "wait", not "stop".
+- **rdflib quirk (fixed in step 1):** rdflib drops solutions that bind no variable. An empty or ground `WHERE` therefore never applied, though SPARQL gives it one empty solution. The engine now appends a marker `BIND` to every `WHERE`.
+
+### D22. Operations: parameters, guards, steps
+All three additions are optional and backward compatible.
+
+- **`lr:params`** lists the variables that identify an action.
+  - One application per distinct parameter tuple; the other variables are local.
+  - `WHERE` rows that share a tuple are merged, and their instantiated effects are unioned. That's SPARQL Update semantics with the parameters pre-bound, so "for every file in this folder" needs no new construct.
+  - The application id hashes the parameters only.
+  - Without `lr:params`, every variable is a parameter (today's behaviour).
+- **`lr:requires`**: named guards (`rdfs:label` + `lr:ask`), evaluated per parameter tuple with the parameters pre-bound.
+  - `WHERE` is still a precondition. Guards add explanation: the UI can list matched-but-blocked applications as "blocked by: …".
+  - They're also clean features for learning, and cheaper than finding out through SHACL after building the resulting state.
+- **`lr:ensures`**: optional postconditions specific to one operation, checked on the resulting state. SHACL stays the global invariant (D4).
+- **`lr:steps`**: an ordered `rdf:List` of `[ lr:where ; lr:delete ; lr:insert ]` steps for transformations that one pattern can't express.
+  - Each step runs against the state left by the previous steps. The parameters and earlier bindings carry over, and within a step rows are unioned as above.
+  - Only the final state is validated, so intermediate states may be inconsistent.
+  - Operations with one step keep the fast template path; operations with several steps run on an overlay.
+
+```turtle
+ex:forgetFolder a lr:Operation ;
+  lr:params "folder" ;
+  lr:where  """ ?folder a ex:Folder ; ex:scanned true . """ ;
+  lr:requires [ rdfs:label "no scan in progress" ;
+                lr:ask """ FILTER NOT EXISTS { ?c ex:scanOf ?folder ; lr:status lr:Pending } """ ] ;
+  lr:steps (
+    [ lr:where """ ?f ex:inFolder ?folder ; ?p ?o . """ ; lr:delete """ ?f ?p ?o . """ ]
+    [ lr:delete """ ?folder ex:scanned true . """ ]
+  ) .
+```
+
+### D23. Operation patterns use a subset of SPARQL; controllers are weighted
+- **No new language.** Structure is RDF (params, guards, steps); expressions stay SPARQL.
+- **Operation patterns use a subset.** This applies to `lr:where`, `lr:ask` and step `lr:where`; the subset is checked at load.
+  - **Allowed:** triple patterns, `FILTER` (with `EXISTS`/`NOT EXISTS`), `BIND`, `OPTIONAL`, `UNION`, `VALUES`, and the expression functions.
+  - **Refused:** subqueries, aggregates and `GROUP BY`, `MINUS`, property paths other than a plain predicate, and `GRAPH` (plus `SERVICE`/`FROM`, as in D18).
+  - **Why:** this subset can later be compiled to incremental matching (Rete-style). That turns "re-run every `WHERE` every tick" into "update the matches the delta touched". Full SPARQL on rdflib can't make that jump.
+  - The current examples already fit the subset.
+- **Controllers stay full SPARQL.** Their cost is handled by delta scoring (D20).
+- **`lr:weight`** (number, default 1) on a controller: the total is Σ weight × score.
+  - It's an extra lever when authoring: rebalance controllers without editing queries. A layer can also re-weight.
+  - Learning can tune weights over existing controllers before growing new ones.
+  - `lr:active false` still means "not evaluated". A weight of 0 still evaluates the controller (useful to show its score).
+
 ## Open questions
 
-- **Q3. Ties and no-ops.**
-  - How are ties broken: first found, random, or operation priority?
-  - Should applications whose delta is empty be excluded?
-  - Default if no objection: exclude empty deltas; break ties by first found.
+- **Q3. Ties and no-ops.** Partly settled by D21: empty deltas are excluded except for no-op operations, and a tie between a no-op and an application with effects goes to continuing. Other ties: still first found.
 - **Q4. Cost.** Scoring every resulting state is expensive. Options:
   - score against an overlay view (base + inserts − deletes) instead of copying the store;
   - for SHACL, validate only the shapes affected by the delta, or accept full validation in v0.
