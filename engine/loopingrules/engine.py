@@ -12,6 +12,7 @@ from .controllers import Controller, load_controllers, scoring_view
 from .definitions import Source, conflicts, source
 from .operations import (Application, Operation, condition_violation, enumerate_applications, holds,
                          load_operations)
+from .mirror import make_mirror
 from .project import Project
 from .store import Overlay, Union, apply_delta, prologue
 from .tools.shell import PendingCall, ShellTool
@@ -33,7 +34,7 @@ class StepResult:
 def choose(apps: list[Application]) -> Application | None:
     """The autopilot's pick among the valid applications.
 
-    The highest total wins, and ties go to the first one enumerated. A no-op (D21)
+    The highest total wins, and ties go to the first one enumerated (by operation IRI, then parameter values). A no-op (D21)
     must strictly beat every application that changes something: ties go to
     continuing.
     """
@@ -125,10 +126,16 @@ class Engine:
         self.shapes = Graph()
         self.shapes += self.model
         self.shapes.parse(data=BUILTIN_SHAPES, format="turtle")
+        self.mirror = make_mirror(self.knowledge)  # None: patterns are matched by rdflib
 
     @property
     def sheet(self) -> Graph:
         return self.project.sheet
+
+    def _enumerate(self) -> list[Application]:
+        """Every operation's applications, with WHEREs and guards on the mirror if there is one."""
+        matcher = self.mirror.sync(self.sheet, self.view) if self.mirror else None
+        return self._protect_knowledge(enumerate_applications(self.view, self.operations, self.model, matcher))
 
     @property
     def view(self) -> Graph:
@@ -163,7 +170,7 @@ class Engine:
         This validates every application, for display. Autopilot uses `pick`,
         which validates only as many as it needs.
         """
-        apps = self._protect_knowledge(enumerate_applications(self.view, self.operations, self.model))
+        apps = self._enumerate()
         tick = _Tick(self)
         for app in apps:
             if not app.valid:  # blocked by a guard: no delta to check or score
@@ -181,8 +188,7 @@ class Engine:
         first and validates in score order, stopping at the first valid one: about
         one validation per tick instead of one per candidate.
         """
-        apps = [a for a in self._protect_knowledge(enumerate_applications(self.view, self.operations, self.model))
-                if a.valid]
+        apps = [a for a in self._enumerate() if a.valid]
         tick = _Tick(self)
         for app in apps:
             tick.score(app, self.resulting_state(app))

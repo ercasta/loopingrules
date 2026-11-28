@@ -32,6 +32,12 @@
 - ***Paused at step 4, after stage 1 of 7.** Planning ticks cost ~500–600 ms with 23 cases. Profile: **matching 74%, SHACL 26%**. A full method has ~100 cases, so planning ticks would take ~2 s and solver tests minutes. The suite already went from 83 s to 160 s.*
 - ***Next session: performance**, with the new matching-heavy benchmark `engine/benchmarks/bench_rubik_solve.py`. See §5, "Next: pyoxigraph for matching". Then resume `doc/rubik.md` step 4 with the corners stage.*
 
+*Updated 2026-11-28, fifth session (performance):*
+- ***D30 is built:** operation `WHERE`s and guards match on an optional pyoxigraph mirror (`mirror.py`, extra `[fast]`). Rubik planning ticks: ~500 → ~85 ms. See §5, "Done: pyoxigraph phase 1".*
+- *SHACL validates in place: pySHACL was copying the data graph before every validation (~20% of a Rubik tick).*
+- *Applications now come in a fixed order (operation IRI, then parameter values). Ties used to depend on the hash seed, so the same seed could solve in 13 or 17 ticks.*
+- ***Next:** phase 2 (steps on the mirror) or incremental SHACL; see §5. We also discussed Rete and a Rust engine; both are deferred until we re-profile after these.*
+
 ## 1. State in one paragraph
 LoopingRules is a working "semantic spreadsheet":
 - **Engine:** a Python engine (rdflib + pySHACL). Operations are SPARQL `WHERE`/`DELETE`/`INSERT`; the SHACL shapes guard every result; controllers are SPARQL queries whose scores are summed; autopilot runs until nothing is applicable.
@@ -158,6 +164,22 @@ engine/.venv/Scripts/lr run examples/folder-scan --yes  # headless
   - **identical results:** `test_lazy_pick.py` style, comparing against rdflib at every tick.
 - **Measure both benchmarks before and after.**
 - **SHACL (the remaining 26%):** incremental validation with `focus_nodes` (step 3 above) is the separate fix.
+
+### Done: pyoxigraph phase 1 (2026-11-28, fifth session; design D30)
+- **Built:** `WHERE`s and guards on the mirror; equivalence tests at every tick of folder-scan (with and without the pack), folder-scan-goal and a Rubik scramble + solve (`test_mirror.py`).
+- **Results:** Rubik average tick 173–216 → 68–81 ms (planning ~500 → ~85 ms); folder-scan, 20 files, 56 → 33 ms/tick.
+- **Gotchas found on the way:**
+  - **Smart App Control** blocks pyoxigraph 0.5.10–0.5.13 here ("un criterio di controllo dell'applicazione ha bloccato il file"). The venv has 0.5.0.
+  - **Oxigraph canonicalises typed literals** when it stores them; the mirror maps them back to the sheet's own terms.
+  - **Oxigraph refuses substitutions for variables a pattern doesn't have in scope**, and rdflib binds `initBindings` inside `FILTER NOT EXISTS` too: guards use `VALUES` instead (`test_d22` caught this).
+  - **Row order differs between the stores** (and in rdflib, with the hash seed): applications are now sorted by parameters. `bench_rubik_solve.py` still pins `PYTHONHASHSEED=0` for other set orders.
+- **Now a Rubik turn (~70 ms) is the slowest tick.** What's left: steps on overlays (rdflib), SHACL (one validation per tick), scoring, and the O(sheet) diff to sync the mirror.
+
+### Next options (re-profile first)
+1. **Phase 2: steps on the mirror.** Apply each application's overlay delta to the mirror, run the step, revert. Steps were ~3 s of an 18 s profiled run.
+2. **Incremental SHACL** (`focus_nodes`, step 3 above).
+3. **A bigger folder-scan** (500+ files): the mirror is a constant factor, while cost per tick still grows with the sheet. That's where incremental matching (Rete, or DBSP/Differential Dataflow over the D23 subset) would pay off.
+4. **A Rust engine (store + SPARQL subset + SHACL + incremental matching):** discussed and deferred. Prove the incremental algorithms in Python first, then port them, building on Oxigraph's crates (`oxrdf`, `spargebra`) and rudof (SHACL).
 
 ## 6. Other open items (not performance)
 - Query time limits for shared models (D18 to-do).

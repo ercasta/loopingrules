@@ -10,7 +10,8 @@ SH = Namespace("http://www.w3.org/ns/shacl#")
 
 def validate(data: Graph, shapes: Graph) -> list[dict]:
     """Return the list of violations (empty if the graph conforms)."""
-    _conforms, results, _text = _validate(data, shacl_graph=shapes, inference="none", advanced=True)
+    _conforms, results, _text = _validate(data, shacl_graph=shapes, inference="none", advanced=True,
+                                         inplace=True)  # read-only: no inference, so no copy needed
     out = []
     for r in results.subjects(RDF.type, SH.ValidationResult):
         def v(p):

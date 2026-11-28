@@ -370,6 +370,8 @@ A minimal manifest:
 cd engine
 python -m venv .venv
 .venv/Scripts/pip install -e ".[dev]"     # on Linux/macOS: .venv/bin/pip
+.venv/Scripts/pip install -e ".[fast]"    # optional: native pattern matching, several times faster
+                                          # (Windows Smart App Control: pip install pyoxigraph==0.5.0)
 
 # 2. the web UI
 cd ../ui

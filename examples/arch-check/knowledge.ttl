@@ -22,6 +22,7 @@ arch:definitions arch:layer arch:Core .
 
 # model: what operations, controllers, channels and tools are
 arch:operations  arch:layer arch:Model .
+arch:mirror      arch:layer arch:Model .
 arch:controllers arch:layer arch:Model .
 arch:channels    arch:layer arch:Model .
 arch:suggest     arch:layer arch:Model .

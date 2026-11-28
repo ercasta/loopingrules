@@ -632,9 +632,39 @@ A **Graph** tab next to the Sheet shows the same triples as a graph, built with 
   - a module with no layer.
 - **Limitation:** imports are found with a regular expression on `from .x import` lines, so other forms of import are missed.
 
+### D30. Matching on a pyoxigraph mirror; applications in a fixed order
+*Status: built (2026-11-28). Code: `engine/loopingrules/mirror.py`; tests: `test_mirror.py`.*
+
+**Why:** after lazy validation and overlays, matching operation patterns was most of a tick (74% on the Rubik solver). rdflib evaluates SPARQL in pure Python, and nested `FILTER NOT EXISTS` over knowledge is its slowest case. pyoxigraph (Oxigraph, in Rust) gave identical results on every operation pattern, 8–15× faster.
+
+**What runs where:**
+- **On the mirror:** operation `lr:where`s and guards (`lr:requires`), against sheet + knowledge.
+- **On rdflib, as before:** steps (`lr:steps`) and postconditions (`lr:ensures`), which read per-application overlays; controllers, which read the `lr:before`/`lr:inserted`/… graphs (D20); SHACL, since pySHACL needs rdflib. rdflib stays the source of truth.
+
+**How:**
+- **Sync:** the knowledge is loaded once per model load. The sheet is synced before each enumeration by diffing it against the last snapshot: O(sheet), but no write path (edits, tools, undo, acks) can be missed.
+- **Terms map back to the rdflib terms they came from**, so templates instantiate exactly what's in the sheet. Oxigraph stores some typed literals in canonical form (`"1.50"^^xsd:decimal` as `"1.5"`), and the map accounts for that. *Limitation:* two sheet literals with the same canonical form are one term in the mirror.
+- **Guards:** the parameters are joined in with `VALUES`, which binds them inside `FILTER (NOT) EXISTS` too, as rdflib's `initBindings` do. Oxigraph's own substitutions only reach variables in scope. A blank-node parameter, which `VALUES` can't hold, falls back to rdflib.
+- **Anything Oxigraph can't parse runs on rdflib**, and is listed in `Mirror.unsupported`. The equivalence tests assert that the examples have none.
+- **Security is unchanged:** patterns are checked at load time (D11, D23), before either store sees them.
+
+**Optional dependency:** `pip install -e ".[fast]"`. Without pyoxigraph, or when it can't load, the engine uses rdflib, with the same results. `LR_MATCHER=rdflib` forces it, and `lr serve` prints which matcher runs. *Windows:* Smart App Control blocks unsigned native modules without a reputation. pyoxigraph 0.5.0 and 0.4.11 load; 0.5.10–0.5.13 were blocked (2026-11-28).
+
+**Applications come in a fixed order.** Within an operation, applications are sorted by their parameter values. Before, they came in the store's row order, which in rdflib follows Python's set order, so it changed with the hash seed. Oxigraph's order differs again. Ties go to the first application (Q3), so the same project could take different paths on different runs, and with different matchers. Now ties go to the operation IRI, then the parameter values in order.
+
+**Measured** (`bench_rubik_solve.py`, seeds 3–5; `bench_folder_scan.py`, 20 files):
+
+| | rdflib | mirror |
+|---|---|---|
+| Rubik, planning tick | 450–620 ms | 73–97 ms |
+| Rubik, average tick | 173–216 ms | 68–81 ms |
+| folder-scan, per tick | 56 ms | 33 ms |
+
+Validating in place (pySHACL no longer copies the data graph) gave ~20% before this.
+
 ## Open questions
 
-- **Q3. Ties and no-ops.** Partly settled by D21: empty deltas are excluded except for no-op operations, and a tie between a no-op and an application with effects goes to continuing. Other ties: still first found.
+- **Q3. Ties and no-ops.** Partly settled by D21: empty deltas are excluded except for no-op operations, and a tie between a no-op and an application with effects goes to continuing. Other ties: the first application, in a fixed order (operation IRI, then parameter values: D30).
 - **Q4. Cost.** Scoring every resulting state is expensive. Options:
   - score against an overlay view (base + inserts − deletes) instead of copying the store;
   - for SHACL, validate only the shapes affected by the delta, or accept full validation in v0.
@@ -643,5 +673,6 @@ A **Graph** tab next to the Sheet shows the same triples as a graph, built with 
   - rdflib: slow, but pySHACL works with it natively.
   - pyoxigraph: fast and supports quads, but needs a bridge to SHACL.
   - Default: put the store behind an interface and start with rdflib.
+  - Update (D30): rdflib stays the store; operation patterns match on an optional pyoxigraph mirror.
 - **Q8. UI stack.** Default: React + Vite + a grid component (TanStack Table).
 - **Q9. Persistence.** Default: save the sheet, model and controllers as Turtle files in a project folder.

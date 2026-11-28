@@ -202,8 +202,10 @@ def cmd_serve(args, console: Console) -> int:
     import uvicorn
 
     from .api import UI_DIST, create_app
+    from .mirror import describe
 
     console.print(f"[bold magenta]LoopingRules[/] serving [cyan]{args.project}[/] on http://{args.host}:{args.port}")
+    console.print(f"[dim]matching: {describe()}[/]")
     if not UI_DIST.exists():
         console.print("[yellow]ui/dist not found: API only (run `npm run build` in ui/, or use `npm run dev`)[/]")
     uvicorn.run(create_app(args.project), host=args.host, port=args.port, log_level="warning")

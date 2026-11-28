@@ -237,9 +237,13 @@ def _solutions(graph: Graph, where: str, prefixes: str, bound: dict | None = Non
             for row in rows]
 
 
-def holds(graph: Graph, condition: Condition, bindings: dict[str, Node], prefixes: str) -> bool:
-    query = prepared(f"{prefixes}ASK {{ {condition.ask} }}")
+def _holds(graph: Graph, ask: str, bindings: dict[str, Node], prefixes: str) -> bool:
+    query = prepared(f"{prefixes}ASK {{ {ask} }}")
     return bool(graph.query(query, initBindings=bindings).askAnswer)
+
+
+def holds(graph: Graph, condition: Condition, bindings: dict[str, Node], prefixes: str) -> bool:
+    return _holds(graph, condition.ask, bindings, prefixes)
 
 
 def condition_violation(kind: str, condition: Condition) -> dict:
@@ -281,7 +285,8 @@ def _effects(sheet: Graph, op: Operation, rows: list[dict], params: dict, prefix
     return state
 
 
-def enumerate_applications(sheet: Graph, ops: list[Operation], model: Graph) -> list[Application]:
+def enumerate_applications(sheet: Graph, ops: list[Operation], model: Graph,
+                           matcher=None) -> list[Application]:
     """One application per parameter tuple of every operation, with its effective delta.
 
     - Solutions that share a parameter tuple are merged, and their instantiated
@@ -289,17 +294,25 @@ def enumerate_applications(sheet: Graph, ops: list[Operation], model: Graph) -> 
     - An application whose guard (lr:requires) fails is returned invalid, without a delta.
     - Applications whose effective delta is empty are dropped, except those of
       no-op operations, which are empty by design (D21).
+
+    `matcher` evaluates the WHEREs and guards (see mirror.py); by default rdflib
+    on `sheet`. Steps always run on rdflib, on overlays of `sheet`.
     """
+    from .mirror import RdflibMatcher
+    matcher = matcher or RdflibMatcher(sheet)
     prefixes = prologue(model, sheet)
     apps: list[Application] = []
     for op in ops:
         groups: dict[tuple, tuple[dict, list[dict]]] = {}
-        for row in _solutions(sheet, op.where, prefixes):
+        for row in matcher.solutions(op.where, prefixes):
             params = row if op.params is None else {p: row[p] for p in op.params if p in row}
             groups.setdefault(tuple(sorted(params.items())), (params, []))[1].append(row)
-        for params, rows in groups.values():
+        # Applications come in parameter order, not in the store's row order (which
+        # follows set order in rdflib, and differs in oxigraph), so that ties go to
+        # the same application on every run and with either matcher.
+        for _, (params, rows) in sorted(groups.items(), key=lambda kv: [(k, v.n3()) for k, v in kv[0]]):
             app_id = _app_id(op, params)
-            failed = [c for c in op.requires if not holds(sheet, c, params, prefixes)]
+            failed = [c for c in op.requires if not matcher.holds(c.ask, params, prefixes)]
             if failed:
                 apps.append(Application(app_id, op, params, set(), set(), valid=False,
                                         violations=[condition_violation("lr:requires", c) for c in failed]))

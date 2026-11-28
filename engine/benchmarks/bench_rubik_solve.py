@@ -9,9 +9,11 @@ cost to watch. Nothing touches the disk.
 """
 
 import cProfile
+import os
 import pstats
 import random
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -48,6 +50,11 @@ def run(seed: int) -> tuple[Counter, Counter]:
 
 
 def main() -> None:
+    # Ties between applications go to the first enumerated, and enumeration order
+    # follows set order, so the solve path depends on the hash seed: pin it.
+    if os.environ.get("PYTHONHASHSEED") != "0":
+        os.environ["PYTHONHASHSEED"] = "0"
+        sys.exit(subprocess.call([sys.executable, *sys.argv]))
     args = sys.argv[1:]
     profile = "--profile" in args
     seeds = [int(a) for a in args if a != "--profile"] or [3]
