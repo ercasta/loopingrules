@@ -24,6 +24,11 @@ class Operation:
     delete: str = ""
     insert: str = ""
 
+    @property
+    def noop(self) -> bool:
+        """An operation with no effects (D21): when one of its applications wins, autopilot stops."""
+        return not self.delete.strip() and not self.insert.strip()
+
 
 @dataclass
 class Application:
@@ -40,6 +45,10 @@ class Application:
     @property
     def total(self) -> float:
         return sum(self.scores.values())
+
+    @property
+    def noop(self) -> bool:
+        return self.operation.noop
 
 
 def load_operations(model: Graph) -> list[Operation]:
@@ -129,7 +138,8 @@ def enumerate_applications(sheet: Graph, ops: list[Operation], model: Graph) -> 
     """Every binding of every operation's WHERE, with its effective delta.
 
     Applications whose effective delta is empty (nothing to delete that exists,
-    nothing to insert that is missing) are dropped.
+    nothing to insert that is missing) are dropped, except those of no-op
+    operations, which are empty by design (D21).
     """
     prefixes = prologue(model, sheet)
     apps: list[Application] = []
@@ -141,7 +151,7 @@ def enumerate_applications(sheet: Graph, ops: list[Operation], model: Graph) -> 
             deletes = {t for t in deletes if t in sheet}
             inserts = _mint_fresh(_instantiate(op.insert, bindings, prefixes), bindings)
             inserts = {t for t in inserts if t not in sheet}
-            if not deletes and not inserts:
+            if not deletes and not inserts and not op.noop:
                 continue
             apps.append(Application(_app_id(op, bindings), op, bindings, deletes, inserts))
     return apps

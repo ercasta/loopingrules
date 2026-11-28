@@ -35,6 +35,8 @@ export type Application = {
   violations: Violation[];
   scores: Record<string, number>;
   total: number;
+  /** an operation with no effects: when it wins, autopilot stops (design D21) */
+  noop: boolean;
 };
 
 export type PendingCall = {

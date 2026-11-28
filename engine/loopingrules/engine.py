@@ -21,8 +21,27 @@ Approver = Callable[[PendingCall], "bool | None"]
 
 @dataclass
 class StepResult:
-    status: Lit["applied", "awaiting-approval", "done"]
+    # applied: `application` was applied; stopped: the no-op `application` won (D21);
+    # done: nothing is applicable; awaiting-approval: a tool call waits for a decision.
+    status: Lit["applied", "stopped", "awaiting-approval", "done"]
     application: Application | None = None
+
+
+def choose(apps: list[Application]) -> Application | None:
+    """The autopilot's pick among the valid applications.
+
+    The highest total wins, and ties go to the first one enumerated. A no-op (D21)
+    must strictly beat every application that changes something: ties go to
+    continuing.
+    """
+    def best(xs):
+        return max(xs, key=lambda a: a.total, default=None)  # max keeps the first of equals
+    valid = [a for a in apps if a.valid]
+    act = best([a for a in valid if not a.noop])
+    stop = best([a for a in valid if a.noop])
+    if stop is not None and (act is None or stop.total > act.total):
+        return stop
+    return act
 
 
 class Engine:
@@ -81,6 +100,8 @@ class Engine:
         return state
 
     def apply(self, app: Application, run_tools: bool = True, kind: str = "tick") -> None:
+        if app.noop:  # choosing to stop changes nothing, so there's nothing to journal
+            return
         apply_delta(self.sheet, app.deletes, app.inserts)
         nm = self.sheet.namespace_manager
         self.project.record(app.inserts, app.deletes, kind=kind, label=app.operation.name,
@@ -138,10 +159,11 @@ class Engine:
         self.tool_phase()
         if self.pending_calls():
             return StepResult("awaiting-approval")
-        valid = [a for a in self.applications() if a.valid]
-        if not valid:
+        best = choose(self.applications())
+        if best is None:
             return StepResult("done")
-        best = max(valid, key=lambda a: a.total)  # ties: first found
+        if best.noop:
+            return StepResult("stopped", best)
         self.apply(best, run_tools=False)
         return StepResult("applied", best)
 

@@ -95,6 +95,7 @@ engine/.venv/Scripts/lr run examples/folder-scan --yes  # headless
 - Named graphs (full SPOG), and learned controllers (`doc/info.md`): later.
 
 ## 7. Gotchas from this session
+- **Mixed line endings, no `.gitattributes`.** Some files are CRLF (most of `engine/loopingrules/`, `doc/design.md`, `ui/src/api.ts`), others LF, and `ui/src/styles.css` is mixed. `sed -i`, Python text-mode writes on Windows and whole-file rewrites silently flip a file's endings, which turns a small diff into a whole-file one. Check with `git diff --stat` before committing; preserve endings byte for byte (Python `rb`/`wb`).
 - **Shell heredocs vs escapes.** Writing Python through `cat <<'EOF'` / `python - <<'EOF'` turned `"\\n"` into real newlines several times. Prefer the Edit/Write tools for code that contains escapes.
 - **Stopping `lr serve` started in the background:** stopping the bash wrapper can leave the Python child holding port 8765. Kill by port, e.g. `Get-NetTCPConnection -LocalPort 8765 -State Listen | % { Stop-Process -Id $_.OwningProcess }`.
 - **Demos and screenshots:** run demo servers with `LR_TRUST=<scratch file>`, so the user's real `~/.loopingrules/trust.ttl` isn't touched, and delete the demo project's `.lr/` for a fresh state.

@@ -219,6 +219,12 @@ SELECT (COUNT(?f) AS ?score) WHERE { GRAPH lr:inserted { ?f ex:lineCount ?n } }
 - A model may have several no-ops, e.g. "goal reached" and "give up when stuck". Which one won says why the run stopped.
 - **Manual mode:** pressing Stop is recorded as choosing a no-op. That's a training signal.
 - **Later, with asynchronous tools (D7):** an empty winner while calls are in flight means "wait", not "stop".
+- **Implementation:**
+  - `engine.choose` picks the winner, and the UI mirrors the same rule.
+  - `Engine.step` returns `stopped` with the winning no-op. `done` still means nothing is applicable, which also happens when a model has no no-op.
+  - When only no-ops are applicable, a no-op wins, so a model with an always-available stop ends with `stopped`, not `done`.
+  - Applying a no-op by hand changes nothing and isn't journaled. The API logs it ("stop chosen: …"); recording choices for learning comes later.
+  - In the UI, no-ops carry a "■ stop" badge and their button reads "Stop".
 - **rdflib quirk (fixed in step 1):** rdflib drops solutions that bind no variable. An empty or ground `WHERE` therefore never applied, though SPARQL gives it one empty solution. The engine now appends a marker `BIND` to every `WHERE`.
 
 ### D22. Operations: parameters, guards, steps

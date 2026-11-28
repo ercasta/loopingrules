@@ -172,7 +172,7 @@ class Session:
             "deletes": [t.triple(x) for x in sorted(a.deletes, key=key)],
             "inserts": [t.triple(x) for x in sorted(a.inserts, key=key)],
             "valid": a.valid, "violations": a.violations,
-            "scores": a.scores, "total": a.total,
+            "scores": a.scores, "total": a.total, "noop": a.noop,
         }
 
     # --- autopilot -----------------------------------------------------
@@ -188,6 +188,11 @@ class Session:
             entry = self._log("tick", a.operation.name, score=a.total,
                               bindings={k: self.terms.short(v) for k, v in a.bindings.items()})
             await self.broadcast({"type": "tick", "tick": self.tick, "entry": entry})
+        elif result.status == "stopped":
+            a = result.application
+            entry = self._log("info", f"autopilot stopped: {a.operation.name} won", score=a.total,
+                              bindings={k: self.terms.short(v) for k, v in a.bindings.items()})
+            await self.broadcast({"type": "log", "entry": entry})
         elif result.status == "awaiting-approval":
             await self.broadcast({"type": "approval-needed"})
         return result.status
@@ -197,8 +202,9 @@ class Session:
             await self._set_status("running")
             while True:
                 status = await self.step()
-                if status == "done":
-                    self._log("info", "autopilot done: no applicable operations")
+                if status in ("done", "stopped"):
+                    if status == "done":
+                        self._log("info", "autopilot done: no applicable operations")
                     await self._set_status("done")
                     return
                 if status == "awaiting-approval":
@@ -413,6 +419,11 @@ def create_app(project_path: str | Path, trust_path: str | Path | None = None) -
             raise HTTPException(404, "application not found (sheet changed?)")
         if not a.valid:
             raise HTTPException(409, "application is invalid")
+        if a.noop:  # choosing to stop: nothing changes, but the choice is logged (D21)
+            entry = session._log("info", f"stop chosen: {a.operation.name}", score=a.total, manual=True,
+                                 bindings={k: session.terms.short(v) for k, v in a.bindings.items()})
+            await session.broadcast({"type": "log", "entry": entry})
+            return {"version": session.version}
         session.tick += 1
         entry = session._log("tick", a.operation.name, score=a.total, manual=True,
                              bindings={k: session.terms.short(v) for k, v in a.bindings.items()})

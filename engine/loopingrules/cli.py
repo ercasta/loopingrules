@@ -88,6 +88,9 @@ def cmd_run(args, console: Console) -> int:
                           f"score [bold]{a.total:>4g}[/]  {_bindings(a, eng.sheet)}")
         elif r.status == "awaiting-approval":
             console.print("[yellow]⏸ paused: a tool call is awaiting approval[/]")
+        elif r.status == "stopped":
+            console.print(f"[green]■ stopped[/] after {tick} ticks — "
+                          f"[bold cyan]{r.application.operation.name}[/] won (score {r.application.total:g})")
         else:
             console.print(f"[green]■ done[/] after {tick} ticks — no applicable operations left")
 

@@ -43,7 +43,16 @@ LoopingRules turns this around. The state is a knowledge graph with explicit sem
 5. ▶️ **Apply.** In manual mode you choose; on autopilot the highest score wins.
 6. 🔧 **Tools.** Between ticks, the shell commands requested in the sheet are approved, run, and their output is written back as triples.
 
-Autopilot keeps going until no operation is applicable, or until you stop it.
+Autopilot keeps going until no operation is applicable, until a **stop** wins, or until you stop it. A stop is just an operation with no effects; controllers score it like anything else, and it has to strictly beat every other application to win:
+
+```turtle
+ex:stop a lr:Operation ; rdfs:label "stop" ; lr:where "" .   # always available
+
+ex:enoughIsEnough a lr:Controller ;
+  lr:query """SELECT (10 AS ?score) WHERE {
+                GRAPH lr:action { lr:this lr:operation ex:stop }
+                GRAPH lr:before { ?goal lr:reached true } }""" .
+```
 
 ### An operation
 

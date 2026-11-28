@@ -34,10 +34,13 @@ export function ApplicationsPanel(p: Props) {
       .sort((a, b) => Number(b.valid) - Number(a.valid) || b.total - a.total);
   }, [p.apps, text, op, showInvalid]);
 
-  // Same rule as the engine: highest total, ties go to the first one enumerated.
-  const best = p.apps
-    .filter((a) => a.valid)
-    .reduce<Application | null>((m, a) => (!m || a.total > m.total ? a : m), null);
+  // Same rule as the engine (engine.choose): highest total, ties go to the first one
+  // enumerated, and a no-op must strictly beat every application that changes something.
+  const top = (xs: Application[]) =>
+    xs.reduce<Application | null>((m, a) => (!m || a.total > m.total ? a : m), null);
+  const act = top(p.apps.filter((a) => a.valid && !a.noop));
+  const stop = top(p.apps.filter((a) => a.valid && a.noop));
+  const best = stop && (!act || stop.total > act.total) ? stop : act;
   const maxAbs = Math.max(1, ...p.apps.flatMap((a) => Object.values(a.scores).map(Math.abs)));
 
   return (
@@ -96,10 +99,15 @@ export function ApplicationsPanel(p: Props) {
             <article key={a.id} className={`app ${a.valid ? "" : "blocked"} ${best?.id === a.id ? "best" : ""}`}>
               <div className="app-head">
                 <span className="op">{a.operation}</span>
+                {a.noop && (
+                  <span className="noop" title="changes nothing: if it wins, autopilot stops">
+                    ■ stop
+                  </span>
+                )}
                 {best?.id === a.id && <span className="pick">★ autopilot pick</span>}
                 <span className="total">{a.valid ? fmt(a.total) : "—"}</span>
                 <button className="btn small" disabled={!a.valid} onClick={() => api.apply(a.id).catch(p.onError)}>
-                  Apply
+                  {a.noop ? "Stop" : "Apply"}
                 </button>
               </div>
               <div className="bindings">
