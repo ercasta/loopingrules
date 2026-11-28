@@ -1,0 +1,89 @@
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix lr:   <https://loopingrules.org/ns#> .
+@prefix rk:   <https://example.org/rubik#> .
+@prefix face: <https://example.org/rubik/face#> .
+@prefix pos:  <https://example.org/rubik/pos#> .
+@prefix slot: <https://example.org/rubik/slot#> .
+@prefix mv:   <https://example.org/rubik/move#> .
+@prefix map:  <https://example.org/rubik/map#> .
+
+# The cube (design: doc/rubik.md).
+# - geometry.ttl (knowledge, generated): positions, slots, turns and moves.
+# - sheet.ttl (state): one colour per position, the plan, a turn counter.
+
+# --- shapes -------------------------------------------------------------------
+rk:PositionShape a sh:NodeShape ;
+  sh:targetClass rk:Position ;
+  sh:property [ sh:path rk:colour ; sh:minCount 1 ; sh:maxCount 1 ; sh:class rk:Colour ;
+                sh:description "the colour of the sticker at this position" ] .
+
+rk:CubeShape a sh:NodeShape ;
+  sh:targetClass rk:Cube ;
+  sh:property [ sh:path rk:plan ; sh:minCount 1 ; sh:maxCount 1 ;
+                sh:description "the moves still to make, as a list" ] ;
+  sh:property [ sh:path rk:turns ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ] .
+
+# Commands: what may be posted to lr:in.
+rk:ScrambleShape a sh:NodeShape ;
+  sh:targetClass rk:Scramble ;
+  sh:property [ sh:path rk:moves ; sh:minCount 1 ; sh:maxCount 1 ;
+                sh:description "the moves, as a list, e.g. ( mv:R mv:Ui mv:F2 )" ] ;
+  sh:property [ sh:path ( rk:moves [ sh:zeroOrMorePath rdf:rest ] rdf:first ) ; sh:class rk:Move ;
+                sh:message "every item of rk:moves must be a move (mv:U, mv:Ui, mv:U2, ...)" ] .
+
+# --- operations ------------------------------------------------------------------
+
+# One generic turn: pop the head of the plan and permute 20 colours.
+# A step applies all its deletes, then all its inserts, so the colours move together.
+rk:turn a lr:Operation ; rdfs:label "turn" ;
+  lr:params "mv" ;
+  lr:where  """ rk:cube rk:plan ?l ; rk:turns ?n .
+                ?l rdf:first ?mv ; rdf:rest ?r .
+                BIND(?n + 1 AS ?n2) """ ;
+  lr:delete """ rk:cube rk:plan ?l ; rk:turns ?n .
+                ?l rdf:first ?mv ; rdf:rest ?r . """ ;
+  lr:insert """ rk:cube rk:plan ?r ; rk:turns ?n2 .
+                [] a rk:Executed ; rk:move ?mv ; rk:seq ?n2 . """ ;
+  lr:steps (
+    # a quarter turn, clockwise or not
+    [ lr:where  """ ?mv rk:face ?face .
+                    ?map rk:of ?face .
+                    { ?mv rk:dir rk:cw .  ?map rk:from ?f ; rk:to ?t . }
+                    UNION
+                    { ?mv rk:dir rk:ccw . ?map rk:from ?t ; rk:to ?f . }
+                    ?f rk:colour ?c . """ ;
+      lr:delete """ ?f rk:colour ?c . """ ;
+      lr:insert """ ?t rk:colour ?c . """ ]
+    # the second quarter of a double turn
+    [ lr:where  """ ?mv rk:twice true ; rk:face ?face .
+                    ?map rk:of ?face ; rk:from ?f ; rk:to ?t .
+                    ?f rk:colour ?c . """ ;
+      lr:delete """ ?f rk:colour ?c . """ ;
+      lr:insert """ ?t rk:colour ?c . """ ]
+  ) .
+
+# A scramble (or any list of moves) becomes the plan. It waits while a plan runs.
+rk:scramble a lr:Operation ; rdfs:label "scramble" ;
+  lr:params "m" ;
+  lr:where  """ ?m lr:channel lr:in ; a rk:Scramble ; rk:moves ?moves .
+                rk:cube rk:plan rdf:nil . """ ;
+  lr:delete """ rk:cube rk:plan rdf:nil . """ ;
+  lr:insert """ rk:cube rk:plan ?moves .
+                [] lr:channel lr:out ; a lr:Say ; lr:replyTo ?m ; lr:text "Scrambling." . """ ;
+  lr:steps ( [ lr:where """ ?m ?p ?o . """ ; lr:delete """ ?m ?p ?o . """ ] ) .
+
+# Back to the solved colours. It waits while a plan runs.
+rk:reset a lr:Operation ; rdfs:label "reset" ;
+  lr:params "m" ;
+  lr:where  """ ?m lr:channel lr:in ; a rk:Reset .
+                rk:cube rk:plan rdf:nil . """ ;
+  lr:insert """ [] lr:channel lr:out ; a lr:Say ; lr:replyTo ?m ; lr:text "Reset to solved." . """ ;
+  lr:steps (
+    [ lr:where """ ?p rk:colour ?c . """ ; lr:delete """ ?p rk:colour ?c . """ ]
+    [ lr:where """ ?p a rk:Position ; rk:face ?face . ?face rk:homeColour ?c . """ ;
+      lr:insert """ ?p rk:colour ?c . """ ]
+    [ lr:where """ ?m ?p ?o . """ ; lr:delete """ ?m ?p ?o . """ ]
+  ) .
