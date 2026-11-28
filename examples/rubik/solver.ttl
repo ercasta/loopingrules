@@ -28,19 +28,33 @@ rk:solve a lr:Operation ; rdfs:label "start solving" ;
                 [] lr:channel lr:out ; a lr:Say ; lr:replyTo ?m ; lr:text "Solving." . """ ;
   lr:steps ( [ lr:where """ ?m ?p ?o . """ ; lr:delete """ ?m ?p ?o . """ ] ) .
 
+# How a need is read. A need names one or more relative positions (rk:at) and a
+# relative centre, and says either
+#   rk:like   - some sticker at those positions has the centre's colour, or
+#   rk:unlike - some sticker at those positions doesn't.
+# One position is the usual case; several say "any of these will do", e.g. "the
+# corner holds yellow, whichever way it's twisted". Both operations below spell
+# out "the need fails in frame ?fr" the same way, one FILTER NOT EXISTS per kind
+# (a UNION there made planning ~9x slower in oxigraph).
+
 # A case of the current stage whose needs all hold in a frame: plan its algorithm,
 # in that frame. "All needs hold" is written as "no need fails".
+# - A stage with rk:sameFrame plans only in the frame the cube is held in: its
+#   algorithms (R' D' R D, repeated) must all use the same R and D.
+# - When several cases match, the controller rk:casePriority prefers the higher
+#   rk:priority; a fallback case has a negative one.
 rk:planCase a lr:Operation ; rdfs:label "plan a case" ;
   lr:params "case fr" ;
   lr:where  """ rk:cube rk:stage ?stage ; rk:plan rdf:nil .
                 ?case a rk:Case ; rk:stage ?stage ; rk:algorithm ?alg .
                 ?fr a rk:Frame .
+                FILTER NOT EXISTS { ?stage rk:sameFrame true . rk:cube rk:frame ?held . FILTER(?held != ?fr) }
                 FILTER NOT EXISTS {
-                  ?case rk:need ?need .
-                  ?need rk:at ?at ; rk:like ?like .
-                  ?fr ?at ?p . ?fr ?like ?centre . ?centre rk:colour ?c .
-                  FILTER NOT EXISTS { ?p rk:colour ?c }
-                } """ ;
+                  ?case rk:need ?need . ?need rk:like ?ref . ?fr ?ref ?centre . ?centre rk:colour ?c .
+                  FILTER NOT EXISTS { ?need rk:at ?at . ?fr ?at ?p . ?p rk:colour ?c } }
+                FILTER NOT EXISTS {
+                  ?case rk:need ?need . ?need rk:unlike ?ref . ?fr ?ref ?centre . ?centre rk:colour ?c .
+                  FILTER NOT EXISTS { ?need rk:at ?at . ?fr ?at ?p . FILTER NOT EXISTS { ?p rk:colour ?c } } } """ ;
   lr:delete """ rk:cube rk:plan rdf:nil . """ ;
   lr:insert """ rk:cube rk:plan ?alg ; rk:frame ?fr . """ ;
   lr:steps ( [ lr:where  """ rk:cube rk:frame ?old . FILTER(?old != ?fr) """ ;
@@ -52,16 +66,26 @@ rk:nextStage a lr:Operation ; rdfs:label "next stage" ;
   lr:where  """ rk:cube rk:stage ?stage ; rk:plan rdf:nil .
                 ?stage rk:next ?next ; rdfs:label ?name .
                 FILTER NOT EXISTS {
-                  ?fr a rk:Frame .
-                  ?stage rk:goal ?need .
-                  ?need rk:at ?at ; rk:like ?like .
-                  ?fr ?at ?p . ?fr ?like ?centre . ?centre rk:colour ?c .
-                  FILTER NOT EXISTS { ?p rk:colour ?c }
-                }
+                  ?stage rk:goal ?need . ?need rk:like ?ref . ?fr a rk:Frame ; ?ref ?centre . ?centre rk:colour ?c .
+                  FILTER NOT EXISTS { ?need rk:at ?at . ?fr ?at ?p . ?p rk:colour ?c } }
+                FILTER NOT EXISTS {
+                  ?stage rk:goal ?need . ?need rk:unlike ?ref . ?fr a rk:Frame ; ?ref ?centre . ?centre rk:colour ?c .
+                  FILTER NOT EXISTS { ?need rk:at ?at . ?fr ?at ?p . FILTER NOT EXISTS { ?p rk:colour ?c } } }
                 BIND(CONCAT("Done: ", ?name, ".") AS ?text) """ ;
   lr:delete """ rk:cube rk:stage ?stage . """ ;
   lr:insert """ rk:cube rk:stage ?next .
                 [] lr:channel lr:out ; a lr:Say ; lr:text ?text . """ .
+
+# Choosing among applications is what controllers are for: these replace what used
+# to be decided by the order of names (rk:nextStage sorting before rk:planCase,
+# case IRIs sorting before one another).
+rk:stageDone a lr:Controller ; rdfs:label "a reached goal ends the stage first" ;
+  lr:query """ SELECT (1 AS ?score) WHERE { GRAPH lr:action { lr:this lr:operation rk:nextStage } } """ .
+
+rk:casePriority a lr:Controller ; rdfs:label "prefer the case with the higher priority" ;
+  lr:query """ SELECT ?score WHERE {
+                 GRAPH lr:action { lr:this lr:operation rk:planCase ; lr:binds ?b . ?b lr:var "case" ; lr:value ?case }
+                 ?case rk:priority ?score } """ .
 
 # The last stage has no next one: the solve is over.
 rk:finish a lr:Operation ; rdfs:label "finish solving" ;

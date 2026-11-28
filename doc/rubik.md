@@ -211,6 +211,39 @@ rubik            project   cube, moves, solver
 - **Test:** 6 random scrambles reach the first two layers, in at most 4×4 + 4×6 + 4×2×7 turns.
 - **Cost:** flat. With 61 cases over 3 stages, planning is ~62 ms and turns ~27 ms, as with 46 cases. A first-two-layers solve takes 71–99 ticks, 2.5–3.3 s.
 
+## Step 4, stages 4–7 (the last layer): as built. The rules solve the cube.
+**Goal of this phase** (agreed with the user): not to discover algorithms, but to see whether the rules can express and run a complex procedure, and to find out what that needs. Hand-written textbook algorithms are fine. Next: extract what the solver needs into a general **planning pack**.
+
+- **The last layer is iterative.** A few textbook algorithms are applied to the case at hand, then the solver looks again:
+
+  | stage | cases | algorithm |
+  |---|---|---|
+  | 4. yellow cross | dot, L, line (needs say which edges are *not* yellow) | `F R U R' U' F'` |
+  | 5. yellow edges | adjacent pair right, opposite pair right, or else turn U (fallback) | `R U R' U R U2 R' U` |
+  | 6. yellow corners placed | front-right corner in place (any twist), or none (fallback) | `U R U' L' U R' U' L` |
+  | 7. yellow corners oriented | twist it (`R' D' R D`), bring the next one round (`U`), align the top (`U`) | |
+
+- **`gen_method.py` now describes stages as data** (`Stage`, `Case`): stages 1–3 are searched, stages 4–7 are written by hand. There are 72 cases in all.
+- **`simulate.py`** emulates the solver's rules in Python, in the same order, and reads the same stage data: 1000 scrambles in seconds. All 1000 are solved, in 60–196 turns (mean 130) and 13–45 plans (mean 31).
+- **Test:** 6 random scrambles are solved by the rules through all 7 stages, with no SHACL violations.
+- **Cost:** a full solve is 169–198 ticks in **5.5–6.1 s** (~32 ms per tick; planning ~43 ms, turns ~29 ms).
+  - With the new need forms written as a `UNION` inside `FILTER NOT EXISTS`, planning took ~390 ms. Two `FILTER NOT EXISTS` blocks, one per kind, say the same and took ~43 ms. **Oxigraph and `UNION` don't mix well** (see also D30); worth a note for authors, or a rewrite in the engine.
+
+### What the procedure needed: input for the planning pack
+Found by removing each feature in the simulator (100 scrambles each):
+
+| Need | Why | Without it |
+|---|---|---|
+| **Negative conditions** (`rk:unlike`) | The yellow-cross cases are told apart by which edges are *not* yellow. | 38/100 solved |
+| **Any-of conditions** (several `rk:at` in one need) | "The corner is in place, whichever way it's twisted", both as a case and as the stage's goal. | can't be expressed |
+| **Case priority** (`rk:priority`, scored by a controller) | Fallback cases ("no corner in place", "turn the top") must only win when nothing else matches. | 19/100 solved (cases tried in name order) |
+| **A stage that keeps its frame** (`rk:sameFrame`) | `R' D' R D`, repeated, must use the same R and D, or the bottom never comes back. | 5/100 solved |
+| **Explicit operation priority** | Ending a stage must win over planning in a finished stage. Until now this held only because `rk:nextStage` sorts before `rk:planCase`. | not measured; by reasoning, stage 6 would loop: `cp_one` still matches once every corner is placed |
+
+**What stayed generic:** stages with goals and a next stage; cases as needs + algorithm; plan → execute → look again; recognition through frames (symmetries). **What's domain-specific:** how a need is checked ("the sticker at X has the colour of centre Y"), written twice, in `rk:planCase` and `rk:nextStage`. A generic pack must leave that check to the domain. That's the main design question for the pack.
+
+**Also learned:** before this phase, the order in which cases were tried was the alphabetical order of their IRIs, an invisible priority. Two of the five needs above showed up as "it works, by luck of naming". Priority belongs in controllers.
+
 ## Engine changes needed (small)
 - *(done in step 2)* **`POST /api/out/ack` must wake a listening autopilot** (`session.input_event.set()`, as the other mutations do). Today an ack doesn't, so `show:wait` would never be re-evaluated.
 - Nothing else is expected. Revisit this if the solver's performance demands it.

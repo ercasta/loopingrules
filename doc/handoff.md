@@ -41,7 +41,9 @@
   - *It drove two more fixes: steps also run on the mirror (D30 phase 2, with substitutions instead of `VALUES` for in-scope bindings: Oxigraph doesn't push `VALUES` into `UNION`s), and a cheap `__bool__` on `Overlay`/`Union` (pySHACL's `if graph:` counted every knowledge triple).*
   - *A Rubik tick now averages ~36 ms (was ~210 at the start of the session).*
 - ***Rubik stage 3 (middle layer) is built** too, again knowledge only: 15 cases, 7 of which only take a misplaced edge out to the top layer, and the solver then plans the insertion. Per-tick costs stayed flat with 61 cases.*
-- ***Next:** Rubik stage 4 (yellow cross: dot, L and line cases). Stages 4–7 change character: their cases are about the top layer's pattern, not one piece, so expect needs over several stickers and algorithms of 6–14 moves, which may need deeper search or textbook algorithms checked by replay. On performance, SHACL is now ~60% of a tick: incremental validation (§5, step 3) is the next lever. Also re-check the per-stage case counts as stages land.*
+- ***Rubik stages 4–7 are built: the rules solve the cube** (169–198 ticks, ~6 s). The last layer uses textbook algorithms written by hand, which is fine: the point is whether rules can express and run a complex procedure, not discovering algorithms. `simulate.py` emulates the rules for quick method design.*
+  - *The procedure needed five things the method couldn't express before: negative conditions, any-of conditions, case priority (a controller), a stage that keeps its frame, and explicit operation priority (a controller). See `doc/rubik.md`, "What the procedure needed".*
+- ***Next (agreed): extract a general planning pack** from the solver: stages, goals, cases, plan/execute/look again, frames, priorities. The open question is how a generic pack lets the domain say how a need is checked. Then try the pack on a second, non-cube example. On performance, SHACL is now ~60% of a tick: incremental validation (§5, step 3) is the next lever. Also re-check the per-stage case counts as stages land.*
 
 ## 1. State in one paragraph
 LoopingRules is a working "semantic spreadsheet":

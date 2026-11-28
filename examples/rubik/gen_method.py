@@ -19,6 +19,7 @@ and leaves alone what earlier stages, and the other targets of this stage, solve
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from gen_geometry import facelets, move_map, move_names
@@ -220,48 +221,139 @@ def middle_cases():
         yield f"middle_{front}", label, [(front, "F5"), (right, "R5")], alg
 
 
-def emit_case(out: list[str], stage: str, name: str, label: str, needs, alg: list[str]) -> None:
-    need_names = [f"need:{name}_{i}" for i in range(len(needs))]
-    first = f"alg:{name}_0" if alg else "rdf:nil"
-    out.append(f"case:{name} a rk:Case ; rk:stage stage:{stage} ; rdfs:label \"{label}\" ;")
-    out.append(f"  rk:need {', '.join(need_names)} ; rk:algorithm {first} .")
-    for nn, (at, like) in zip(need_names, needs):
-        out.append(f"{nn} rk:at rpos:{at} ; rk:like rpos:{like} .")
-    for i, mv in enumerate(alg):
-        rest = f"alg:{name}_{i + 1}" if i + 1 < len(alg) else "rdf:nil"
-        out.append(f"alg:{name}_{i} a rk:AlgorithmStep ; rdf:first rmv:{mv} ; rdf:rest {rest} .")
+# --- stages 4-7: the last layer, textbook algorithms written by hand --------------
+# The beginner method's last layer is iterative: a few algorithms, applied to the
+# case at hand, then look again. Needs here also say what must NOT be ("unlike"),
+# or that any of several stickers will do (several positions in one need).
+
+def like(*ats: str, c: str) -> tuple:
+    """Some sticker at `ats` has the colour of centre `c`."""
+    return (ats, "like", c)
+
+
+def unlike(*ats: str, c: str) -> tuple:
+    """Some sticker at `ats` doesn't have the colour of centre `c`."""
+    return (ats, "unlike", c)
+
+
+FRURUF = "F R U Ri Ui Fi".split()          # yellow cross: dot -> L -> line -> cross
+SUNE_U = "R U Ri U R U2 Ri U".split()      # yellow edges: swaps the front and left edges
+NIKLAS = "U R Ui Li U Ri Ui L".split()     # corners: cycles three, keeps the front-right one
+RDRD = "Ri Di R D".split()                 # twists the front-right corner; repeated, it comes back
+
+UFR = ("U9", "F3", "R1")  # the front-right corner of the top layer
+PLACED = [like(*UFR, c="U5"), like(*UFR, c="F5"), like(*UFR, c="R5")]  # its colours, any twist
+
+
+@dataclass
+class Case:
+    name: str
+    label: str
+    needs: list            # of (positions, "like" | "unlike", centre)
+    alg: list[str]
+    priority: int = 0      # among the stage's matching cases, the highest goes first
+
+
+@dataclass
+class Stage:
+    name: str
+    label: str
+    goal: list             # needs that must hold in every frame
+    cases: list[Case]
+    same_frame: bool = False  # plan only in the frame the cube is held in
+
+
+def searched(cases) -> list[Case]:
+    return [Case(n, label, [((at,), "like", c) for at, c in needs], alg) for n, label, needs, alg in cases()]
+
+
+def stages() -> list[Stage]:
+    def goal(*pairs):
+        return [((at,), "like", c) for at, c in pairs]
+    return [
+        Stage("Cross", "white cross", goal(("D2", "D5"), ("F8", "F5")), searched(cross_cases)),
+        # the corners keep the cross, so their goal needs only the corners
+        Stage("Corners", "white corners", goal(("D3", "D5"), ("F9", "F5"), ("R7", "R5")), searched(corner_cases)),
+        Stage("Middle", "middle layer", goal(("F6", "F5"), ("R4", "R5")), searched(middle_cases)),
+        Stage("YellowCross", "yellow cross", [like("U8", c="U5")], [
+            Case("yc_dot", "no yellow edge on top", [unlike(e, c="U5") for e in ("U2", "U4", "U6", "U8")], FRURUF),
+            Case("yc_l", "an L: yellow edges at the back and on the left",
+                 [like("U2", c="U5"), like("U4", c="U5"), unlike("U6", c="U5"), unlike("U8", c="U5")], FRURUF),
+            Case("yc_line", "a line: yellow edges on the left and on the right",
+                 [like("U4", c="U5"), like("U6", c="U5"), unlike("U2", c="U5")], FRURUF),
+        ]),
+        Stage("YellowEdges", "yellow edges", [like("F2", c="F5")], [
+            Case("ye_adjacent", "the back and right edges match, the front one doesn't",
+                 [like("B2", c="B5"), like("R2", c="R5"), unlike("F2", c="F5")], SUNE_U),
+            Case("ye_opposite", "the front and back edges match, the right one doesn't",
+                 [like("F2", c="F5"), like("B2", c="B5"), unlike("R2", c="R5")], SUNE_U),
+            Case("ye_turn", "fewer than two edges match: turn the top", [], ["U"], priority=-1),
+        ]),
+        Stage("CornersPlaced", "yellow corners placed", PLACED, [
+            Case("cp_one", "the front-right corner is in place, twisted or not", PLACED, NIKLAS),
+            Case("cp_none", "no corner is in place", [], NIKLAS, priority=-1),
+        ]),
+        # The cube is held still: R' D' R D twists the front-right corner and, repeated,
+        # puts the bottom back, so every repetition must use the same R and D.
+        Stage("CornersOriented", "yellow corners oriented",
+              [like("U8", c="U5"), like("U9", c="U5"), like("D2", c="D5"), like("D3", c="D5")]
+              + [like(f"F{i}", c="F5") for i in (1, 2, 3, 4, 6, 7, 8, 9)], [
+            Case("co_twist", "the front-right corner's yellow isn't on top", [unlike("U9", c="U5")], RDRD),
+            Case("co_next", "it is, but another corner's isn't: bring that one round",
+                 [like("U9", c="U5"), unlike("U1", "U3", "U7", c="U5")], ["U"]),
+            Case("co_align", "the top is yellow but turned: turn it into place",
+                 [like(c, c="U5") for c in ("U1", "U3", "U7", "U9")] + [unlike("F2", c="F5")], ["U"]),
+        ], same_frame=True),
+    ]
+
+
+# --- output -----------------------------------------------------------------------
+
+def emit_need(out: list[str], name: str, need) -> None:
+    ats, kind, centre = need
+    out.append(f"{name} rk:at {', '.join('rpos:' + a for a in ats)} ; rk:{kind} rpos:{centre} .")
+
+
+def emit_case(out: list[str], stage: str, case: Case) -> None:
+    need_names = [f"need:{case.name}_{i}" for i in range(len(case.needs))]
+    first = f"alg:{case.name}_0" if case.alg else "rdf:nil"
+    out.append(f"case:{case.name} a rk:Case ; rk:stage stage:{stage} ; rdfs:label \"{case.label}\" ;")
+    if need_names:
+        out.append(f"  rk:need {', '.join(need_names)} ;")
+    if case.priority:
+        out.append(f"  rk:priority {case.priority} ;")
+    out.append(f"  rk:algorithm {first} .")
+    for nn, need in zip(need_names, case.needs):
+        emit_need(out, nn, need)
+    for i, mv in enumerate(case.alg):
+        rest = f"alg:{case.name}_{i + 1}" if i + 1 < len(case.alg) else "rdf:nil"
+        out.append(f"alg:{case.name}_{i} a rk:AlgorithmStep ; rdf:first rmv:{mv} ; rdf:rest {rest} .")
 
 
 def main() -> None:
+    all_stages = stages()
     out = [PREFIXES, "# Generated by gen_method.py: do not edit by hand.\n"]
-    out.append("rk:beginnerMethod a rk:Method ; rdfs:label \"beginner method (layer by layer)\" ; rk:firstStage stage:Cross .\n")
+    out.append(f"rk:beginnerMethod a rk:Method ; rdfs:label \"beginner method (layer by layer)\" ; "
+               f"rk:firstStage stage:{all_stages[0].name} .\n")
 
     out.append("# --- stages ------------------------------------------------------------------")
-    out.append("stage:Cross a rk:Stage ; rdfs:label \"white cross\" ; rk:next stage:Corners ;")
-    out.append("  rk:goal need:crossGoal_0, need:crossGoal_1 .")
-    out.append("need:crossGoal_0 rk:at rpos:D2 ; rk:like rpos:D5 .")
-    out.append("need:crossGoal_1 rk:at rpos:F8 ; rk:like rpos:F5 .")
-    # the corners keep the cross, so their goal needs only the corners
-    out.append("stage:Corners a rk:Stage ; rdfs:label \"white corners\" ; rk:next stage:Middle ;")
-    out.append("  rk:goal need:cornerGoal_0, need:cornerGoal_1, need:cornerGoal_2 .")
-    out.append("need:cornerGoal_0 rk:at rpos:D3 ; rk:like rpos:D5 .")
-    out.append("need:cornerGoal_1 rk:at rpos:F9 ; rk:like rpos:F5 .")
-    out.append("need:cornerGoal_2 rk:at rpos:R7 ; rk:like rpos:R5 .")
-    out.append("stage:Middle a rk:Stage ; rdfs:label \"middle layer\" ; rk:next stage:Done ;")
-    out.append("  rk:goal need:middleGoal_0, need:middleGoal_1 .")
-    out.append("need:middleGoal_0 rk:at rpos:F6 ; rk:like rpos:F5 .")
-    out.append("need:middleGoal_1 rk:at rpos:R4 ; rk:like rpos:R5 .")
+    for i, st in enumerate(all_stages):
+        nxt = all_stages[i + 1].name if i + 1 < len(all_stages) else "Done"
+        goals = [f"need:{st.name}Goal_{j}" for j in range(len(st.goal))]
+        out.append(f"stage:{st.name} a rk:Stage ; rdfs:label \"{st.label}\" ; rk:next stage:{nxt} ;"
+                   + (" rk:sameFrame true ;" if st.same_frame else ""))
+        out.append(f"  rk:goal {', '.join(goals)} .")
+        for g, need in zip(goals, st.goal):
+            emit_need(out, g, need)
     out.append("stage:Done a rk:Stage ; rdfs:label \"done\" .")
 
-    for stage, title, cases in (("Cross", "stage 1: the white cross, one edge at a time", cross_cases),
-                                ("Corners", "stage 2: the white corners, one at a time", corner_cases),
-                                ("Middle", "stage 3: the middle-layer edges, one at a time", middle_cases)):
+    for i, st in enumerate(all_stages):
+        title = f"stage {i + 1}: {st.label}"
         out.append(f"\n# --- {title} " + "-" * (72 - len(title)))
-        lengths = []
-        for name, label, needs, alg in cases():
-            emit_case(out, stage, name, label, needs, alg)
-            lengths.append(len(alg))
-        print(f"{stage}: {len(lengths)} cases, algorithms of {min(lengths)}-{max(lengths)} moves")
+        for case in st.cases:
+            emit_case(out, st.name, case)
+        lengths = [len(c.alg) for c in st.cases]
+        print(f"{st.name}: {len(lengths)} cases, algorithms of {min(lengths)}-{max(lengths)} moves")
 
     (HERE / "method.ttl").write_text("\n".join(out) + "\n", encoding="utf-8", newline="\n")
 

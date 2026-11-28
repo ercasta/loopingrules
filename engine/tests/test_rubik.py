@@ -254,27 +254,7 @@ def test_show_over_stdin(tmp_path):
 
 # --- the solver (doc/rubik.md, step 4) --------------------------------------------
 
-def cross_done(eng) -> bool:
-    """White is on U in this cube: the cross is the four U edges, matching the side centres."""
-    cs = colours(eng)
-    return all(cs[u] == "White" and cs[s] == cs[s[0] + "5"]
-               for u, s in (("U8", "F2"), ("U6", "R2"), ("U2", "B2"), ("U4", "L2")))
-
-
-def corners_done(eng) -> bool:
-    """The four U corners: white up, and each side sticker matching its centre."""
-    cs = colours(eng)
-    return all(cs[u] == "White" and cs[a] == cs[a[0] + "5"] and cs[b] == cs[b[0] + "5"]
-               for u, a, b in (("U9", "F3", "R1"), ("U7", "F1", "L3"), ("U1", "B3", "L1"), ("U3", "B1", "R3")))
-
-
-def middle_done(eng) -> bool:
-    """The middle layer: every side's 4 and 6 stickers match its centre."""
-    cs = colours(eng)
-    return all(cs[f + i] == cs[f + "5"] for f in "FRBL" for i in "46")
-
-
-def solve(eng, max_ticks=400):
+def solve(eng, max_ticks=1000):
     eng.post("[] a rk:Solve .")
     result = eng.run(max_ticks=max_ticks)
     assert result.status == "done", result
@@ -282,19 +262,23 @@ def solve(eng, max_ticks=400):
     return [m.text for m in eng.messages("out")]
 
 
+STAGES = ["white cross", "white corners", "middle layer", "yellow cross", "yellow edges",
+          "yellow corners placed", "yellow corners oriented"]
+
+
 @pytest.mark.parametrize("seed", range(6))
-def test_solver_makes_the_first_two_layers(eng, seed):
+def test_solver_solves_the_cube(eng, seed):
     rng = random.Random(seed)
     play(eng, [rng.choice(ALL_MOVES) for _ in range(25)])
+    assert not solved(eng)
     before = int(eng.sheet.value(RK.cube, RK.turns))
     said = solve(eng)
-    assert cross_done(eng) and corners_done(eng) and middle_done(eng)
-    assert ("Done: white cross." in said and "Done: white corners." in said
-            and "Done: middle layer." in said and "Finished." in said)
+    assert solved(eng)
+    assert [f"Done: {s}." for s in STAGES] == [m for m in said if m.startswith("Done:")]
+    assert "Finished." in said
     assert eng.sheet_violations() == []
-    # each piece takes one algorithm: at most 4 moves per cross edge and 6 per corner;
-    # a middle edge may need two (out, then in), of at most 7 moves each
-    assert int(eng.sheet.value(RK.cube, RK.turns)) - before <= 4 * 4 + 4 * 6 + 4 * 2 * 7
+    # simulate.py: 60-196 turns over 1000 scrambles
+    assert int(eng.sheet.value(RK.cube, RK.turns)) - before <= 250
 
 
 def test_solving_a_solved_cube_makes_no_turns(eng):
