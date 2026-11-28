@@ -667,6 +667,78 @@ Validating in place (pySHACL no longer copies the data graph) gave ~20% before t
 
 *Update (same day, Rubik stage 2):* with steps on the mirror and a cheap `__bool__` on `Overlay`/`Union` (pySHACL's `if graph:` was counting every knowledge triple), a Rubik tick averages ~36 ms (turns ~27 ms, planning ~65 ms) over two stages and 46 cases. See `doc/rubik.md`.
 
+### D31. A planning pack: methods, stages, cases and procedures; modules talk through requests and answers
+*Status: built (2026-11-28). Code: `examples/planning` (a library pack); tests: `test_d31.py` (a counter domain), `test_rubik.py` (the cube solved through the pack). Input: the Rubik solver (`doc/rubik.md`, "What the procedure needed"), and two points from the user: algorithms should be written as named procedures, and modules should talk by depositing requests and answers in the graph.*
+
+**Goal:** a general pack for following a *method*: reach a series of subgoals, each by recognising the situation and carrying out a known procedure. It's procedural knowledge, written as data, as in a textbook. It's not search.
+
+**Vocabulary** (`pl:`, `https://loopingrules.org/planning#`). The domain writes it as knowledge:
+
+| Term | Meaning |
+|---|---|
+| `pl:Method` | `pl:firstStage`, `pl:view` (the views cases are recognised through) |
+| `pl:Stage` | `rdfs:label`, `pl:goal` (conditions that must hold in every view), `pl:next` (none for the last stage) |
+| `pl:Case` | `pl:stage`, `pl:when` (conditions), `pl:do` (a procedure), `pl:priority` (default 0) |
+| `pl:Procedure` | `rdfs:label`, `pl:steps` (a list) |
+| a step | one of: a **procedure** (call it); `pl:Repeat` (`pl:times`, `pl:do`); `pl:Until` (`pl:until` conditions, `pl:do`: check first, then run it again until they hold); anything else is a **primitive action**, for the domain |
+
+**Modules talk through the sheet: requests and answers** (the user's design). The pack never reads the domain's state, and the domain never reads the stack:
+
+| The pack deposits | The domain answers |
+|---|---|
+| `[] a pl:Check ; pl:run ?r ; pl:about ?x ; pl:condition ?c ; pl:view ?v` | `?check pl:result true\|false`, all pending checks in one application (`lr:params ""`) |
+| `?run pl:doing ?action` | carries it out and deletes `pl:doing` in the same application, so the pack never asks about a state that hasn't changed yet |
+
+- **This replaced the proposed engine feature (named patterns).** The domain's knowledge of how a condition is checked stays in the domain, with no engine change.
+- **What it gives besides decoupling:**
+  - the questions and answers are visible in the sheet;
+  - anyone can answer: rules, a tool, or a person through `lr:in`.
+
+**Orchestration:**
+- **The order is in the preconditions.** Every operation waits through its own pattern: nothing pending, nothing being done, the right phase. The run's phase is `pl:Look`, then `pl:Question`.
+- **A round of questions** takes 5 ticks:
+  1. look;
+  2. ask about the stage's goal and every case's conditions, in every view;
+  3. the domain answers;
+  4. decide: next stage or finish, plan a case, or stuck;
+  5. forget the answers.
+- **A procedure runs on a call stack of frames.** Call, repeat, until, dispatch an action and return are one tick each. `Until` asks about its conditions in the run's view, with the same request/answer round.
+- **The only controller is `pl:casePriority`:** the highest-priority matching case goes first. Everything else is exclusive by its preconditions. Nothing depends on the order of names any more.
+
+**Library packs** (engine change, `package.py`): a manifest with `lr:library true` and no `lr:extends` is a pack for any project. `lr add-layer` installs it anywhere, and importing it as a project is refused. The Rubik project carries an installed copy in `layers/planning`, and a test keeps it equal to `examples/planning`.
+
+**The Rubik method on the pack:**
+- The last layer is written as the textbook writes it, with named procedures: `sexy`, `sune`, `yellowCross` = (`F`, `sexy`, `F'`), and so on.
+- Stage 7 is one case: *repeat 4 times: (until yellow is up: twist the corner), turn the top; then until aligned: turn the top*. The three cases, their priorities and the "same frame" rule of the previous version are gone. A case's procedure runs in the view it was planned in.
+- The cube's side is three operations:
+  - `rk:solve` starts a run;
+  - `rk:answer` reads the cube for every pending check;
+  - `rk:do` makes the move, and records `rk:Executed`, so the viewer and show packs keep working.
+
+**Performance: what the build taught** (one solve, seed 3):
+
+| Change | Solve |
+|---|---|
+| first working version | 111 s |
+| decisions only mark `pl:decided`; `pl:forget` clears the ~1000 triples of answers (deleting them inside each candidate decision cost seconds per candidate) | 214 s* |
+| expensive operations start from a positive phase triple; the cube's answer has self-contained `UNION` branches | 106 s |
+| checks carry `pl:about`, so "a false check about this case" is one star pattern | **28 s** |
+
+\* Slower at that step, because the phase fix wasn't in yet: every tick paid for the planning patterns.
+
+**Rules for authors** (also in the pack's README). Oxigraph builds every candidate row before applying `FILTER NOT EXISTS`, and evaluates a `UNION` (and `EXISTS` bodies) without the outer bindings:
+- start an expensive pattern from a positive triple that's missing when it doesn't apply;
+- keep `UNION` branches self-contained;
+- prefer star patterns on one node to joins inside `NOT EXISTS`.
+
+A possible engine improvement: rewrite patterns to follow these rules, or evaluate `EXISTS` with the outer bindings.
+
+**Cost now:** a Rubik solve is ~490–550 ticks, 29–39 s (the direct solver took ~170–200 ticks, ~6 s). Each move takes 2 ticks of ~50–60 ms, and moves are most of the solve. Options, if it matters:
+- fold dispatch into the domain's action, which would be a second, direct protocol;
+- make each tick cheaper: every tick matches ~20 pack operations plus the domain's.
+
+**Bug found by the tests:** a run and a case both use `pl:stage`. A pattern that said `?case pl:stage ?stage` without `?case a pl:Case` matched the run itself, so "stuck" never fired. Patterns over cases now say `a pl:Case`.
+
 ## Open questions
 
 - **Q3. Ties and no-ops.** Partly settled by D21: empty deltas are excluded except for no-op operations, and a tie between a no-op and an application with effects goes to continuing. Other ties: the first application, in a fixed order (operation IRI, then parameter values: D30).

@@ -17,10 +17,10 @@
 show:wait a lr:Operation ; rdfs:label "wait for the viewer" ;
   lr:where """ FILTER EXISTS { ?msg lr:channel lr:out ; a viz:Turn } """ .
 
-show:holdThePlan a lr:Controller ; rdfs:label "hold the plan until the last turn is shown" ;
+show:holdThePlan a lr:Controller ; rdfs:label "hold the next move until the last one is shown" ;
   lr:query """
     SELECT (-10 AS ?score) WHERE {
-      GRAPH lr:action { lr:this lr:operation rk:turn }
+      GRAPH lr:action { lr:this lr:operation ?op . VALUES ?op { rk:turn rk:do } }
       GRAPH lr:before {
         { ?e a rk:Executed . FILTER NOT EXISTS { ?e viz:announced true } }
         UNION

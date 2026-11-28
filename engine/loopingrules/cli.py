@@ -316,7 +316,8 @@ def cmd_add_layer(args, console: Console) -> int:
     except PackageError as e:
         console.print(f"[red]refused:[/] {e}")
         return 1
-    console.print(f"[green]added pack[/] [bold]{m.title}[/] {m.version} on top of {m.extends}"
+    where = f"on top of {m.extends}" if m.extends else "(a library)"
+    console.print(f"[green]added pack[/] [bold]{m.title}[/] {m.version} {where}"
                   + (f"\n{m.description}" if m.description else ""))
     if m.may_run:
         console.print("This pack may ask to run:")

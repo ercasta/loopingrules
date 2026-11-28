@@ -4,6 +4,7 @@
 @prefix sh:   <http://www.w3.org/ns/shacl#> .
 @prefix lr:   <https://loopingrules.org/ns#> .
 @prefix rk:   <https://example.org/rubik#> .
+@prefix pl:   <https://loopingrules.org/planning#> .
 @prefix face: <https://example.org/rubik/face#> .
 @prefix pos:  <https://example.org/rubik/pos#> .
 @prefix slot: <https://example.org/rubik/slot#> .
@@ -37,18 +38,14 @@ rk:ScrambleShape a sh:NodeShape ;
 # --- operations ------------------------------------------------------------------
 
 # One generic turn: take the next move of the plan and permute 20 colours.
-# - The plan is a list. Its items are absolute moves (mv:R), or relative moves
-#   (rmv:R) that the cube's current frame maps to absolute ones.
-# - The plan is walked with a pointer. List nodes in the sheet (a scramble) are
-#   deleted as they are used; an algorithm's nodes are knowledge and stay.
+# - The plan is a list of absolute moves (mv:R), e.g. a scramble's. Its list nodes
+#   are deleted as they are used. (The solver's moves come through the planning
+#   pack instead: see rk:do in solver.ttl.)
 # - A step applies all its deletes, then all its inserts, so the colours move together.
 rk:turn a lr:Operation ; rdfs:label "turn" ;
   lr:params "l mv" ;
   lr:where  """ rk:cube rk:plan ?l ; rk:turns ?n .
-                ?l rdf:first ?x ; rdf:rest ?r .
-                { ?x a rk:Move . BIND(?x AS ?mv) }
-                UNION
-                { ?x a rk:RelMove . rk:cube rk:frame ?fr . ?fr ?x ?mv . ?mv a rk:Move . }
+                ?l rdf:first ?mv ; rdf:rest ?r . ?mv a rk:Move .
                 BIND(?n + 1 AS ?n2) """ ;
   lr:delete """ rk:cube rk:plan ?l ; rk:turns ?n . """ ;
   lr:insert """ rk:cube rk:plan ?r ; rk:turns ?n2 .
@@ -69,9 +66,8 @@ rk:turn a lr:Operation ; rdfs:label "turn" ;
                     ?f rk:colour ?c . """ ;
       lr:delete """ ?f rk:colour ?c . """ ;
       lr:insert """ ?t rk:colour ?c . """ ]
-    # forget the used list node, unless it belongs to an algorithm (knowledge)
-    [ lr:where  """ ?l rdf:first ?x ; rdf:rest ?r .
-                    FILTER NOT EXISTS { ?l a rk:AlgorithmStep } """ ;
+    # forget the used list node
+    [ lr:where  """ ?l rdf:first ?x ; rdf:rest ?r . """ ;
       lr:delete """ ?l rdf:first ?x ; rdf:rest ?r . """ ]
   ) .
 
@@ -80,7 +76,7 @@ rk:scramble a lr:Operation ; rdfs:label "scramble" ;
   lr:params "m" ;
   lr:where  """ ?m lr:channel lr:in ; a rk:Scramble ; rk:moves ?moves .
                 rk:cube rk:plan rdf:nil .
-                FILTER NOT EXISTS { rk:cube rk:stage ?solving } """ ;
+                FILTER NOT EXISTS { ?run a pl:Run } """ ;
   lr:delete """ rk:cube rk:plan rdf:nil . """ ;
   lr:insert """ rk:cube rk:plan ?moves .
                 [] lr:channel lr:out ; a lr:Say ; lr:replyTo ?m ; lr:text "Scrambling." . """ ;
@@ -91,7 +87,7 @@ rk:reset a lr:Operation ; rdfs:label "reset" ;
   lr:params "m" ;
   lr:where  """ ?m lr:channel lr:in ; a rk:Reset .
                 rk:cube rk:plan rdf:nil .
-                FILTER NOT EXISTS { rk:cube rk:stage ?solving } """ ;
+                FILTER NOT EXISTS { ?run a pl:Run } """ ;
   lr:insert """ [] lr:channel lr:out ; a lr:Say ; lr:replyTo ?m ; lr:text "Reset to solved." . """ ;
   lr:steps (
     [ lr:where """ ?p rk:colour ?c . """ ; lr:delete """ ?p rk:colour ?c . """ ]

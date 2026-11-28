@@ -244,6 +244,21 @@ Found by removing each feature in the simulator (100 scrambles each):
 
 **Also learned:** before this phase, the order in which cases were tried was the alphabetical order of their IRIs, an invisible priority. Two of the five needs above showed up as "it works, by luck of naming". Priority belongs in controllers.
 
+## Step 5: the solver on the planning pack (D31)
+- **The method is written for the pack:** stages, cases and named procedures (`sexy`, `sune`, `yellowCross` = `F, sexy, F'`, …), with `pl:Repeat` and `pl:Until`. Stage 7 is one case:
+
+  ```
+  orient the yellow corners:
+    repeat 4 times: (until yellow is up on the front-right corner: twist it (R' D' R D)), turn the top
+    until the top is aligned: turn the top
+  ```
+
+  The three cases, their priorities and `rk:sameFrame` are gone: a case's procedure runs in the view it was planned in.
+- **The cube's side is three operations** (`solver.ttl`): `rk:solve` starts a run, `rk:answer` reads the cube for every pending check, and `rk:do` makes a move. `rk:turn` now only runs absolute plans (scrambles). The show pack holds back `rk:do` as well as `rk:turn`.
+- **`simulate.py`** follows the pack's semantics: 1000/1000 solved, mean 20 plans (was 31: stage 7 is now one plan).
+- **Tests:** the 6 scrambles are solved through the pack. The installed copy in `layers/planning` is checked against `examples/planning`.
+- **Cost:** ~490–550 ticks, 29–39 s per solve. See D31 for the four steps from the first working version (111 s), and for the pattern-writing rules they taught.
+
 ## Engine changes needed (small)
 - *(done in step 2)* **`POST /api/out/ack` must wake a listening autopilot** (`session.input_event.set()`, as the other mutations do). Today an ack doesn't, so `show:wait` would never be re-evaluated.
 - Nothing else is expected. Revisit this if the solver's performance demands it.

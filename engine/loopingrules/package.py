@@ -3,7 +3,8 @@
 An export is a flat zip:
 
     package.ttl       manifest: title, version, description, creator, license,
-                      lr:mayRun (the command templates it may ask to run), lr:extends
+                      lr:mayRun (the command templates it may ask to run), lr:extends,
+                      lr:library
     *.ttl             definitions and knowledge, sorted by type (design D28):
                       usually model.ttl, controllers.ttl, knowledge.ttl
     sheet.ttl         optional: a seed sheet (never in a pack)
@@ -15,6 +16,9 @@ A *pack* declares lr:extends "<title>" (the base project's, or an installed pack
 It may carry anything but a sheet: operations, shapes, controllers, knowledge. It
 is installed into an existing project with add_layer, into layers/<title>/, and
 refused if it conflicts with what is already there.
+
+A *library* pack declares lr:library true instead (D31): it extends no project in
+particular, and can be installed into any project (e.g. the planning pack).
 
 Importing is defensive: flat simple file names only, size limits, every file must
 parse, knowledge may not use blank nodes, every query must pass the security check
@@ -59,7 +63,13 @@ class Manifest:
     license: str = ""
     may_run: list[str] = field(default_factory=list)
     extends: str | None = None
+    library: bool = False  # lr:library true: a pack for any project (D31)
     direct_edits: bool = True  # lr:directEdits false = app mode (D25)
+
+    @property
+    def is_pack(self) -> bool:
+        """A pack (it extends a project or pack, or is a library): it carries no state."""
+        return bool(self.extends) or self.library
 
     @classmethod
     def from_graph(cls, g: Graph, fallback_title: str) -> "Manifest":
@@ -71,6 +81,7 @@ class Manifest:
                    description=v(DCT.description), creator=v(DCT.creator), license=v(DCT.license),
                    may_run=sorted(str(x) for x in g.objects(pkg, LR.mayRun)),
                    extends=str(g.value(pkg, LR.extends)) if g.value(pkg, LR.extends) is not None else None,
+                   library=str(g.value(pkg, LR.library, default="false")).lower() == "true",
                    direct_edits=str(g.value(pkg, LR.directEdits, default="true")).lower() != "false")
 
     def to_graph(self) -> Graph:
@@ -88,6 +99,8 @@ class Manifest:
             g.add((pkg, LR.mayRun, Literal(t)))
         if self.extends:
             g.add((pkg, LR.extends, Literal(self.extends)))
+        if self.library:
+            g.add((pkg, LR.library, Literal(True)))
         if not self.direct_edits:
             g.add((pkg, LR.directEdits, Literal(False)))
         return g
@@ -129,7 +142,7 @@ def export_project(project: str | Path, out: str | Path | None = None, sheet: st
     """Write an export. sheet: "seed" (the authored sheet.ttl), "state" (state_sheet), or "none"."""
     p = Path(project)
     manifest = read_manifest(p) or Manifest(title=p.name)
-    if manifest.extends:
+    if manifest.is_pack:
         sheet = "none"  # a pack carries no state
     files: dict[str, bytes] = {}
     files["package.ttl"] = manifest.to_graph().serialize(format="turtle").encode()
@@ -201,7 +214,7 @@ def _check(files: dict[str, bytes]) -> Manifest:
                 raise PackageError(f"{name} does not parse: {e}") from e
     manifest = Manifest.from_graph(graphs.get("package.ttl", Graph()), "unnamed")
     content = [n for n in graphs if n not in ("package.ttl", "sheet.ttl")]
-    if manifest.extends and "sheet.ttl" in files:
+    if manifest.is_pack and "sheet.ttl" in files:
         raise PackageError("a pack carries no state: sheet.ttl is not allowed in a pack")
     if not content:
         raise PackageError("the export has no definitions or knowledge (*.ttl besides package.ttl)")
@@ -211,7 +224,7 @@ def _check(files: dict[str, bytes]) -> Manifest:
             merged.bind(prefix, ns, override=False)
         merged += graphs[n]
     try:
-        src = source(manifest.title, manifest.extends and manifest.title, merged)  # refuses blank-node knowledge
+        src = source(manifest.title, manifest.title if manifest.is_pack else None, merged)  # refuses blank-node knowledge
         load_operations(src.definitions)  # includes the SERVICE / FROM check and the D23 subset
         load_controllers(src.definitions)
     except ValueError as e:
@@ -226,9 +239,9 @@ def _check(files: dict[str, bytes]) -> Manifest:
 
 def import_export(data: bytes, dest: str | Path) -> Manifest:
     manifest, files = inspect_export(data)
-    if manifest.extends:
-        raise PackageError(f"{manifest.title} is a pack for '{manifest.extends}': "
-                           f"add it to a project with: lr add-layer <file> <project>")
+    if manifest.is_pack:
+        what = f"a pack for '{manifest.extends}'" if manifest.extends else "a library pack"
+        raise PackageError(f"{manifest.title} is {what}: add it to a project with: lr add-layer <file> <project>")
     d = Path(dest)
     if d.exists() and any(d.iterdir()):
         raise PackageError(f"{d} already exists and is not empty")
@@ -241,8 +254,9 @@ def import_export(data: bytes, dest: str | Path) -> Manifest:
 def add_layer(data: bytes, project: str | Path) -> Manifest:
     """Install a pack into an existing project, in layers/<title>/ (design D28).
 
-    The pack must extend the project or a pack already installed in it, and must not
-    conflict with what is there: it is removed again if the project no longer loads.
+    The pack must extend the project or a pack already installed in it, or be a library
+    (D31), and must not conflict with what is there: it is removed again if the project
+    no longer loads.
     """
     import shutil
 
@@ -250,12 +264,13 @@ def add_layer(data: bytes, project: str | Path) -> Manifest:
     from .project import Project
 
     manifest, files = inspect_export(data)
-    if not manifest.extends:
-        raise PackageError(f"{manifest.title} is not a pack (it has no lr:extends)")
+    if not manifest.is_pack:
+        raise PackageError(f"{manifest.title} is not a pack (it has no lr:extends or lr:library)")
     p = Path(project)
     base = read_manifest(p)
     installed = {m.title for m in manifests(p)} - ({base.title} if base else set())
-    if (base is None or base.title != manifest.extends) and manifest.extends not in installed:
+    if (not manifest.library and (base is None or base.title != manifest.extends)
+            and manifest.extends not in installed):
         found = f"'{base.title}'" if base else "a project without package.ttl"
         raise PackageError(f"{manifest.title} extends '{manifest.extends}', but {p} is {found}"
                            + (f" with packs {', '.join(sorted(installed))}" if installed else ""))

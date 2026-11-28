@@ -1,97 +1,68 @@
 @prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-@prefix sh:   <http://www.w3.org/ns/shacl#> .
 @prefix lr:   <https://loopingrules.org/ns#> .
 @prefix rk:   <https://example.org/rubik#> .
+@prefix pl:   <https://loopingrules.org/planning#> .
 
-# The solver (design: doc/rubik.md, part 1).
-# - The method is knowledge (method.ttl): stages, and cases with their algorithms,
-#   written as the beginner method writes them, with white on D.
-# - These operations are the generic machinery: recognise a case in some frame,
-#   plan its algorithm, and move on to the next stage when its goal holds.
-# - Planning only happens when the plan is empty, so an algorithm never runs on
-#   a stale recognition.
+# The solver: the cube's side of the planning pack (design D31; doc/rubik.md).
+# - The method is knowledge (method.ttl): stages, cases and procedures, written as the
+#   beginner method writes them, with white on D. The pack (layers/planning) follows it.
+# - The pack never reads the cube. It asks, and this file answers:
+#     pl:Check (a condition, in a view)  ->  rk:answer, all pending checks in one go
+#     ?run pl:doing ?move                ->  rk:do turns the cube, and clears it
+# - A view is a frame (geometry.ttl): one of the 4 ways to hold the cube with white
+#   down. It maps the method's relative positions and moves to this cube's.
 
-rk:SolvingShape a sh:NodeShape ;
-  sh:targetClass rk:Cube ;
-  sh:property [ sh:path rk:stage ; sh:maxCount 1 ; sh:class rk:Stage ] ;
-  sh:property [ sh:path rk:frame ; sh:maxCount 1 ; sh:class rk:Frame ] .
-
-# [] a rk:Solve  ->  start the method's first stage.
+# [] a rk:Solve  ->  a run of the beginner method.
 rk:solve a lr:Operation ; rdfs:label "start solving" ;
   lr:params "m" ;
   lr:where  """ ?m lr:channel lr:in ; a rk:Solve .
                 rk:cube rk:plan rdf:nil .
-                FILTER NOT EXISTS { rk:cube rk:stage ?solving }
-                ?method a rk:Method ; rk:firstStage ?first . """ ;
-  lr:insert """ rk:cube rk:stage ?first .
+                FILTER NOT EXISTS { ?run a pl:Run }
+                ?method a pl:Method . """ ;
+  lr:insert """ [] a pl:Run ; pl:method ?method .
                 [] lr:channel lr:out ; a lr:Say ; lr:replyTo ?m ; lr:text "Solving." . """ ;
   lr:steps ( [ lr:where """ ?m ?p ?o . """ ; lr:delete """ ?m ?p ?o . """ ] ) .
 
-# How a need is read. A need names one or more relative positions (rk:at) and a
-# relative centre, and says either
+# Answer every pending check at once (no parameters: one application). Each UNION
+# branch starts from the check: a UNION outside it was evaluated for every condition
+# in every view (~650 ms). A condition
+# names relative positions (rk:at) and a relative centre, and says
 #   rk:like   - some sticker at those positions has the centre's colour, or
 #   rk:unlike - some sticker at those positions doesn't.
-# One position is the usual case; several say "any of these will do", e.g. "the
-# corner holds yellow, whichever way it's twisted". Both operations below spell
-# out "the need fails in frame ?fr" the same way, one FILTER NOT EXISTS per kind
-# (a UNION there made planning ~9x slower in oxigraph).
+rk:answer a lr:Operation ; rdfs:label "look at the cube" ;
+  lr:params "" ;
+  lr:where  """ { ?k a pl:Check ; pl:condition ?need ; pl:view ?fr . FILTER NOT EXISTS { ?k pl:result ?any }
+                  ?need rk:like ?ref . ?fr ?ref ?centre . ?centre rk:colour ?c .
+                  BIND(EXISTS { ?need rk:at ?at . ?fr ?at ?p . ?p rk:colour ?c } AS ?r) }
+                UNION
+                { ?k a pl:Check ; pl:condition ?need ; pl:view ?fr . FILTER NOT EXISTS { ?k pl:result ?any }
+                  ?need rk:unlike ?ref . ?fr ?ref ?centre . ?centre rk:colour ?c .
+                  BIND(EXISTS { ?need rk:at ?at . ?fr ?at ?p . FILTER NOT EXISTS { ?p rk:colour ?c } } AS ?r) } """ ;
+  lr:insert """ ?k pl:result ?r . """ .
 
-# A case of the current stage whose needs all hold in a frame: plan its algorithm,
-# in that frame. "All needs hold" is written as "no need fails".
-# - A stage with rk:sameFrame plans only in the frame the cube is held in: its
-#   algorithms (R' D' R D, repeated) must all use the same R and D.
-# - When several cases match, the controller rk:casePriority prefers the higher
-#   rk:priority; a fallback case has a negative one.
-rk:planCase a lr:Operation ; rdfs:label "plan a case" ;
-  lr:params "case fr" ;
-  lr:where  """ rk:cube rk:stage ?stage ; rk:plan rdf:nil .
-                ?case a rk:Case ; rk:stage ?stage ; rk:algorithm ?alg .
-                ?fr a rk:Frame .
-                FILTER NOT EXISTS { ?stage rk:sameFrame true . rk:cube rk:frame ?held . FILTER(?held != ?fr) }
-                FILTER NOT EXISTS {
-                  ?case rk:need ?need . ?need rk:like ?ref . ?fr ?ref ?centre . ?centre rk:colour ?c .
-                  FILTER NOT EXISTS { ?need rk:at ?at . ?fr ?at ?p . ?p rk:colour ?c } }
-                FILTER NOT EXISTS {
-                  ?case rk:need ?need . ?need rk:unlike ?ref . ?fr ?ref ?centre . ?centre rk:colour ?c .
-                  FILTER NOT EXISTS { ?need rk:at ?at . ?fr ?at ?p . FILTER NOT EXISTS { ?p rk:colour ?c } } } """ ;
-  lr:delete """ rk:cube rk:plan rdf:nil . """ ;
-  lr:insert """ rk:cube rk:plan ?alg ; rk:frame ?fr . """ ;
-  lr:steps ( [ lr:where  """ rk:cube rk:frame ?old . FILTER(?old != ?fr) """ ;
-               lr:delete """ rk:cube rk:frame ?old . """ ] ) .
-
-# The stage's goal holds in every frame: say so, and go on to the next stage.
-rk:nextStage a lr:Operation ; rdfs:label "next stage" ;
-  lr:params "stage" ;
-  lr:where  """ rk:cube rk:stage ?stage ; rk:plan rdf:nil .
-                ?stage rk:next ?next ; rdfs:label ?name .
-                FILTER NOT EXISTS {
-                  ?stage rk:goal ?need . ?need rk:like ?ref . ?fr a rk:Frame ; ?ref ?centre . ?centre rk:colour ?c .
-                  FILTER NOT EXISTS { ?need rk:at ?at . ?fr ?at ?p . ?p rk:colour ?c } }
-                FILTER NOT EXISTS {
-                  ?stage rk:goal ?need . ?need rk:unlike ?ref . ?fr a rk:Frame ; ?ref ?centre . ?centre rk:colour ?c .
-                  FILTER NOT EXISTS { ?need rk:at ?at . ?fr ?at ?p . FILTER NOT EXISTS { ?p rk:colour ?c } } }
-                BIND(CONCAT("Done: ", ?name, ".") AS ?text) """ ;
-  lr:delete """ rk:cube rk:stage ?stage . """ ;
-  lr:insert """ rk:cube rk:stage ?next .
-                [] lr:channel lr:out ; a lr:Say ; lr:text ?text . """ .
-
-# Choosing among applications is what controllers are for: these replace what used
-# to be decided by the order of names (rk:nextStage sorting before rk:planCase,
-# case IRIs sorting before one another).
-rk:stageDone a lr:Controller ; rdfs:label "a reached goal ends the stage first" ;
-  lr:query """ SELECT (1 AS ?score) WHERE { GRAPH lr:action { lr:this lr:operation rk:nextStage } } """ .
-
-rk:casePriority a lr:Controller ; rdfs:label "prefer the case with the higher priority" ;
-  lr:query """ SELECT ?score WHERE {
-                 GRAPH lr:action { lr:this lr:operation rk:planCase ; lr:binds ?b . ?b lr:var "case" ; lr:value ?case }
-                 ?case rk:priority ?score } """ .
-
-# The last stage has no next one: the solve is over.
-rk:finish a lr:Operation ; rdfs:label "finish solving" ;
-  lr:where  """ rk:cube rk:stage ?stage ; rk:plan rdf:nil .
-                FILTER NOT EXISTS { ?stage rk:next ?any }
-                FILTER NOT EXISTS { ?case a rk:Case ; rk:stage ?stage } """ ;
-  lr:delete """ rk:cube rk:stage ?stage . """ ;
-  lr:insert """ [] lr:channel lr:out ; a lr:Say ; lr:text "Finished." . """ ;
-  lr:steps ( [ lr:where  """ rk:cube rk:frame ?fr . """ ; lr:delete """ rk:cube rk:frame ?fr . """ ] ) .
+# Carry out the pack's move: the run's view maps it to this cube, and the colours move
+# as in rk:turn (model.ttl). pl:doing is cleared in the same application, so the pack
+# never asks about a cube that hasn't turned yet.
+rk:do a lr:Operation ; rdfs:label "make the move" ;
+  lr:params "run mv" ;
+  lr:where  """ ?run pl:doing ?x ; pl:view ?fr . ?fr ?x ?mv . ?mv a rk:Move .
+                rk:cube rk:turns ?n . BIND(?n + 1 AS ?n2) """ ;
+  lr:delete """ ?run pl:doing ?x . rk:cube rk:turns ?n . """ ;
+  lr:insert """ rk:cube rk:turns ?n2 .
+                [] a rk:Executed ; rk:move ?mv ; rk:seq ?n2 . """ ;
+  lr:steps (
+    [ lr:where  """ ?mv rk:face ?face .
+                    ?map rk:of ?face .
+                    { ?mv rk:dir rk:cw .  ?map rk:from ?f ; rk:to ?t . }
+                    UNION
+                    { ?mv rk:dir rk:ccw . ?map rk:from ?t ; rk:to ?f . }
+                    ?f rk:colour ?c . """ ;
+      lr:delete """ ?f rk:colour ?c . """ ;
+      lr:insert """ ?t rk:colour ?c . """ ]
+    [ lr:where  """ ?mv rk:twice true ; rk:face ?face .
+                    ?map rk:of ?face ; rk:from ?f ; rk:to ?t .
+                    ?f rk:colour ?c . """ ;
+      lr:delete """ ?f rk:colour ?c . """ ;
+      lr:insert """ ?t rk:colour ?c . """ ]
+  ) .

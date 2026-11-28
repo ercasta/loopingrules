@@ -1,4 +1,4 @@
-"""Generate the beginner method as knowledge: stages, cases and algorithms.
+"""Generate the beginner method as knowledge, for the planning pack (design D31).
 
     python examples/rubik/gen_method.py
 
@@ -6,15 +6,18 @@ Writes method.ttl next to this script (committed). Everything is written as the
 beginner method writes it: white on D, in relative names (rpos:, rmv:). The
 frames in geometry.ttl map them to this cube.
 
-- A **case** is a set of needs. Each need says that the sticker at a relative position
-  has the colour of a relative centre: `need:x rk:at rpos:U8 ; rk:like rpos:D5`
-  means "the sticker at U8 is white" (D5 is the white centre).
-- Each case has an **algorithm**: a list of relative moves, made of named nodes
-  (knowledge can't contain blank nodes), each `a rk:AlgorithmStep`.
-- A **stage** has a goal (needs that must hold in every frame) and a next stage.
+- A **condition** ("need") says that some sticker at relative positions has (rk:like)
+  or hasn't (rk:unlike) the colour of a relative centre: `need:x rk:at rpos:U8 ;
+  rk:like rpos:D5` means "the sticker at U8 is white" (D5 is the white centre). The
+  rubik project answers the pack's checks of them (solver.ttl).
+- A **case** (pl:Case) has conditions and a procedure; a **stage** (pl:Stage) has a
+  goal (conditions that must hold in every view) and a next stage.
+- A **procedure** (pl:Procedure) is a list of relative moves, procedures, and loops
+  (pl:Repeat, pl:Until). Its list nodes are named: knowledge can't have blank nodes.
 
-Algorithms are found by search: the shortest sequence that solves the case's target
-and leaves alone what earlier stages, and the other targets of this stage, solved.
+For stages 1-3, procedures are found by search: the shortest sequence that solves
+the case's target and leaves alone what earlier stages, and the other targets of
+this stage, solved. The last layer is written by hand, from the textbook.
 """
 
 from __future__ import annotations
@@ -22,7 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from gen_geometry import facelets, move_map, move_names
+from gen_geometry import facelets, frames, move_map, move_names
 
 HERE = Path(__file__).resolve().parent
 
@@ -35,7 +38,11 @@ PREFIXES = """\
 @prefix stage: <https://example.org/rubik/stage#> .
 @prefix case:  <https://example.org/rubik/case#> .
 @prefix need:  <https://example.org/rubik/need#> .
-@prefix alg:   <https://example.org/rubik/alg#> .
+@prefix proc:  <https://example.org/rubik/proc#> .
+@prefix step:  <https://example.org/rubik/step#> .
+@prefix steps: <https://example.org/rubik/steps#> .
+@prefix frame: <https://example.org/rubik/frame#> .
+@prefix pl:    <https://loopingrules.org/planning#> .
 """
 
 MOVES = {m: move_map(m) for m in move_names()}
@@ -221,10 +228,11 @@ def middle_cases():
         yield f"middle_{front}", label, [(front, "F5"), (right, "R5")], alg
 
 
-# --- stages 4-7: the last layer, textbook algorithms written by hand --------------
-# The beginner method's last layer is iterative: a few algorithms, applied to the
-# case at hand, then look again. Needs here also say what must NOT be ("unlike"),
-# or that any of several stickers will do (several positions in one need).
+# --- the method, as data ----------------------------------------------------------
+# The method is written for the planning pack (design D31): stages with goals, cases
+# with conditions ("needs"), and procedures. Stages 1-3 are searched (above); the last
+# layer is written by hand, as the textbook writes it: named procedures, repeated, or
+# repeated until a condition holds.
 
 def like(*ats: str, c: str) -> tuple:
     """Some sticker at `ats` has the colour of centre `c`."""
@@ -236,13 +244,25 @@ def unlike(*ats: str, c: str) -> tuple:
     return (ats, "unlike", c)
 
 
-FRURUF = "F R U Ri Ui Fi".split()          # yellow cross: dot -> L -> line -> cross
-SUNE_U = "R U Ri U R U2 Ri U".split()      # yellow edges: swaps the front and left edges
-NIKLAS = "U R Ui Li U Ri Ui L".split()     # corners: cycles three, keeps the front-right one
-RDRD = "Ri Di R D".split()                 # twists the front-right corner; repeated, it comes back
+@dataclass
+class Proc:
+    name: str
+    label: str
+    steps: list            # of moves (str), Proc, Repeat or Until
 
-UFR = ("U9", "F3", "R1")  # the front-right corner of the top layer
-PLACED = [like(*UFR, c="U5"), like(*UFR, c="F5"), like(*UFR, c="R5")]  # its colours, any twist
+
+@dataclass
+class Repeat:
+    name: str
+    times: int
+    do: Proc
+
+
+@dataclass
+class Until:
+    name: str
+    until: list            # needs, checked in the view the case was planned in
+    do: Proc
 
 
 @dataclass
@@ -250,7 +270,7 @@ class Case:
     name: str
     label: str
     needs: list            # of (positions, "like" | "unlike", centre)
-    alg: list[str]
+    do: Proc
     priority: int = 0      # among the stage's matching cases, the highest goes first
 
 
@@ -258,13 +278,36 @@ class Case:
 class Stage:
     name: str
     label: str
-    goal: list             # needs that must hold in every frame
+    goal: list             # needs that must hold in every view
     cases: list[Case]
-    same_frame: bool = False  # plan only in the frame the cube is held in
+
+
+# The textbook's named procedures. Moves are relative: the view a case is planned in
+# says which faces they turn.
+SEXY = Proc("sexy", "sexy move", "R U Ri Ui".split())
+TWIST = Proc("twistCorner", "twist the front-right corner (R' D' R D)", "Ri Di R D".split())
+SUNE = Proc("sune", "sune", "R U Ri U R U2 Ri".split())
+TURN_TOP = Proc("turnTop", "turn the top", ["U"])
+YELLOW_CROSS = Proc("yellowCross", "front, sexy move, front back", ["F", SEXY, "Fi"])
+SWAP_EDGES = Proc("swapEdges", "sune, then turn the top: swaps the front and left edges", [SUNE, "U"])
+CYCLE_CORNERS = Proc("cycleCorners", "cycle three corners, keeping the front-right one",
+                     "U R Ui Li U Ri Ui L".split())
+
+UFR = ("U9", "F3", "R1")  # the front-right corner of the top layer
+PLACED = [like(*UFR, c="U5"), like(*UFR, c="F5"), like(*UFR, c="R5")]  # its colours, any twist
+
+# Stage 7, as the beginner method says it: for each corner, twist it until its yellow is
+# on top, then turn the top to bring the next one; at the end, turn the top into place.
+ORIENT_ONE = Proc("orientOne", "orient the front-right corner, then bring the next one", [
+    Until("untilYellowUp", [like("U9", c="U5")], TWIST), "U"])
+ORIENT_CORNERS = Proc("orientCorners", "orient the yellow corners", [
+    Repeat("fourCorners", 4, ORIENT_ONE),
+    Until("untilAligned", [like("F2", c="F5")], TURN_TOP)])
 
 
 def searched(cases) -> list[Case]:
-    return [Case(n, label, [((at,), "like", c) for at, c in needs], alg) for n, label, needs, alg in cases()]
+    return [Case(n, label, [((at,), "like", c) for at, c in needs], Proc(n, label, alg))
+            for n, label, needs, alg in cases()]
 
 
 def stages() -> list[Stage]:
@@ -276,34 +319,31 @@ def stages() -> list[Stage]:
         Stage("Corners", "white corners", goal(("D3", "D5"), ("F9", "F5"), ("R7", "R5")), searched(corner_cases)),
         Stage("Middle", "middle layer", goal(("F6", "F5"), ("R4", "R5")), searched(middle_cases)),
         Stage("YellowCross", "yellow cross", [like("U8", c="U5")], [
-            Case("yc_dot", "no yellow edge on top", [unlike(e, c="U5") for e in ("U2", "U4", "U6", "U8")], FRURUF),
+            Case("yc_dot", "no yellow edge on top", [unlike(e, c="U5") for e in ("U2", "U4", "U6", "U8")],
+                 YELLOW_CROSS),
             Case("yc_l", "an L: yellow edges at the back and on the left",
-                 [like("U2", c="U5"), like("U4", c="U5"), unlike("U6", c="U5"), unlike("U8", c="U5")], FRURUF),
+                 [like("U2", c="U5"), like("U4", c="U5"), unlike("U6", c="U5"), unlike("U8", c="U5")],
+                 YELLOW_CROSS),
             Case("yc_line", "a line: yellow edges on the left and on the right",
-                 [like("U4", c="U5"), like("U6", c="U5"), unlike("U2", c="U5")], FRURUF),
+                 [like("U4", c="U5"), like("U6", c="U5"), unlike("U2", c="U5")], YELLOW_CROSS),
         ]),
         Stage("YellowEdges", "yellow edges", [like("F2", c="F5")], [
             Case("ye_adjacent", "the back and right edges match, the front one doesn't",
-                 [like("B2", c="B5"), like("R2", c="R5"), unlike("F2", c="F5")], SUNE_U),
+                 [like("B2", c="B5"), like("R2", c="R5"), unlike("F2", c="F5")], SWAP_EDGES),
             Case("ye_opposite", "the front and back edges match, the right one doesn't",
-                 [like("F2", c="F5"), like("B2", c="B5"), unlike("R2", c="R5")], SUNE_U),
-            Case("ye_turn", "fewer than two edges match: turn the top", [], ["U"], priority=-1),
+                 [like("F2", c="F5"), like("B2", c="B5"), unlike("R2", c="R5")], SWAP_EDGES),
+            Case("ye_turn", "fewer than two edges match: turn the top", [], TURN_TOP, priority=-1),
         ]),
         Stage("CornersPlaced", "yellow corners placed", PLACED, [
-            Case("cp_one", "the front-right corner is in place, twisted or not", PLACED, NIKLAS),
-            Case("cp_none", "no corner is in place", [], NIKLAS, priority=-1),
+            Case("cp_one", "the front-right corner is in place, twisted or not", PLACED, CYCLE_CORNERS),
+            Case("cp_none", "no corner is in place", [], CYCLE_CORNERS, priority=-1),
         ]),
-        # The cube is held still: R' D' R D twists the front-right corner and, repeated,
-        # puts the bottom back, so every repetition must use the same R and D.
+        # the whole cube: the corners' twists also put the bottom back
         Stage("CornersOriented", "yellow corners oriented",
               [like("U8", c="U5"), like("U9", c="U5"), like("D2", c="D5"), like("D3", c="D5")]
               + [like(f"F{i}", c="F5") for i in (1, 2, 3, 4, 6, 7, 8, 9)], [
-            Case("co_twist", "the front-right corner's yellow isn't on top", [unlike("U9", c="U5")], RDRD),
-            Case("co_next", "it is, but another corner's isn't: bring that one round",
-                 [like("U9", c="U5"), unlike("U1", "U3", "U7", c="U5")], ["U"]),
-            Case("co_align", "the top is yellow but turned: turn it into place",
-                 [like(c, c="U5") for c in ("U1", "U3", "U7", "U9")] + [unlike("F2", c="F5")], ["U"]),
-        ], same_frame=True),
+            Case("co_all", "orient every corner, then align the top", [], ORIENT_CORNERS),
+        ]),
     ]
 
 
@@ -314,46 +354,67 @@ def emit_need(out: list[str], name: str, need) -> None:
     out.append(f"{name} rk:at {', '.join('rpos:' + a for a in ats)} ; rk:{kind} rpos:{centre} .")
 
 
-def emit_case(out: list[str], stage: str, case: Case) -> None:
-    need_names = [f"need:{case.name}_{i}" for i in range(len(case.needs))]
-    first = f"alg:{case.name}_0" if case.alg else "rdf:nil"
-    out.append(f"case:{case.name} a rk:Case ; rk:stage stage:{stage} ; rdfs:label \"{case.label}\" ;")
-    if need_names:
-        out.append(f"  rk:need {', '.join(need_names)} ;")
-    if case.priority:
-        out.append(f"  rk:priority {case.priority} ;")
-    out.append(f"  rk:algorithm {first} .")
-    for nn, need in zip(need_names, case.needs):
+def emit_needs(out: list[str], owner: str, prop: str, needs) -> str:
+    """Emit `owner`'s needs, named after it; returns the property clause, or ""."""
+    names = [f"need:{owner}_{i}" for i in range(len(needs))]
+    for nn, need in zip(names, needs):
         emit_need(out, nn, need)
-    for i, mv in enumerate(case.alg):
-        rest = f"alg:{case.name}_{i + 1}" if i + 1 < len(case.alg) else "rdf:nil"
-        out.append(f"alg:{case.name}_{i} a rk:AlgorithmStep ; rdf:first rmv:{mv} ; rdf:rest {rest} .")
+    return f" {prop} {', '.join(names)} ;" if names else ""
+
+
+def emit_proc(out: list[str], proc: Proc, done: set) -> None:
+    """A procedure, and the procedures and loops it uses (each once)."""
+    if proc.name in done:
+        return
+    done.add(proc.name)
+    items = []
+    for i, step in enumerate(proc.steps):
+        if isinstance(step, str):
+            items.append(f"rmv:{step}")
+        elif isinstance(step, Proc):
+            emit_proc(out, step, done)
+            items.append(f"proc:{step.name}")
+        elif isinstance(step, Repeat):
+            emit_proc(out, step.do, done)
+            out.append(f"step:{step.name} a pl:Repeat ; pl:times {step.times} ; pl:do proc:{step.do.name} .")
+            items.append(f"step:{step.name}")
+        else:
+            emit_proc(out, step.do, done)
+            when = emit_needs(out, step.name, "pl:until", step.until)
+            out.append(f"step:{step.name} a pl:Until ;{when} pl:do proc:{step.do.name} .")
+            items.append(f"step:{step.name}")
+    # the list nodes are named, since knowledge can't have blank nodes
+    first = f"steps:{proc.name}_0" if items else "rdf:nil"
+    out.append(f"proc:{proc.name} a pl:Procedure ; rdfs:label \"{proc.label}\" ; pl:steps {first} .")
+    for i, item in enumerate(items):
+        rest = f"steps:{proc.name}_{i + 1}" if i + 1 < len(items) else "rdf:nil"
+        out.append(f"steps:{proc.name}_{i} rdf:first {item} ; rdf:rest {rest} .")
 
 
 def main() -> None:
     all_stages = stages()
     out = [PREFIXES, "# Generated by gen_method.py: do not edit by hand.\n"]
-    out.append(f"rk:beginnerMethod a rk:Method ; rdfs:label \"beginner method (layer by layer)\" ; "
-               f"rk:firstStage stage:{all_stages[0].name} .\n")
+    views = ", ".join(f"frame:f{f}" for f in sorted(frames()))
+    out.append(f"rk:beginnerMethod a pl:Method ; rdfs:label \"beginner method (layer by layer)\" ;\n"
+               f"  pl:firstStage stage:{all_stages[0].name} ; pl:view {views} .\n")
 
     out.append("# --- stages ------------------------------------------------------------------")
     for i, st in enumerate(all_stages):
-        nxt = all_stages[i + 1].name if i + 1 < len(all_stages) else "Done"
-        goals = [f"need:{st.name}Goal_{j}" for j in range(len(st.goal))]
-        out.append(f"stage:{st.name} a rk:Stage ; rdfs:label \"{st.label}\" ; rk:next stage:{nxt} ;"
-                   + (" rk:sameFrame true ;" if st.same_frame else ""))
-        out.append(f"  rk:goal {', '.join(goals)} .")
-        for g, need in zip(goals, st.goal):
-            emit_need(out, g, need)
-    out.append("stage:Done a rk:Stage ; rdfs:label \"done\" .")
+        nxt = f" pl:next stage:{all_stages[i + 1].name} ;" if i + 1 < len(all_stages) else ""
+        goal = emit_needs(out, f"{st.name}Goal", "pl:goal", st.goal)
+        out.append(f"stage:{st.name} a pl:Stage ; rdfs:label \"{st.label}\" ;{nxt}{goal[:-2]} .")
 
+    done: set = set()
     for i, st in enumerate(all_stages):
         title = f"stage {i + 1}: {st.label}"
         out.append(f"\n# --- {title} " + "-" * (72 - len(title)))
         for case in st.cases:
-            emit_case(out, st.name, case)
-        lengths = [len(c.alg) for c in st.cases]
-        print(f"{st.name}: {len(lengths)} cases, algorithms of {min(lengths)}-{max(lengths)} moves")
+            emit_proc(out, case.do, done)
+            when = emit_needs(out, case.name, "pl:when", case.needs)
+            prio = f" pl:priority {case.priority} ;" if case.priority else ""
+            out.append(f"case:{case.name} a pl:Case ; pl:stage stage:{st.name} ; rdfs:label \"{case.label}\" ;"
+                       f"{when}{prio} pl:do proc:{case.do.name} .")
+        print(f"{st.name}: {len(st.cases)} cases")
 
     (HERE / "method.ttl").write_text("\n".join(out) + "\n", encoding="utf-8", newline="\n")
 

@@ -1,0 +1,259 @@
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix lr:   <https://loopingrules.org/ns#> .
+@prefix pl:   <https://loopingrules.org/planning#> .
+
+# The planning pack (design D31): follow a method.
+#
+# Knowledge, written by the domain:
+#   ?m a pl:Method ; pl:firstStage ?s ; pl:view ?v (the views it recognises cases through)
+#   ?s a pl:Stage ; rdfs:label "…" ; pl:goal ?c (conditions) ; pl:next ?s2 (none: the last)
+#   ?k a pl:Case ; pl:stage ?s ; pl:when ?c (conditions) ; pl:do ?proc ; pl:priority ?n
+#   ?p a pl:Procedure ; pl:steps ( step … ), where a step is
+#        a pl:Procedure                                  call it
+#        ?x a pl:Repeat ; pl:times ?n ; pl:do ?proc      run it n times
+#        ?x a pl:Until ; pl:until ?c ; pl:do ?proc       until the conditions hold, run it again
+#        anything else                                   a primitive action, for the domain
+#
+# The domain and the pack talk through the sheet:
+#   pack:   [] a pl:Check ; pl:run ?r ; pl:about ?x ; pl:condition ?c ; pl:view ?v .
+#           (?x: the stage whose goal, the case, or the pl:Until it's asked for; the
+#           domain only reads pl:condition and pl:view)
+#   domain: ?check pl:result true | false .          (all of them, in one application)
+#   pack:   ?r pl:doing ?action .
+#   domain: carries it out and deletes pl:doing, in the same application.
+# The pack never reads the domain's state, and the domain never reads the stack.
+#
+# Every operation waits through its own pattern (no answer pending, nothing being done),
+# so the order is in the preconditions. The only choice left to a controller is
+# among matching cases: pl:casePriority.
+
+pl:RunShape a sh:NodeShape ;
+  sh:targetClass pl:Run ;
+  sh:property [ sh:path pl:method ; sh:minCount 1 ; sh:maxCount 1 ; sh:class pl:Method ] ;
+  sh:property [ sh:path pl:stage ; sh:maxCount 1 ; sh:class pl:Stage ] ;
+  sh:property [ sh:path pl:view ; sh:maxCount 1 ] ;
+  sh:property [ sh:path pl:stack ; sh:maxCount 1 ] ;
+  sh:property [ sh:path pl:doing ; sh:maxCount 1 ] .
+
+pl:CheckShape a sh:NodeShape ;
+  sh:targetClass pl:Check ;
+  sh:property [ sh:path pl:result ; sh:maxCount 1 ; sh:datatype xsd:boolean ] .
+
+# --- stages -----------------------------------------------------------------
+
+pl:start a lr:Operation ; rdfs:label "start the method" ;
+  lr:params "run" ;
+  lr:where  """ ?run a pl:Run ; pl:method ?m . ?m pl:firstStage ?first .
+                FILTER NOT EXISTS { ?run pl:stage ?any }
+                FILTER NOT EXISTS { ?run pl:finished true } """ ;
+  lr:insert """ ?run pl:stage ?first . """ .
+
+# The run's phase (pl:phase) says what it is doing between ticks:
+#   pl:Look       about to ask about the stage          (set by pl:look)
+#   pl:Question   asked; waiting for answers, then a decision about the stage
+# With a stack, the stack's top says what comes next. Operations that are expensive
+# to match start from the phase: oxigraph builds every candidate row before applying
+# FILTER NOT EXISTS, so "not in this phase" must be a triple that's missing, not a filter.
+
+# Nothing to do but look: the stack is empty, and nothing is pending.
+pl:look a lr:Operation ; rdfs:label "about to look" ;
+  lr:params "run" ;
+  lr:where  """ ?run a pl:Run ; pl:stage ?stage .
+                FILTER NOT EXISTS { ?run pl:phase ?ph }
+                FILTER NOT EXISTS { ?run pl:stack ?top }
+                FILTER NOT EXISTS { ?run pl:stuck true }
+                FILTER NOT EXISTS { ?run pl:decided true }
+                FILTER NOT EXISTS { ?old pl:run ?run } """ ;
+  lr:insert """ ?run pl:phase pl:Look . """ .
+
+# Ask about the stage's goal and every case's conditions, in every view.
+pl:askStage a lr:Operation ; rdfs:label "look at the situation" ;
+  lr:params "run" ;
+  lr:where  """ ?run pl:phase pl:Look ; pl:stage ?stage ; pl:method ?m .
+                ?m pl:view ?v .
+                { ?stage pl:goal ?c . BIND(?stage AS ?about) }
+                UNION
+                { ?case a pl:Case ; pl:stage ?stage ; pl:when ?c . BIND(?case AS ?about) } """ ;
+  lr:delete """ ?run pl:phase pl:Look . """ ;
+  lr:insert """ ?run pl:phase pl:Question .
+                [] a pl:Check ; pl:run ?run ; pl:about ?about ; pl:condition ?c ; pl:view ?v . """ .
+
+# Everything asked is answered, and no goal condition is false in any view.
+pl:nextStage a lr:Operation ; rdfs:label "next stage" ;
+  lr:params "run" ;
+  lr:where  """ ?run pl:phase pl:Question ; pl:stage ?stage . ?stage pl:next ?next ; rdfs:label ?name .
+                FILTER NOT EXISTS { ?run pl:stack ?top }
+                FILTER NOT EXISTS { ?run pl:decided true }
+                FILTER EXISTS { ?asked pl:run ?run }
+                FILTER NOT EXISTS { ?open pl:run ?run . FILTER NOT EXISTS { ?open pl:result ?any } }
+                FILTER NOT EXISTS { ?no pl:run ?run ; pl:about ?stage ; pl:result false }
+                BIND(CONCAT("Done: ", ?name, ".") AS ?text) """ ;
+  lr:delete """ ?run pl:stage ?stage ; pl:phase pl:Question . """ ;
+  lr:insert """ ?run pl:stage ?next ; pl:decided true .
+                [] lr:channel lr:out ; a lr:Say ; lr:text ?text . """ .
+
+# The same, for the last stage: the run is over, and goes.
+pl:finish a lr:Operation ; rdfs:label "finish" ;
+  lr:params "run" ;
+  lr:where  """ ?run pl:phase pl:Question ; pl:stage ?stage . ?stage rdfs:label ?name .
+                FILTER NOT EXISTS { ?stage pl:next ?any }
+                FILTER NOT EXISTS { ?run pl:stack ?top }
+                FILTER NOT EXISTS { ?run pl:decided true }
+                FILTER EXISTS { ?asked pl:run ?run }
+                FILTER NOT EXISTS { ?open pl:run ?run . FILTER NOT EXISTS { ?open pl:result ?r } }
+                FILTER NOT EXISTS { ?no pl:run ?run ; pl:about ?stage ; pl:result false }
+                BIND(CONCAT("Done: ", ?name, ".") AS ?text) """ ;
+  lr:delete """ ?run pl:stage ?stage ; pl:phase pl:Question . """ ;
+  lr:insert """ ?run pl:finished true ; pl:decided true .
+                [] lr:channel lr:out ; a lr:Say ; lr:text ?text . """ .
+
+# A finished run, its answers forgotten, goes.
+pl:end a lr:Operation ; rdfs:label "end the run" ;
+  lr:params "run" ;
+  lr:where  """ ?run a pl:Run ; pl:finished true .
+                FILTER NOT EXISTS { ?run pl:decided true } """ ;
+  lr:insert """ [] lr:channel lr:out ; a lr:Say ; lr:text "Finished." . """ ;
+  lr:steps ( [ lr:where """ ?run ?p ?o . """ ; lr:delete """ ?run ?p ?o . """ ] ) .
+
+# The goal isn't reached, and a case has no false condition in some view: do it, in that view.
+pl:planCase a lr:Operation ; rdfs:label "plan a case" ;
+  lr:params "run case v" ;
+  lr:where  """ ?run pl:phase pl:Question ; pl:stage ?stage ; pl:method ?m .
+                FILTER NOT EXISTS { ?run pl:stack ?top }
+                FILTER NOT EXISTS { ?run pl:decided true }
+                FILTER EXISTS { ?asked pl:run ?run }
+                FILTER NOT EXISTS { ?open pl:run ?run . FILTER NOT EXISTS { ?open pl:result ?any } }
+                FILTER EXISTS { ?no pl:run ?run ; pl:about ?stage ; pl:result false }
+                ?case a pl:Case ; pl:stage ?stage ; pl:do ?proc . ?proc pl:steps ?steps . ?m pl:view ?v .
+                FILTER NOT EXISTS { ?k pl:run ?run ; pl:about ?case ; pl:view ?v ; pl:result false } """ ;
+  lr:delete """ ?run pl:phase pl:Question . """ ;
+  lr:insert """ ?run pl:view ?v ; pl:decided true ; pl:stack [ pl:rest ?steps ; pl:procedure ?proc ; pl:case ?case ] . """ ;
+  lr:steps ( [ lr:where """ ?run pl:view ?old . FILTER(?old != ?v) """ ; lr:delete """ ?run pl:view ?old . """ ] ) .
+
+# The goal isn't reached and no case fits: say so, and stop asking.
+pl:stuck a lr:Operation ; rdfs:label "stuck" ;
+  lr:params "run" ;
+  lr:where  """ ?run pl:phase pl:Question ; pl:stage ?stage ; pl:method ?m . ?stage rdfs:label ?name .
+                FILTER NOT EXISTS { ?run pl:stack ?top }
+                FILTER NOT EXISTS { ?run pl:stuck true }
+                FILTER EXISTS { ?asked pl:run ?run }
+                FILTER NOT EXISTS { ?open pl:run ?run . FILTER NOT EXISTS { ?open pl:result ?any } }
+                FILTER EXISTS { ?no pl:run ?run ; pl:about ?stage ; pl:result false }
+                FILTER NOT EXISTS {
+                  ?case a pl:Case ; pl:stage ?stage . ?m pl:view ?v .
+                  FILTER NOT EXISTS { ?k pl:run ?run ; pl:about ?case ; pl:view ?v ; pl:result false } }
+                BIND(CONCAT("Stuck in ", ?name, ": no case fits.") AS ?text) """ ;
+  lr:delete """ ?run pl:phase pl:Question . """ ;
+  lr:insert """ ?run pl:stuck true .
+                [] lr:channel lr:out ; a lr:Say ; lr:text ?text . """ .
+
+# A decision was taken on the answers: forget them (one application, whatever the number),
+# so the next question starts clean. Deciding operations only mark pl:decided: clearing
+# ~1000 triples inside each candidate decision made every candidate cost seconds.
+pl:forget a lr:Operation ; rdfs:label "forget the answers" ;
+  lr:params "run" ;
+  lr:where  """ ?run pl:decided true . """ ;
+  lr:delete """ ?run pl:decided true . """ ;
+  lr:steps ( [ lr:where """ ?k pl:run ?run ; ?p ?o . """ ; lr:delete """ ?k ?p ?o . """ ] ) .
+
+pl:casePriority a lr:Controller ; rdfs:label "prefer the case with the higher priority" ;
+  lr:query """ SELECT ?score WHERE {
+                 GRAPH lr:action { lr:this lr:operation pl:planCase ; lr:binds ?b . ?b lr:var "case" ; lr:value ?case }
+                 ?case pl:priority ?score } """ .
+
+# --- the stack ----------------------------------------------------------------
+# A frame: pl:rest (the steps left), pl:parent, pl:procedure; a loop's frame also has
+# pl:loop (its Repeat or Until) and, for a Repeat, pl:left (iterations left).
+
+pl:call a lr:Operation ; rdfs:label "call a procedure" ;
+  lr:params "run f" ;
+  lr:where  """ ?run pl:stack ?f . FILTER NOT EXISTS { ?run pl:doing ?busy }
+                ?f pl:rest ?l . ?l rdf:first ?p ; rdf:rest ?r . ?p a pl:Procedure ; pl:steps ?steps . """ ;
+  lr:delete """ ?run pl:stack ?f . ?f pl:rest ?l . """ ;
+  lr:insert """ ?f pl:rest ?r . ?run pl:stack [ pl:rest ?steps ; pl:parent ?f ; pl:procedure ?p ] . """ .
+
+pl:repeat a lr:Operation ; rdfs:label "start a repeat" ;
+  lr:params "run f" ;
+  lr:where  """ ?run pl:stack ?f . FILTER NOT EXISTS { ?run pl:doing ?busy }
+                ?f pl:rest ?l . ?l rdf:first ?x ; rdf:rest ?r .
+                ?x a pl:Repeat ; pl:times ?n ; pl:do ?p . ?p pl:steps ?steps . FILTER(?n > 0) """ ;
+  lr:delete """ ?run pl:stack ?f . ?f pl:rest ?l . """ ;
+  lr:insert """ ?f pl:rest ?r .
+                ?run pl:stack [ pl:rest ?steps ; pl:parent ?f ; pl:procedure ?p ; pl:loop ?x ; pl:left ?n ] . """ .
+
+# An Until checks first: its frame starts empty, which asks.
+pl:until a lr:Operation ; rdfs:label "start an until" ;
+  lr:params "run f" ;
+  lr:where  """ ?run pl:stack ?f . FILTER NOT EXISTS { ?run pl:doing ?busy }
+                ?f pl:rest ?l . ?l rdf:first ?x ; rdf:rest ?r . ?x a pl:Until ; pl:do ?p . """ ;
+  lr:delete """ ?run pl:stack ?f . ?f pl:rest ?l . """ ;
+  lr:insert """ ?f pl:rest ?r .
+                ?run pl:stack [ pl:rest rdf:nil ; pl:parent ?f ; pl:procedure ?p ; pl:loop ?x ] . """ .
+
+pl:dispatch a lr:Operation ; rdfs:label "hand an action to the domain" ;
+  lr:params "run f" ;
+  lr:where  """ ?run pl:stack ?f . FILTER NOT EXISTS { ?run pl:doing ?busy }
+                ?f pl:rest ?l . ?l rdf:first ?x ; rdf:rest ?r .
+                FILTER NOT EXISTS { ?x a pl:Procedure }
+                FILTER NOT EXISTS { ?x a pl:Repeat }
+                FILTER NOT EXISTS { ?x a pl:Until } """ ;
+  lr:delete """ ?f pl:rest ?l . """ ;
+  lr:insert """ ?f pl:rest ?r . ?run pl:doing ?x . """ .
+
+# A frame that isn't a loop, done: pop it (an empty stack makes the run look again).
+pl:return a lr:Operation ; rdfs:label "return" ;
+  lr:params "run f" ;
+  lr:where  """ ?run pl:stack ?f . FILTER NOT EXISTS { ?run pl:doing ?busy }
+                ?f pl:rest rdf:nil . FILTER NOT EXISTS { ?f pl:loop ?x }
+                OPTIONAL { ?f pl:parent ?up } """ ;
+  lr:delete """ ?run pl:stack ?f . """ ;
+  lr:insert """ ?run pl:stack ?up . """ ;
+  lr:steps ( [ lr:where """ ?f ?p ?o . """ ; lr:delete """ ?f ?p ?o . """ ] ) .
+
+pl:repeatAgain a lr:Operation ; rdfs:label "repeat again" ;
+  lr:params "run f" ;
+  lr:where  """ ?run pl:stack ?f . FILTER NOT EXISTS { ?run pl:doing ?busy }
+                ?f pl:rest rdf:nil ; pl:loop ?x ; pl:left ?n . ?x a pl:Repeat ; pl:do ?p . ?p pl:steps ?steps .
+                FILTER(?n > 1) BIND(?n - 1 AS ?left) """ ;
+  lr:delete """ ?f pl:rest rdf:nil ; pl:left ?n . """ ;
+  lr:insert """ ?f pl:rest ?steps ; pl:left ?left . """ .
+
+pl:repeatDone a lr:Operation ; rdfs:label "repeat done" ;
+  lr:params "run f" ;
+  lr:where  """ ?run pl:stack ?f . FILTER NOT EXISTS { ?run pl:doing ?busy }
+                ?f pl:rest rdf:nil ; pl:loop ?x ; pl:left ?n . ?x a pl:Repeat . FILTER(?n <= 1)
+                OPTIONAL { ?f pl:parent ?up } """ ;
+  lr:delete """ ?run pl:stack ?f . """ ;
+  lr:insert """ ?run pl:stack ?up . """ ;
+  lr:steps ( [ lr:where """ ?f ?p ?o . """ ; lr:delete """ ?f ?p ?o . """ ] ) .
+
+pl:askUntil a lr:Operation ; rdfs:label "check an until" ;
+  lr:params "run f" ;
+  lr:where  """ ?run pl:stack ?f ; pl:view ?v . FILTER NOT EXISTS { ?run pl:doing ?busy }
+                ?f pl:rest rdf:nil ; pl:loop ?x . ?x a pl:Until ; pl:until ?c .
+                FILTER NOT EXISTS { ?old pl:run ?run } """ ;
+  lr:insert """ [] a pl:Check ; pl:run ?run ; pl:about ?x ; pl:condition ?c ; pl:view ?v . """ .
+
+pl:untilDone a lr:Operation ; rdfs:label "until: done" ;
+  lr:params "run f" ;
+  lr:where  """ ?run pl:stack ?f . ?f pl:rest rdf:nil ; pl:loop ?x . ?x a pl:Until .
+                FILTER NOT EXISTS { ?run pl:decided true }
+                FILTER EXISTS { ?asked pl:run ?run }
+                FILTER NOT EXISTS { ?open pl:run ?run . FILTER NOT EXISTS { ?open pl:result ?any } }
+                FILTER NOT EXISTS { ?no pl:run ?run ; pl:result false }
+                OPTIONAL { ?f pl:parent ?up } """ ;
+  lr:delete """ ?run pl:stack ?f . """ ;
+  lr:insert """ ?run pl:stack ?up ; pl:decided true . """ ;
+  lr:steps ( [ lr:where """ ?f ?p ?o . """ ; lr:delete """ ?f ?p ?o . """ ] ) .
+
+pl:untilAgain a lr:Operation ; rdfs:label "until: again" ;
+  lr:params "run f" ;
+  lr:where  """ ?run pl:stack ?f . ?f pl:rest rdf:nil ; pl:loop ?x . ?x a pl:Until ; pl:do ?p . ?p pl:steps ?steps .
+                FILTER NOT EXISTS { ?run pl:decided true }
+                FILTER NOT EXISTS { ?open pl:run ?run . FILTER NOT EXISTS { ?open pl:result ?any } }
+                FILTER EXISTS { ?no pl:run ?run ; pl:result false } """ ;
+  lr:delete """ ?f pl:rest rdf:nil . """ ;
+  lr:insert """ ?f pl:rest ?steps . ?run pl:decided true . """ .

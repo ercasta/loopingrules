@@ -1,0 +1,9 @@
+@prefix lr:      <https://loopingrules.org/ns#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+[] a lr:Package ;
+  dcterms:title "planning" ;
+  lr:version "0.1.0" ;
+  lr:library true ;
+  dcterms:description "Follow a method: stages with goals, cases with conditions, and procedures (named steps, repeat, until), run on a call stack. Conditions are checked and actions carried out by the domain, through requests and answers in the sheet." ;
+  dcterms:license "MIT" .

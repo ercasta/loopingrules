@@ -12,6 +12,8 @@ from loopingrules.project import Project
 
 EXAMPLE = Path(__file__).resolve().parents[2] / "examples" / "rubik"
 RK = Namespace("https://example.org/rubik#")
+PL = Namespace("https://loopingrules.org/planning#")
+PLANNING = Path(__file__).resolve().parents[2] / "examples" / "planning"
 POS = Namespace("https://example.org/rubik/pos#")
 
 FACES = "UDFBRL"
@@ -258,7 +260,8 @@ def solve(eng, max_ticks=1000):
     eng.post("[] a rk:Solve .")
     result = eng.run(max_ticks=max_ticks)
     assert result.status == "done", result
-    assert eng.sheet.value(RK.cube, RK.stage) is None  # the solve finished
+    assert not list(eng.sheet.subjects(None, PL.Run))  # the run finished, and went
+    assert not list(eng.sheet.subjects(None, PL.Check))
     return [m.text for m in eng.messages("out")]
 
 
@@ -285,3 +288,10 @@ def test_solving_a_solved_cube_makes_no_turns(eng):
     said = solve(eng)
     assert int(eng.sheet.value(RK.cube, RK.turns)) == 0
     assert "Done: white cross." in said
+
+
+def test_the_installed_planning_pack_is_the_pack():
+    """examples/rubik/layers/planning is a copy of examples/planning: keep them equal."""
+    for f in ("package.ttl", "planning.ttl"):
+        assert (EXAMPLE / "layers" / "planning" / f).read_bytes() == (PLANNING / f).read_bytes(), f
+

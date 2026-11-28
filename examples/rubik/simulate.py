@@ -4,11 +4,12 @@
 
 For designing the method (gen_method.py) quickly. The rules in solver.ttl are what
 actually solve the cube, and engine/tests/test_rubik.py tests them; this emulates
-them, in the same order:
+the planning pack (design D31) and them, in the same order:
 - a stage ends when its goal holds in every frame (that goes first);
-- otherwise, among the cases of the stage whose needs hold in some frame, the
-  highest rk:priority wins; ties go to the case, then the frame, in IRI order;
-- a stage with rk:sameFrame plans only in the frame the cube is held in.
+- otherwise, among the cases of the stage whose conditions hold in some view, the
+  highest pl:priority wins; ties go to the case, then the view, in IRI order;
+- the case's procedure runs in that view: moves, calls, pl:Repeat, and pl:Until
+  (which checks its conditions first, in the same view).
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ import random
 import sys
 
 from gen_geometry import facelets, frames, move_map, move_names
-from gen_method import stages
+from gen_method import Proc, Repeat, stages
 
 MOVES = {m: move_map(m) for m in move_names()}
 FRAMES = frames()  # front face -> {"pos": relative -> absolute facelet, "move": relative -> absolute move}
@@ -38,23 +39,48 @@ def holds(state: dict, frame: str, need) -> bool:
     return any(same) if kind == "like" else not all(same)
 
 
+def run(state: dict, proc, frame: str, budget: list):
+    """Carry out a procedure in a view, as the pack's stack does; returns (state, turns)."""
+    turns = 0
+    for step in proc.steps:
+        if budget[0] <= 0:
+            raise RuntimeError("too many steps")
+        budget[0] -= 1
+        if isinstance(step, str):
+            state = turn(state, FRAMES[frame]["move"][step])
+            turns += 1
+        elif isinstance(step, Proc):
+            state, t = run(state, step, frame, budget)
+            turns += t
+        elif isinstance(step, Repeat):
+            for _ in range(step.times):
+                state, t = run(state, step.do, frame, budget)
+                turns += t
+        else:  # Until: check first
+            while not all(holds(state, frame, n) for n in step.until):
+                state, t = run(state, step.do, frame, budget)
+                turns += t
+    return state, turns
+
+
 def solve(state: dict, method, max_plans: int = 200):
     """(solved?, why, turns, plans)"""
     turns = plans = 0
-    frame = None
+    budget = [100_000]
     for st in method:
         for _ in range(max_plans):
             if all(holds(state, fr, n) for fr in FRAMES for n in st.goal):
                 break
-            allowed = [frame] if (st.same_frame and frame) else FRAME_ORDER
-            matches = [(c, fr) for c in sorted(st.cases, key=lambda c: c.name) for fr in allowed
+            matches = [(c, fr) for c in sorted(st.cases, key=lambda c: c.name) for fr in FRAME_ORDER
                        if all(holds(state, fr, n) for n in c.needs)]
             if not matches:
-                return False, f"no case matches in stage {st.name}", turns, plans
+                return False, f"stuck in stage {st.name}: no case fits", turns, plans
             case, frame = max(matches, key=lambda m: m[0].priority)  # max keeps the first of equals
-            for mv in case.alg:
-                state = turn(state, FRAMES[frame]["move"][mv])
-                turns += 1
+            try:
+                state, t = run(state, case.do, frame, budget)
+            except RuntimeError:
+                return False, f"a procedure doesn't end in stage {st.name}", turns, plans
+            turns += t
             plans += 1
         else:
             return False, f"no progress in stage {st.name}", turns, plans
