@@ -1,6 +1,11 @@
 # Handoff: where LoopingRules stands, and what's next
 
-*Written 2026-11-27, at the end of the first build session. Next focus: **performance**.*
+*Written 2026-11-27, at the end of the first build session.*
+
+*Updated 2026-11-28, at the end of the second session:*
+- *The operations/controllers review became D20–D23 and is built.*
+- *Performance work is paused after lazy validation and overlays (§5). The next option there is reusing matches across ticks.*
+- ***Next focus: the UI and integration wishes in `doc/hmi_improv.md`**: a graph view, `in:`/`out:` channels, a tutorial written as rules, knowledge in packs, an MCP server, and pre-commit hooks.*
 
 ## 1. State in one paragraph
 LoopingRules is a working "semantic spreadsheet":
