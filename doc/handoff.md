@@ -13,7 +13,9 @@
 - ***D26 is built:** the tutorial, `examples/tutorial` + `lr tutorial`, tested end to end in `test_tutorial.py`.*
   - *UI polish that came with it:* the sheet hides message triples (with a checkbox to show them), the Messages panel keeps the newest message in view, and `index.html` is served with `no-cache`.
   - ***Known rough edge:** the sheet scrolls to the first changed row, which in the tutorial is often the tutorial's own bookkeeping (`tut:Lx tut:presented true`), so the learner's `ex:` rows scroll out of view. Possible fixes: scroll only for edits the user made, or prefer changed rows of the user's namespaces.*
-- ***Next:** the graph view (Cytoscape.js, not started), the MCP server, knowledge in packs, and `lr check` / pre-commit.*
+- ***D27 is built:** the Graph tab (`ui/src/components/GraphPanel.tsx`, lazy-loaded Cytoscape.js). `window.__lrGraph` exposes the Cytoscape instance for `scripts/dev/shot.py`.*
+- *Also fixed: the CLI no longer crashes on cp1252 consoles or pipes (`main()` reconfigures the output streams to replace characters they can't encode).*
+- ***Next:** the MCP server, knowledge in packs, and `lr check` / pre-commit.*
 
 ## 1. State in one paragraph
 LoopingRules is a working "semantic spreadsheet":

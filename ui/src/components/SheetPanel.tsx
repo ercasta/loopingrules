@@ -13,11 +13,16 @@ type Props = {
   /** the user unlocked editing for this session, despite app mode */
   unlocked?: boolean;
   onUnlock?: (unlocked: boolean) => void;
+  /** a filter requested from elsewhere ("show in sheet" in the graph); n changes on each request */
+  filter?: { text: string; n: number };
 };
 
-export function SheetPanel({ sheet, onError, appMode = false, unlocked = false, onUnlock }: Props) {
+export function SheetPanel({ sheet, onError, appMode = false, unlocked = false, onUnlock, filter }: Props) {
   const locked = appMode && !unlocked;
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(filter?.text ?? "");
+  useEffect(() => {
+    if (filter?.n) setQuery(filter.text);
+  }, [filter?.n]);
   // Messages (D25) are shown in the Messages panel, so the sheet hides them unless asked.
   const [showMessages, setShowMessages] = useState(false);
   const [draft, setDraft] = useState({ s: "", p: "", o: "" });

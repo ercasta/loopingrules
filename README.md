@@ -199,6 +199,24 @@ A pack declares what it extends:
 
 `lr add-layer` checks that the project *is* `folder-scan`, and refuses packs that contain a model or a sheet. To remove a pack, delete its folder under `layers/`.
 
+## See it as a graph
+
+The **◈ Graph** tab shows the same triples as a graph, live, built with [Cytoscape.js](https://js.cytoscape.org/).
+
+- **Nodes are resources.** Literals stay inside their subject's card, and `rdf:type` is shown as the node's colour, so the picture doesn't turn into a hairball.
+- **Links are ordinary triples** whose object is another resource. Show them as **edges**, or as **chips** inside each card for large sheets.
+- **Navigate:**
+  - pan, zoom, and fit;
+  - double-click a node to **expand** it with all its properties;
+  - search, and hide types, namespaces or messages;
+  - **focus** on a node's neighbourhood within N hops.
+- **The details panel** lists a node's properties, its links and what points to it, with each link clickable. *Show in sheet* jumps to its rows.
+- **It stays live:** changed nodes glow, and nodes with SHACL violations get a red border.
+
+![The graph view of a folder-scan run: files point to their folder, shell calls to their output lines; the folder's details panel lists what points to it](doc/ui-graph.png)
+
+![The same graph with links as chips inside expanded cards](doc/ui-graph-chips.png)
+
 ## Talk to a running model: `lr:in` and `lr:out`
 
 Humans and tools send **messages** to a model, and the model answers with messages. A message is just a resource on a channel. There is no new engine concept, only a convention:
@@ -392,7 +410,7 @@ my-project/
 - [ ] Performance: incremental matching, incremental SHACL (see [`doc/handoff.md`](doc/handoff.md))
 - [x] Input/output channels (`lr:in`/`lr:out`), listening autopilot, app mode
 - [x] An interactive tutorial, written as a model (`lr tutorial`)
-- [ ] A graph view of the sheet (pan, zoom, filter, expand/compact subjects)
+- [x] A graph view of the sheet (pan, zoom, filter, expand/compact, edges or chips)
 - [ ] An MCP server, so coding agents can use LoopingRules as a tool
 - [ ] Knowledge in packs; `lr check` for pre-commit hooks
 - [ ] Named graphs (full SPOG quads): deferred, see D24

@@ -288,6 +288,12 @@ def cmd_add_layer(args, console: Console) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Windows consoles and pipes are often cp1252: replace what they can't show instead of crashing.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
     ap = argparse.ArgumentParser(prog="lr", description="LoopingRules semantic spreadsheet engine")
     sub = ap.add_subparsers(dest="cmd", required=True)
     p_apps = sub.add_parser("apps", help="list applications")

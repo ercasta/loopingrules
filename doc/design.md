@@ -520,6 +520,35 @@ Operations in the learner's world score 0. So *wait* beats *introduce*, and the 
 - A test plays the whole tutorial with scripted edits, posts, a manual application and a controller switch. That keeps lesson changes from breaking the flow, and documents the intended solutions.
 - **Small API change:** a manual application, an undo and a controller switch now wake a listening autopilot, like posts and edits do.
 
+### D27. A graph view of the sheet
+*Status: built (2026-11-28).*
+
+A **Graph** tab next to the Sheet shows the same triples as a graph, built with Cytoscape.js. It's UI only: no API or engine changes.
+
+- **Nodes are resources** (IRIs and minted nodes), drawn once each. A node isn't "in" anything: it's just everything the sheet says about it.
+  - **Literals stay inside their subject's card.** They're values, not things, so they don't become nodes.
+  - **`rdf:type` is shown as the node's colour and badge,** not as edges. Otherwise every instance would be wired to its class, and the picture would become a hairball.
+  - An IRI that is only ever an object (e.g. `ex:Greeter` used as a value) still gets a node, a smaller one.
+- **Links between subjects** are ordinary SPOs whose object is an IRI. A toggle chooses how they're shown:
+  - **edges:** arrows labelled with the predicate;
+  - **chips:** no arrows. The links are listed in the details panel of the selected node, and clicking one selects and centres the target. This keeps large sheets readable.
+- **Expand / compact:**
+  - Compact shows the name and type.
+  - Expanded also lists the literal properties and, in chip mode, the links.
+  - Double-click toggles one node; buttons expand or compact all of them.
+- **Filters:**
+  - text search, which dims what doesn't match;
+  - types and namespaces, which can be hidden;
+  - messages, hidden by default as in the sheet (D25);
+  - **focus:** the selected node's neighbourhood within N hops.
+- **Details panel:**
+  - the selected node's outgoing triples and the links pointing to it, with clickable resources;
+  - "show in sheet", which switches to the Sheet tab filtered on that subject.
+- **Live:**
+  - The view follows the sheet. Triples the last change added are highlighted, as in the sheet, and nodes with SHACL violations have a red border.
+  - Existing nodes keep their positions when the sheet changes. New nodes are placed next to a neighbour, and "re-layout" runs the full layout again.
+- **Loading:** the graph code is loaded only when the tab is opened, so the sheet view doesn't pay for Cytoscape.
+
 ## Open questions
 
 - **Q3. Ties and no-ops.** Partly settled by D21: empty deltas are excluded except for no-op operations, and a tie between a no-op and an application with effects goes to continuing. Other ties: still first found.

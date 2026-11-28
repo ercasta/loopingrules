@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { api, connectEvents, type Application, type Message, type Sheet, type State } from "./api";
 import { ApplicationsPanel } from "./components/ApplicationsPanel";
 import { ApprovalBanner } from "./components/ApprovalBanner";
 import { IOPanel } from "./components/IOPanel";
 import { SheetPanel } from "./components/SheetPanel";
 import { Sidebar } from "./components/Sidebar";
+
+// Cytoscape is loaded only when the Graph tab is opened (D27).
+const GraphPanel = lazy(() => import("./components/GraphPanel"));
 
 const STATUS_LABEL = {
   idle: "manual",
@@ -25,6 +28,8 @@ export function App() {
   const [speed, setSpeed] = useState(400);
   const [out, setOut] = useState<Message[]>([]);
   const [unlocked, setUnlocked] = useState(false); // app mode only; resets on reload (D25)
+  const [view, setView] = useState<"sheet" | "graph">("sheet");
+  const [sheetFilter, setSheetFilter] = useState<{ text: string; n: number }>({ text: "", n: 0 });
   const refreshTimer = useRef<number | undefined>(undefined);
   const [theme, setTheme] = useState<"light" | "dark">(
     () => (localStorage.getItem("lr-theme") as "light" | "dark" | null) ?? "light",
@@ -97,6 +102,14 @@ export function App() {
             v<b>{state?.version ?? 0}</b>
           </span>
         </div>
+        <div className="seg views" title="Sheet or graph view of the same triples">
+          <button className={view === "sheet" ? "on" : ""} onClick={() => setView("sheet")}>
+            ▦ Sheet
+          </button>
+          <button className={view === "graph" ? "on" : ""} onClick={() => setView("graph")}>
+            ◈ Graph
+          </button>
+        </div>
         <span className={`status status-${status}`}>
           <span className="dot" /> {STATUS_LABEL[status]}
         </span>
@@ -166,23 +179,39 @@ export function App() {
         </div>
       )}
 
-      <main className="layout">
-        <SheetPanel
-          sheet={sheet}
-          onError={onError}
-          appMode={state ? !state.directEdits : false}
-          unlocked={unlocked}
-          onUnlock={setUnlocked}
-        />
-        <ApplicationsPanel
-          apps={apps}
-          loading={appsLoading}
-          operations={state?.operations ?? []}
-          contains={contains}
-          setContains={setContains}
-          containsError={containsError}
-          onError={onError}
-        />
+      <main className={`layout view-${view}`}>
+        {view === "graph" ? (
+          <Suspense fallback={<section className="panel graph">Loading the graph…</section>}>
+            <GraphPanel
+              sheet={sheet}
+              theme={theme}
+              onShowInSheet={(subject) => {
+                setSheetFilter((f) => ({ text: subject, n: f.n + 1 }));
+                setView("sheet");
+              }}
+            />
+          </Suspense>
+        ) : (
+          <SheetPanel
+            sheet={sheet}
+            onError={onError}
+            appMode={state ? !state.directEdits : false}
+            unlocked={unlocked}
+            onUnlock={setUnlocked}
+            filter={sheetFilter}
+          />
+        )}
+        {view === "sheet" && (
+          <ApplicationsPanel
+            apps={apps}
+            loading={appsLoading}
+            operations={state?.operations ?? []}
+            contains={contains}
+            setContains={setContains}
+            containsError={containsError}
+            onError={onError}
+          />
+        )}
         <Sidebar
           controllers={state?.controllers ?? []}
           trust={state?.trust ?? []}
