@@ -185,6 +185,21 @@ engine/.venv/Scripts/lr run examples/folder-scan --yes  # headless
   - **Row order differs between the stores** (and in rdflib, with the hash seed): applications are now sorted by parameters. `bench_rubik_solve.py` still pins `PYTHONHASHSEED=0` for other set orders.
 - **Now a Rubik turn (~70 ms) is the slowest tick.** What's left: steps on overlays (rdflib), SHACL (one validation per tick), scoring, and the O(sheet) diff to sync the mirror.
 
+### Scaling, measured (2026-11-28, `benchmarks/bench_scaling.py`)
+Growth exponent = log-log slope of ms per tick against size (1 = linear):
+
+| What grows | What pays | Exponent | At the largest size |
+|---|---|---|---|
+| Files, real work (folder-scan, 25–400) | scoring every candidate, every tick | 1.1 | 400 files: 0.5–0.7 s per tick, ~80% scoring |
+| Files, real work | per-candidate bookkeeping (effects, overlays) | 1.0 | ~75–90 ms per tick |
+| Irrelevant triples (1k–50k) | the mirror sync (diffs the whole sheet) | 1.06 | 50k: 138 ms per tick |
+| Operations that never apply (10–200) | matching every operation | 0.9 | 200: 17 ms per tick |
+| Anything | SHACL (D32) | ~0 | flat |
+
+- **Ticks also grow with the data, so a run is quadratic:** folder-scan at 400 files is ~10 minutes.
+- **Change-only controllers (D20) are no faster today** (`folder-delta`). The cost is a fixed ~1.5 ms per candidate, whatever the controller computes.
+- **Plan:** D33. Keep candidates and scores across ticks when the change didn't touch what they read, and pass changes on instead of diffing the sheet.
+
 ### Next options (re-profile first)
 1. ~~**Phase 2: steps on the mirror.**~~ Done the same session, with Rubik stage 2. Now: **SHACL ~60% of `pick`**, matching + steps ~35%.
 2. **Incremental SHACL** (`focus_nodes`, step 3 above). Validation also re-checks the knowledge every tick, though it can't change.
